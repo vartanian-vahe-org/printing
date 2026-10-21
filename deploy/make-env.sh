@@ -35,6 +35,8 @@ S3_BUCKET=printing-uploads
 S3_REGION=us-west-1
 S3_ACCESS_KEY_ID=printing-demo
 S3_SECRET_ACCESS_KEY=$(rand 32)
+ORDER_LINK_SECRET=$(rand 48)
+DATA_ENCRYPTION_KEY=$(rand 48)
 ADMIN_EMAIL=$EMAIL
 ADMIN_PASSWORD=$ADMIN_PASSWORD
 ADMIN_NAME=Admin
@@ -42,6 +44,7 @@ EOF
 
 cat >"$CREDS_FILE" <<EOF
 Demo site:   https://$DOMAIN
+Demo emails: https://mail.$DOMAIN
 Username:    demo
 Password:    $DEMO_PASSWORD
 

@@ -1,9 +1,10 @@
-import type { Catalog, Selection } from '@printing/pricing';
+import type { Catalog, ProductionCalendar, Selection } from '@printing/pricing';
 import type { Template } from '@printing/templates';
 
 export interface ConfiguratorResponse {
   catalog: Catalog;
   defaults: { selection: Selection; quantity: number };
+  calendar: ProductionCalendar;
 }
 
 /** Server-side only: the API is reached on the internal Docker network. */

@@ -15,6 +15,7 @@ import { and, asc, eq, inArray, ne } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { CatalogService } from '../../catalog/catalog.service.js';
 import { DATABASE } from '../../database/database.tokens.js';
+import { AuditService } from '../audit/audit.service.js';
 import { attributeSchema } from './attribute-schemas.js';
 
 type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -48,7 +49,10 @@ export interface PricingInput {
  */
 @Injectable()
 export class AdminCatalogService {
-  constructor(@Inject(DATABASE) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: Database,
+    private readonly audit: AuditService,
+  ) {}
 
   private async productId(db: Executor, code: string): Promise<string> {
     const [row] = await db.select({ id: products.id }).from(products).where(eq(products.code, code)).limit(1);
@@ -215,6 +219,17 @@ export class AdminCatalogService {
         throw new BadRequestException('Each option group needs a default. Make another option the default instead.');
       }
 
+      const [before] = await tx
+        .select({
+          label: optionValues.label,
+          description: optionValues.description,
+          sortOrder: optionValues.sortOrder,
+          isActive: optionValues.isActive,
+          isDefault: optionValues.isDefault,
+          attributes: optionValues.attributes,
+        })
+        .from(optionValues)
+        .where(eq(optionValues.id, existing.id));
       if (patch.isDefault === true) {
         await tx
           .update(optionValues)
@@ -227,6 +242,13 @@ export class AdminCatalogService {
         .where(and(eq(optionValues.groupId, groupId), eq(optionValues.code, valueCode)));
 
       await this.assertStorefrontStillWorks(tx, productCode);
+      const changed = Object.keys(patch).filter((k) => JSON.stringify(patch[k as keyof ValuePatch]) !== JSON.stringify(before?.[k as keyof typeof before]));
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.value.update',
+        target: `${productCode} · ${groupCode} / ${valueCode}`,
+        summary: `Changed ${changed.join(', ') || 'nothing'} of ${before?.label ?? valueCode}`,
+        changes: { before: Object.fromEntries(changed.map((k) => [k, before?.[k as keyof typeof before]])), after: Object.fromEntries(changed.map((k) => [k, patch[k as keyof ValuePatch]])) },
+      });
     });
   }
 
@@ -238,6 +260,14 @@ export class AdminCatalogService {
       if (!whenValue) throw new NotFoundException(`Value "${input.whenValue}" not found in "${input.whenGroup}"`);
       const targetGroupId = await this.groupId(tx, productId, input.targetGroup);
       const targetValues = await this.valueIds(tx, targetGroupId);
+
+      const codeById = new Map([...targetValues].map(([code, v]) => [v.id, code]));
+      const beforeAllowed = await tx
+        .select({ valueId: optionValueRuleAllowed.valueId })
+        .from(optionValueRuleAllowed)
+        .innerJoin(optionValueRules, eq(optionValueRules.id, optionValueRuleAllowed.ruleId))
+        .where(and(eq(optionValueRules.whenValueId, whenValue.id), eq(optionValueRules.targetGroupId, targetGroupId)));
+      const before = beforeAllowed.length ? beforeAllowed.map((r) => codeById.get(r.valueId)).sort() : null;
 
       await tx
         .delete(optionValueRules)
@@ -258,6 +288,12 @@ export class AdminCatalogService {
       }
 
       await this.assertStorefrontStillWorks(tx, productCode);
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.rule.set',
+        target: `${productCode} · ${input.whenGroup} / ${input.whenValue} → ${input.targetGroup}`,
+        summary: input.allowed === null ? 'Removed the rule (all options allowed)' : `Allowed ${input.allowed.join(', ')}`,
+        changes: { before, after: input.allowed ? [...input.allowed].sort() : null },
+      });
     });
   }
 
@@ -269,6 +305,11 @@ export class AdminCatalogService {
         .from(productQuantityTiers)
         .where(eq(productQuantityTiers.productId, productId));
       const tierByQty = new Map(tiers.map((t) => [t.quantity, t.id]));
+      const tiersBefore = await tx
+        .select({ quantity: productQuantityTiers.quantity, basePriceCents: productQuantityTiers.basePriceCents, isActive: productQuantityTiers.isActive, isDefault: productQuantityTiers.isDefault })
+        .from(productQuantityTiers)
+        .where(eq(productQuantityTiers.productId, productId));
+      const upchargesBefore = new Map<string, number>();
 
       for (const tier of input.tiers ?? []) {
         const id = tierByQty.get(tier.quantity);
@@ -297,6 +338,11 @@ export class AdminCatalogService {
           const quantityTierId = tierByQty.get(u.quantity);
           if (!optionValueId) throw new BadRequestException(`Option "${u.group}.${u.value}" does not exist`);
           if (!quantityTierId) throw new BadRequestException(`Quantity tier ${u.quantity} does not exist`);
+          const [old] = await tx
+            .select({ cents: optionValuePrices.upchargeCents })
+            .from(optionValuePrices)
+            .where(and(eq(optionValuePrices.optionValueId, optionValueId), eq(optionValuePrices.quantityTierId, quantityTierId)));
+          upchargesBefore.set(`${u.group}.${u.value}@${u.quantity}`, old?.cents ?? 0);
           await tx
             .insert(optionValuePrices)
             .values({ optionValueId, quantityTierId, upchargeCents: u.upchargeCents, createdBy: staffId, updatedBy: staffId })
@@ -316,16 +362,34 @@ export class AdminCatalogService {
       }
 
       await this.assertStorefrontStillWorks(tx, productCode);
+      const tierChanges = (input.tiers ?? []).map((t) => ({ before: tiersBefore.find((b) => b.quantity === t.quantity), after: t }));
+      const upchargeChanges = (input.upcharges ?? [])
+        .map((u) => ({ key: `${u.group}.${u.value}@${u.quantity}`, before: upchargesBefore.get(`${u.group}.${u.value}@${u.quantity}`), after: u.upchargeCents }))
+        .filter((c) => c.before !== c.after);
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.pricing.update',
+        target: `${productCode} · pricing`,
+        summary: `Updated ${tierChanges.length} quantity tier(s) and ${upchargeChanges.length} upcharge(s)`,
+        changes: { tiers: tierChanges, upcharges: upchargeChanges },
+      });
     });
   }
 
   async updateTemplate(productCode: string, templateCode: string, patch: { isActive: boolean }, staffId: string) {
-    const productId = await this.productId(this.db, productCode);
-    const updated = await this.db
-      .update(templates)
-      .set({ isActive: patch.isActive, updatedBy: staffId })
-      .where(and(eq(templates.productId, productId), eq(templates.code, templateCode)))
-      .returning({ code: templates.code });
-    if (updated.length === 0) throw new NotFoundException(`Template "${templateCode}" not found`);
+    await this.db.transaction(async (tx) => {
+      const productId = await this.productId(tx, productCode);
+      const updated = await tx
+        .update(templates)
+        .set({ isActive: patch.isActive, updatedBy: staffId })
+        .where(and(eq(templates.productId, productId), eq(templates.code, templateCode)))
+        .returning({ name: templates.name });
+      if (updated.length === 0) throw new NotFoundException(`Template "${templateCode}" not found`);
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.template.update',
+        target: `${productCode} · template ${templateCode}`,
+        summary: `${patch.isActive ? 'Showed' : 'Hid'} the ${updated[0]!.name} template`,
+        changes: { after: patch },
+      });
+    });
   }
 }

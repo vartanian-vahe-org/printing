@@ -43,7 +43,7 @@ export function PriceSummary({ quote }: { quote: Quote }) {
           </div>
         </dl>
       </details>
-      <p className={styles.finePrint}>Production time shown above. Shipping and tax are calculated at checkout.</p>
+      <p className={styles.finePrint}>Shipping and tax are calculated at checkout.</p>
     </div>
   );
 }

@@ -1,9 +1,9 @@
 /**
  * Template design state for the homepage: which template, what the customer typed,
- * and the SVG artwork for both sides of the card.
+ * and the laid-out artwork (scenes) for both sides of the card.
  */
 import type { ResolvedSize } from '@printing/pricing';
-import { fieldsFor, renderFace, type MeasureText, type RenderWarning, type Template } from '@printing/templates';
+import { fieldsFor, layoutFace, type FaceScene, type MeasureText, type RenderWarning, type Template } from '@printing/templates';
 import type { BackMode } from './card3d';
 
 export interface DesignState {
@@ -36,13 +36,13 @@ export function ensureTemplateForSize(
 }
 
 export interface Artwork {
-  frontSvg: string;
+  front: FaceScene;
   /** null when the back is blank or repeats the front (the 3D card handles both). */
-  backSvg: string | null;
+  back: FaceScene | null;
   warnings: RenderWarning[];
 }
 
-export function renderArtwork(
+export function layoutArtwork(
   template: Template,
   values: Record<string, string>,
   size: ResolvedSize,
@@ -50,18 +50,14 @@ export function renderArtwork(
   measure?: MeasureText,
 ): Artwork {
   const geometry = { widthIn: size.widthIn, heightIn: size.heightIn, bleedIn: size.bleedIn, safeIn: size.safeIn };
-  const front = renderFace({ layout: template.layout, side: 'front', values, geometry, measure });
-  const back = backMode === 'separate' ? renderFace({ layout: template.layout, side: 'back', values, geometry, measure }) : null;
+  const front = layoutFace({ layout: template.layout, side: 'front', values, geometry, measure });
+  const back = backMode === 'separate' ? layoutFace({ layout: template.layout, side: 'back', values, geometry, measure }) : null;
   const warnings = [...front.warnings, ...(back?.warnings ?? [])];
   // One warning per field is enough for the form.
   const unique = warnings.filter((w, i) => warnings.findIndex((o) => o.field === w.field) === i);
-  return { frontSvg: front.svg, backSvg: back?.svg ?? null, warnings: unique };
+  return { front, back, warnings: unique };
 }
 
 export function visibleFields(template: Template, backMode: BackMode) {
   return fieldsFor(template.layout, backMode);
-}
-
-export function svgDataUrl(svg: string): string {
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }

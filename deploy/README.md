@@ -33,13 +33,24 @@ DEPLOY_HOST=<elastic-ip> DEPLOY_KEY=~/.ssh/printing-demo.pem deploy/deploy.sh
 The first build takes several minutes. Then open `https://<ip-with-dashes>.sslip.io`; the
 username and password are in `deploy/.demo-credentials` (git-ignored, share it privately).
 
+| Address | What |
+|---|---|
+| `https://<ip-with-dashes>.sslip.io` | Storefront (demo password) |
+| `https://admin.<ip-with-dashes>.sslip.io` | Admin (demo password, then the admin sign-in from `.demo-credentials`) |
+| `https://mail.<ip-with-dashes>.sslip.io` | Emails the demo sent (Mailpit, demo password) |
+| `https://api.<ip-with-dashes>.sslip.io` | API, called by the browser (no demo password; orders need their private link) |
+| `https://files.<ip-with-dashes>.sslip.io` | File storage for presigned uploads and downloads |
+
 ## What runs
 
 | Service | Notes |
 |---|---|
-| caddy | Only public service (80/443). HTTPS, basic auth, `noindex` header |
-| web | Next.js storefront (production image) |
-| api | NestJS API (production image), internal only |
+| caddy | Only public service (80/443). HTTPS for every subdomain, basic auth on the site, admin and mail, `noindex` header |
+| web | Next.js storefront (production image), built with `NEXT_PUBLIC_API_URL=https://api.<domain>` |
+| admin | Admin SPA (nginx), built with `VITE_API_URL=https://api.<domain>` |
+| api | NestJS API (production image), `COOKIE_SECURE=true`, CORS for the site and admin |
+| worker-prepress | File checks and proof images (Python) |
+| mailpit | Catches all outgoing email (no real email is sent from the demo) |
 | migrate | Runs migrations + first admin from the API image, then exits |
 | postgres, redis, storage (RustFS) | In containers for the demo only (I3: production uses RDS / ElastiCache / S3) |
 

@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { AccountLink } from './AccountLink';
+import { CartLink } from './CartLink';
 import styles from './site.module.css';
 
 /** Brand name is a placeholder until it is decided (docs/open-issues.md U1). */
@@ -23,6 +25,8 @@ export function SiteHeader() {
             Stickers &amp; Labels
           </span>
         </nav>
+        <AccountLink />
+        <CartLink />
         <Link href="/business-cards" className={styles.headerCta}>
           Start designing
         </Link>

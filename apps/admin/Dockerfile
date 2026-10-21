@@ -16,7 +16,8 @@ COPY --from=pruner /app/out/json/ .
 RUN pnpm install --frozen-lockfile
 COPY --from=pruner /app/out/full/ .
 ARG VITE_API_URL
-ENV VITE_API_URL=$VITE_API_URL
+ARG VITE_STOREFRONT_URL
+ENV VITE_API_URL=$VITE_API_URL VITE_STOREFRONT_URL=$VITE_STOREFRONT_URL
 RUN pnpm turbo run build --filter=@printing/admin
 
 FROM nginxinc/nginx-unprivileged:1.30-alpine AS runner

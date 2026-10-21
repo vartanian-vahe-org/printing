@@ -1,42 +1,41 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import type { Redis } from 'ioredis';
+import { REDIS } from '../../redis/redis.tokens.js';
 
 const MAX_FAILURES = 5;
-const WINDOW_MS = 15 * 60 * 1000;
+const WINDOW_SECONDS = 15 * 60;
+
+/** The Redis commands the limiter uses (lets tests pass a small fake). */
+export type LimiterStore = Pick<Redis, 'multi' | 'get' | 'ttl' | 'del'>;
 
 /**
- * Slows down password guessing: at most 5 failed logins per email and per IP in 15 minutes.
- * In-memory, so it is per API instance (fine for one instance; docs/open-issues.md X5).
+ * Slows down password guessing: at most 5 failed admin sign-ins per email and per IP within
+ * 15 minutes of the first failure. Counted in Redis, so every API instance shares the counts and
+ * a restart does not reset them (open issue A4).
  */
 @Injectable()
 export class LoginLimiter {
-  private readonly failures = new Map<string, number[]>();
+  constructor(@Inject(REDIS) private readonly redis: LimiterStore) {}
 
   private keys(email: string, ip: string) {
-    return [`email:${email}`, `ip:${ip}`];
-  }
-
-  private recent(key: string, now: number): number[] {
-    const list = (this.failures.get(key) ?? []).filter((t) => now - t < WINDOW_MS);
-    if (list.length) this.failures.set(key, list);
-    else this.failures.delete(key);
-    return list;
+    return [`login-fail:email:${email.toLowerCase()}`, `login-fail:ip:${ip}`];
   }
 
   /** Seconds until another attempt is allowed, or 0 when allowed now. */
-  retryAfterSeconds(email: string, ip: string, now = Date.now()): number {
+  async retryAfterSeconds(email: string, ip: string): Promise<number> {
     let wait = 0;
     for (const key of this.keys(email, ip)) {
-      const list = this.recent(key, now);
-      if (list.length >= MAX_FAILURES) wait = Math.max(wait, Math.ceil((list[0]! + WINDOW_MS - now) / 1000));
+      if (Number(await this.redis.get(key)) >= MAX_FAILURES) wait = Math.max(wait, await this.redis.ttl(key), 1);
     }
     return wait;
   }
 
-  recordFailure(email: string, ip: string, now = Date.now()) {
-    for (const key of this.keys(email, ip)) this.failures.set(key, [...this.recent(key, now), now]);
+  async recordFailure(email: string, ip: string): Promise<void> {
+    for (const key of this.keys(email, ip)) await this.redis.multi().incr(key).expire(key, WINDOW_SECONDS, 'NX').exec();
   }
 
-  reset(email: string) {
-    this.failures.delete(`email:${email}`);
+  /** A successful sign-in clears the email's count (the IP's stays, against spraying many emails). */
+  async reset(email: string): Promise<void> {
+    await this.redis.del(this.keys(email, '')[0]!);
   }
 }

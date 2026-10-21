@@ -27,10 +27,38 @@ export const config = {
     secretAccessKey: required('S3_SECRET_ACCESS_KEY'),
     forcePathStyle: process.env.S3_FORCE_PATH_STYLE === 'true',
   },
+  /** Storefront base URL, for links in emails (order page). */
+  webUrl: required('WEB_URL').replace(/\/+$/, ''),
+  /** Admin app base URL, for links in staff emails (password reset). */
+  adminUrl: required('ADMIN_URL').replace(/\/+$/, ''),
+  /** Encrypts secrets stored in the database (TOTP keys). Changing it disables existing 2FA. */
+  dataEncryptionKey: required('DATA_ENCRYPTION_KEY'),
+  /** Signs the private order links; changing it breaks links already emailed. */
+  orderLinkSecret: required('ORDER_LINK_SECRET'),
+  /** Any SMTP service: Mailpit locally; SES, Postmark or Resend in production (open issue S15). */
+  mail: {
+    smtpHost: required('SMTP_HOST'),
+    smtpPort: Number(process.env.SMTP_PORT ?? 587),
+    /** true = TLS from the start (port 465); false = STARTTLS when the server offers it. */
+    smtpSecure: process.env.SMTP_SECURE === 'true',
+    smtpUser: process.env.SMTP_USER || undefined,
+    smtpPassword: process.env.SMTP_PASSWORD || undefined,
+    /** Sender address; the display name comes from store settings. Must be verified with the SMTP service. */
+    fromAddress: required('MAIL_FROM_ADDRESS'),
+  },
+  /** Send cookies (admin session, cart) over HTTPS only. Must be true outside local development. */
+  cookieSecure: process.env.COOKIE_SECURE === 'true',
   admin: {
-    /** Send the session cookie over HTTPS only. Must be true outside local development. */
-    cookieSecure: process.env.COOKIE_SECURE === 'true',
     sessionDays: Number(process.env.ADMIN_SESSION_DAYS ?? 7),
+  },
+  customers: {
+    sessionDays: 30,
+    verifyLinkHours: 72,
+    resetLinkMinutes: 60,
+  },
+  cart: {
+    cookieDays: 30,
+    maxItems: 50,
   },
   uploads: {
     /** Placeholder limit, see docs/open-issues.md S2. */

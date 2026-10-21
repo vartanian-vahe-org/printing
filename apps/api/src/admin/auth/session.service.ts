@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { type Database, staffSessions, staffUsers } from '@printing/db';
-import { and, eq, gt, sql } from 'drizzle-orm';
+import { and, eq, gt, ne, sql } from 'drizzle-orm';
 import { DATABASE } from '../../database/database.tokens.js';
 
 export interface StaffIdentity {
@@ -63,5 +63,16 @@ export class SessionService {
 
   async revoke(token: string): Promise<void> {
     await this.db.delete(staffSessions).where(eq(staffSessions.tokenHash, hashToken(token)));
+  }
+
+  /** Signs a user out everywhere (password change, account disabled), optionally keeping one session. */
+  async revokeAll(staffUserId: string, keepToken?: string): Promise<void> {
+    await this.db
+      .delete(staffSessions)
+      .where(
+        keepToken
+          ? and(eq(staffSessions.staffUserId, staffUserId), ne(staffSessions.tokenHash, hashToken(keepToken)))
+          : eq(staffSessions.staffUserId, staffUserId),
+      );
   }
 }

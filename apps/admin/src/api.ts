@@ -2,6 +2,11 @@
 
 const apiUrl = import.meta.env.VITE_API_URL ?? '';
 
+/** Absolute API URL, for links the browser opens itself (file downloads use the session cookie). */
+export function apiHref(path: string): string {
+  return `${apiUrl}${path}`;
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -40,6 +45,7 @@ export interface StaffUser {
   email: string;
   name: string;
   role: 'owner' | 'admin' | 'staff';
+  twoFactorEnabled: boolean;
 }
 
 export interface AdminValue {

@@ -3,6 +3,7 @@
  * Run from the host so presigned upload URLs (http://localhost:9000) are reachable.
  */
 import { describe, expect, it } from 'vitest';
+import { testHeaders } from './helpers.js';
 
 const base = process.env.API_BASE_URL ?? 'http://localhost:4000';
 
@@ -18,7 +19,7 @@ const defaultSelection = {
 async function post(path: string, body: unknown) {
   const res = await fetch(`${base}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { ...testHeaders, 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
   return { status: res.status, body: (await res.json()) as Record<string, any> };

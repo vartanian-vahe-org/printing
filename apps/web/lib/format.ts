@@ -14,3 +14,9 @@ export function formatDelta(cents: number): string {
 export function formatInches(value: number): string {
   return `${Number(value.toFixed(3))}"`;
 }
+
+/** "1 business day", "2 business days", "3–5 business days" */
+export function formatBusinessDays(min: number, max: number): string {
+  if (min === max) return `${min} business day${min === 1 ? '' : 's'}`;
+  return `${min}–${max} business days`;
+}

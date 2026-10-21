@@ -1,1 +1,7 @@
-redis==6.4.0
+# bullmq pins redis exactly; keep them in step.
+bullmq==3.3.0
+redis==7.4.1
+pikepdf==10.16.0
+pypdfium2==5.14.0
+pillow==12.3.0
+boto3==1.43.108

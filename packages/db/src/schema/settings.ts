@@ -17,6 +17,23 @@ export const productionSettings = pgTable(
   (t) => [check('production_settings_single_row', sql`${t.id} = 1`)],
 );
 
+/** Single-row table (id is always 1): shop identity used in emails and on the site. */
+export const storeSettings = pgTable(
+  'store_settings',
+  {
+    id: smallint('id').primaryKey().default(1),
+    /** Shown in emails ("Print Studio <orders@...>"). Placeholder until the brand is chosen (open issue U1). */
+    storeName: text('store_name').notNull(),
+    /** Reply-to address on customer emails. */
+    supportEmail: text('support_email').notNull(),
+    /** Staff addresses told about every new order. */
+    orderNotificationEmails: text('order_notification_emails').array().notNull(),
+    ...auditColumns,
+    ...timestamps,
+  },
+  (t) => [check('store_settings_single_row', sql`${t.id} = 1`)],
+);
+
 export const holidays = pgTable('holidays', {
   id: id(),
   date: date('date').notNull().unique(),

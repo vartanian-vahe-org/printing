@@ -28,6 +28,10 @@ services:
       - caddy_config:/config
     depends_on:
       - web
+      - api
+      - admin
+      - storage
+      - mailpit
 
   postgres:
     <<: *restart
@@ -74,6 +78,8 @@ services:
       AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
       AWS_DEFAULT_REGION: ${S3_REGION}
       BUCKET: ${S3_BUCKET}
+      # The browser uploads straight to storage (presigned URLs) from the storefront and admin.
+      CORS_ORIGINS: https://${DOMAIN},https://admin.${DOMAIN}
     volumes:
       - ../docker/storage-init.sh:/storage-init.sh:ro
     entrypoint: ["sh", "/storage-init.sh"]
@@ -121,8 +127,41 @@ services:
         condition: service_completed_successfully
     environment:
       PORT: 4000
-      CORS_ORIGINS: https://${DOMAIN}
+      CORS_ORIGINS: https://${DOMAIN},https://admin.${DOMAIN}
+      # Cookies (cart, customer and admin sessions) only over HTTPS.
+      COOKIE_SECURE: "true"
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://storage:9000
+      # Presigned upload/download links point at the public storage host (Caddy, files.<domain>).
+      S3_PUBLIC_ENDPOINT: https://files.${DOMAIN}
+      S3_FORCE_PATH_STYLE: "true"
+      S3_REGION: ${S3_REGION}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      WEB_URL: https://${DOMAIN}
+      ADMIN_URL: https://admin.${DOMAIN}
+      ORDER_LINK_SECRET: ${ORDER_LINK_SECRET}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
+      # The demo sends no real email: Mailpit catches it (open issue S15).
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      MAIL_FROM_ADDRESS: orders@printing.local
+
+  # File checks and proof images (Phase 2 step 8).
+  worker-prepress:
+    <<: *restart
+    image: printing-worker-prepress:demo
+    build:
+      context: ../apps/worker-prepress
+      target: prod
+    depends_on:
+      redis:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
+    environment:
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://storage:9000
       S3_FORCE_PATH_STYLE: "true"
@@ -131,16 +170,33 @@ services:
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
 
+  # Catches the demo's outgoing email; read it at https://mail.<DOMAIN> (same password as the site).
+  mailpit:
+    <<: *restart
+    image: axllent/mailpit:v1.31.6
+
   web:
     <<: *restart
     image: printing-web:demo
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://api.${DOMAIN}
     depends_on:
       - api
     environment:
       API_INTERNAL_URL: http://api:4000
+
+  admin:
+    <<: *restart
+    image: printing-admin:demo
+    build:
+      context: ..
+      dockerfile: apps/admin/Dockerfile
+      args:
+        VITE_API_URL: https://api.${DOMAIN}
+        VITE_STOREFRONT_URL: https://${DOMAIN}/business-cards
 
 volumes:
   caddy_data:

@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, Patch, Put, Req, UseGuards } fr
 import { z } from 'zod';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe.js';
 import { AdminGuard, type AdminRequest } from '../auth/admin.guard.js';
+import { CatalogService } from '../../catalog/catalog.service.js';
 import { AdminCatalogService } from './admin-catalog.service.js';
 
 const code = z.string().min(1).max(100);
@@ -51,7 +52,10 @@ const templatePatchSchema = z.object({ isActive: z.boolean() }).strict();
 @Controller('admin/products/:code')
 @UseGuards(AdminGuard)
 export class AdminCatalogController {
-  constructor(private readonly catalog: AdminCatalogService) {}
+  constructor(
+    private readonly catalog: AdminCatalogService,
+    private readonly storefront: CatalogService,
+  ) {}
 
   @Get('catalog')
   get(@Param('code') productCode: string) {
@@ -68,6 +72,7 @@ export class AdminCatalogController {
     @Req() request: AdminRequest,
   ) {
     await this.catalog.updateValue(productCode, group, value, body, request.staff!.id);
+    await this.storefront.invalidate(productCode);
   }
 
   @Put('rules')
@@ -78,6 +83,7 @@ export class AdminCatalogController {
     @Req() request: AdminRequest,
   ) {
     await this.catalog.setRule(productCode, body, request.staff!.id);
+    await this.storefront.invalidate(productCode);
   }
 
   @Put('pricing')
@@ -88,6 +94,7 @@ export class AdminCatalogController {
     @Req() request: AdminRequest,
   ) {
     await this.catalog.updatePricing(productCode, body, request.staff!.id);
+    await this.storefront.invalidate(productCode);
   }
 
   @Patch('templates/:template')

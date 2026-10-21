@@ -31,7 +31,7 @@ export default async function BusinessCardsPage() {
             <h1 className={styles.title}>{data.catalog.product.name}</h1>
             <p className={styles.subtitle}>Pick your size, paper and finish. Your price updates as you go.</p>
           </div>
-          <Configurator catalog={data.catalog} defaults={data.defaults} templates={templates} />
+          <Configurator catalog={data.catalog} defaults={data.defaults} calendar={data.calendar} templates={templates} />
         </>
       ) : (
         <div className={styles.error} role="alert">

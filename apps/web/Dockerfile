@@ -1,5 +1,6 @@
 # Production image for the storefront. Build from the repo root:
-#   docker build -f apps/web/Dockerfile -t printing-web .
+#   docker build -f apps/web/Dockerfile --build-arg NEXT_PUBLIC_API_URL=https://api.example.com -t printing-web .
+# NEXT_PUBLIC_API_URL is the API address browsers use (cart, checkout, uploads); it is baked in at build time.
 FROM node:24.22.0-trixie-slim AS base
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable && corepack prepare pnpm@10.34.7 --activate
@@ -16,6 +17,8 @@ COPY --from=pruner /app/out/json/ .
 RUN pnpm install --frozen-lockfile
 COPY --from=pruner /app/out/full/ .
 ENV NEXT_TELEMETRY_DISABLED=1
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN pnpm turbo run build --filter=@printing/web
 
 FROM node:24.22.0-trixie-slim AS runner

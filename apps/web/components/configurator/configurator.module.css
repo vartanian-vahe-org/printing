@@ -183,6 +183,55 @@
   margin-top: 4px;
 }
 
+/* ---------- Add to cart ---------- */
+
+.addToCart {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.addButton {
+  width: 100%;
+  background: var(--color-accent);
+  color: #ffffff;
+  border: none;
+  border-radius: 999px;
+  padding: 12px 18px;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.addButton:hover {
+  background: #1747c9;
+}
+
+.addButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.addedNote,
+.addError {
+  margin: 0;
+  font-size: 13px;
+}
+
+.addedNote {
+  color: var(--color-positive);
+}
+
+.addedNote a {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.addError {
+  color: #b45309;
+}
+
 /* ---------- Price ---------- */
 
 .price {
@@ -251,6 +300,16 @@
 .finePrint {
   margin: 8px 0 0;
   font-size: 12px;
+  color: var(--color-muted);
+}
+
+.shipEstimate {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--color-positive);
+}
+
+.shipEstimate span {
   color: var(--color-muted);
 }
 

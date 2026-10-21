@@ -37,7 +37,37 @@ On startup the `migrate` service applies all database migrations (schema + defau
 | GET | `/products/:code/configurator` | Catalog (options, rules, tiers, upcharges) + default selection |
 | GET | `/products/:code/templates` | Active templates with validated layouts |
 | POST | `/quotes` | Official price; 400 with `issues` if the configuration is invalid |
-| POST | `/uploads/presign` | Presigned PUT URL for a PDF (exact size and content type, 15 min) |
+| POST | `/uploads/presign` | Presigned PUT URL (exact size and content type, 15 min); `kind`: `artwork` (PDF, default) or `logo` (PNG/JPG/WebP/SVG, 5 MB) |
+| GET | `/cart` | Guest cart from the httpOnly `cart` cookie, re-priced with current prices |
+| POST | `/cart/items` | Add an item (configuration + template or uploaded design); creates the cart and cookie on first valid add |
+| PATCH · DELETE | `/cart/items/:id` | Change quantity (to a listed tier) · remove an item |
+| PUT | `/cart/items/:id` | Replace an item's options and design (Edit in the cart), checked like a new add |
+| POST | `/checkout/quote` | Shipping options, sales tax and totals for the cart (`address: {state, zip}`, `shippingMethodCode`) |
+| POST | `/checkout/orders` | Place the order: email, US address, shipping method, `expectedTotalCents` (409 `total_changed` if prices moved) |
+| GET | `/orders/:number` | Customer order view incl. progress and tracking; secret from the order link in the `X-Order-Token` header |
+| POST | `/orders/lookup` | "Find my order": emails the order link if number + email match (always 202; 5 per order / 10 per IP per hour) |
+| GET | `/admin/orders` | Order list: `view` (needs_payment, ready, printing, shipped, cancelled, all), `q` (#number, email, name), `page`; counts per view (admin) |
+| GET | `/admin/orders/:number` | Order detail: items with file download links, payments, shipments, history, allowed actions (admin) |
+| POST | `/admin/orders/:number/payments` · `/production` · `/shipments` · `/delivered` · `/cancel` · `/refunds` | Workflow actions; refused with 409 when the order is not in the right state; customer emails optional (admin) |
+| POST | `/admin/orders/:number/notes` · `/emails` | Internal note · resend a customer email (admin) |
+| GET | `/admin/orders/:number/items/:item/print-file` | Print-ready PDF of item `:item` (1-based): bleed-size pages, trim box, Inter/Lora embedded (admin, staff too) |
+| POST | `/admin/orders/:number/items/:item/preflight` · `/proof/approve` | Run the file check again (staff too) · approve a proof for the customer (admin) |
+| POST | `/orders/:number/items/:item/proof/approve` | Customer approves a proof; `acknowledged`: ids of every warning (`X-Order-Token`) |
+| POST | `/orders/:number/items/:item/file` | Customer replaces an uploaded PDF; it is checked again (`X-Order-Token`) |
+| GET · POST · PATCH | `/admin/staff` · `/admin/staff/:id` · `/admin/staff/:id/password` | Staff accounts (owner only) |
+| POST | `/admin/auth/password` | Change your own password (signs out your other sessions) |
+| GET · PUT | `/admin/settings` · `/settings/store` · `/settings/calendar` | Store name and emails, cutoff time, working days (owner, admin) |
+| POST · DELETE | `/admin/settings/holidays` · `/holidays/:date` | Holidays (owner, admin) |
+| GET | `/admin/audit` | Admin change history, `area` = catalog, settings, staff, auth (owner, admin) |
+| POST | `/admin/auth/password/forgot` · `/password/reset` | Admin password reset by email (link 30 min, once) |
+| POST | `/admin/auth/login/verify` · `/2fa/setup` · `/2fa/enable` · `/2fa/disable` | Two-step sign-in (authenticator app); `/admin/staff/:id/2fa/reset` for the owner |
+| POST | `/admin/maintenance/cleanup` | Run the daily cleanup now (owner): old carts, unused uploads, expired sessions |
+| PATCH · POST | `/account/profile` · `/account/password` | Customer name · password change (signed in) |
+| GET | `/account/me` | Signed-in customer (or `null`) with last shipping address |
+| POST | `/account/register` · `/sign-in` · `/sign-out` | Customer accounts (cookie `customer_session`); signing in brings the saved cart |
+| POST | `/account/verify` · `/verify/resend` | Confirm the email (token from the email link); past orders with that email join the account |
+| POST | `/account/password/forgot` · `/password/reset` | Password reset by email (always 202; link works once, 60 min) |
+| GET · POST | `/account/orders` · `/account/orders/:number/reorder` | Order history with private order links · put a past order back in the cart |
 | POST | `/admin/auth/login` · `/logout` · GET `/me` | Admin session (httpOnly cookie, 5 failed attempts / 15 min limit) |
 | GET | `/admin/products/:code/catalog` | Full configuration incl. hidden values (admin) |
 | PATCH | `/admin/products/:code/groups/:group/values/:value` | Edit label, description, order, active, default, attributes (admin) |
@@ -46,6 +76,12 @@ On startup the `migrate` service applies all database migrations (schema + defau
 | PATCH | `/admin/products/:code/templates/:template` | Show or hide a template (admin) |
 
 Admin writes run in a transaction and are rejected if the storefront could no longer build and price a default configuration.
+
+Prepress worker tests (Python):
+
+```bash
+docker compose run --rm --no-deps worker-prepress python -m pytest -q tests
+```
 
 API tests (stack must be running):
 
@@ -69,6 +105,20 @@ Schema lives in `packages/db/src/schema/`, migrations in `packages/db/migrations
 | `0005_seed_shipping_methods` | Sample shipping methods |
 | `0006_seed_business_card_templates` | 5 card templates (source: `packages/templates/seed/`) |
 | `0007_staff_sessions` | Admin login sessions |
+| `0008_commerce` | Carts, orders, order items, payments, shipments, tax rates |
+| `0009_seed_tax_rates` | California placeholder tax rate (state base 7.25%, see open issue S7) |
+| `0010_store_settings` | Store settings table (name, support email, new-order notification emails) |
+| `0011_seed_store_settings` | Placeholder store name and `.local` addresses (open issues U1, S15) |
+| `0012_order_events` | Order history (placed, payments, status changes, emails sent, notes) |
+| `0013_payment_cancelled_status` | Payment status `cancelled` (pending payment of a cancelled order) |
+| `0014_order_dates` | Estimated ship-by date and delivery window on orders |
+| `0015_order_item_print_spec` | Print spec frozen on order items (size, back mode, template layout) |
+| `0016_proofs` | File check results, proof status `needs_new_file`, proof approval time and approver |
+| `0017_audit_log` | Admin change history (catalog, prices, staff, settings) |
+| `0018_customers` | Customer accounts, sign-in sessions, one-time email links |
+| `0019_customer_indexes` | Indexes on the customer of carts and orders |
+| `0020_staff_password_resets` | One-time admin password reset links |
+| `0021_staff_totp` | Admin two-step sign-in secret (encrypted) |
 
 ```bash
 docker compose run --rm migrate      # apply pending migrations
@@ -86,6 +136,10 @@ corepack pnpm build && corepack pnpm generate:custom --name <seed_name>         
 Rules for data migrations: reference rows by `code`, insert with `ON CONFLICT DO NOTHING`, and never edit a migration that has already run in a shared environment — add a new one.
 
 ## Troubleshooting
+
+- **The API takes up to a minute to restart**: background workers (emails, file checks, cleanup) finish their current Redis call before stopping. Wait for `Nest application successfully started` in `docker compose logs api`.
+- **The API does not pick up a code change** (the file watcher in Docker occasionally misses an edit): `docker compose restart api`.
+- **e2e tests talk to the wrong Redis / Postgres**: another server on the host may already listen on the same port (e.g. a Homebrew `redis-server` on 6379 takes `localhost` before Docker). Stop it, or change `REDIS_PORT` / `POSTGRES_PORT` in `.env`.
 
 - **The page keeps reloading by itself** (usually right after adding a dependency): clear the Next.js cache and restart web:
   `docker compose exec web sh -c 'rm -rf /app/apps/web/.next/*' && docker compose restart web`

@@ -97,6 +97,7 @@
   width: 62%;
   aspect-ratio: 3.5 / 2;
   border-radius: 4px;
+  overflow: hidden;
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.18), 0 4px 10px rgba(0, 0, 0, 0.08);
 }
 
@@ -200,14 +201,14 @@
   overflow: hidden;
 }
 
-.categoryImage img {
+.categoryCard {
   width: 76%;
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.16);
   transform: rotate(-6deg);
   transition: transform 0.2s ease;
 }
 
-.categoryActive:hover .categoryImage img {
+.categoryActive:hover .categoryCard {
   transform: rotate(-2deg) scale(1.04);
 }
 
@@ -244,8 +245,9 @@
   color: var(--color-text);
 }
 
-.template img {
+.templateCard {
   width: 100%;
+  overflow: hidden;
   aspect-ratio: 3.5 / 2;
   border-radius: 3px;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -253,7 +255,7 @@
   transition: transform 0.2s ease;
 }
 
-.template:hover img {
+.template:hover .templateCard {
   transform: translateY(-3px);
 }
 

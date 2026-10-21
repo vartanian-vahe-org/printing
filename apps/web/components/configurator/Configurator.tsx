@@ -3,14 +3,21 @@
 import {
   CUSTOM_SIZE_VALUE,
   getAllowedValues,
+  resolveSelection,
   SIZE_GROUP,
   sortedGroups,
+  turnaroundDays,
   type Catalog,
+  type ProductionCalendar,
   type Selection,
 } from '@printing/pricing';
-import { renderFace, type MeasureText, type Template } from '@printing/templates';
+import { layoutFace, type MeasureText, type Template } from '@printing/templates';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { canvasMeasure } from '../../lib/browser-measure';
+import { clearDraft, loadDraft, saveDraft } from '../../lib/design-draft';
+import { editingItemId, loadItemToEdit } from '../../lib/edit-cart-item';
+import { loadTemplateFonts } from '../../lib/template-fonts';
+import { useScenePngs } from '../../lib/use-scene-png';
 import { cardSpec } from '../../lib/card3d';
 import { formatCents } from '../../lib/format';
 import {
@@ -30,10 +37,9 @@ import {
 import {
   ensureTemplateForSize,
   initialDesign,
-  renderArtwork,
+  layoutArtwork,
   templatesForSize,
   visibleFields,
-  svgDataUrl,
   type DesignState,
 } from '../../lib/design-state';
 import { useArtworkSources, usePageImage, usePdfFiles } from '../../lib/use-pdf-artwork';
@@ -41,19 +47,27 @@ import { DesignPanel } from '../design/DesignPanel';
 import { UploadPanel } from '../design/UploadPanel';
 import designStyles from '../design/design.module.css';
 import { CardPreview } from '../preview/CardPreview';
+import { AddToCart } from './AddToCart';
+import { logoFieldKey, prepareTemplateDesign, prepareUploadDesign } from '../../lib/cart-design';
 import styles from './configurator.module.css';
 import { CustomSizeInputs } from './CustomSizeInputs';
 import { OptionSelect } from './OptionSelect';
 import { PriceSummary } from './PriceSummary';
+import { ShipEstimate } from './ShipEstimate';
 import { QuantitySelect } from './QuantitySelect';
+
+/** 300 pixels per inch for the 3D card textures; small thumbnails need far less. */
+const TEXTURE_PX_PER_PT = 300 / 72;
+const THUMBNAIL_PX_PER_PT = 1.2;
 
 interface Props {
   catalog: Catalog;
   defaults: { selection: Selection; quantity: number };
+  calendar: ProductionCalendar;
   templates: Template[];
 }
 
-export function Configurator({ catalog, defaults, templates }: Props) {
+export function Configurator({ catalog, defaults, calendar, templates }: Props) {
   const [state, setState] = useState(() => initialState(catalog, defaults));
   const [autoChanges, setAutoChanges] = useState<AutoChange[]>([]);
   const [design, setDesign] = useState<DesignState>(() => initialDesign(templates, state.selection[SIZE_GROUP] ?? ''));
@@ -63,9 +77,66 @@ export function Configurator({ catalog, defaults, templates }: Props) {
   /** Design source: fill a template, or upload a print-ready PDF. */
   const [mode, setMode] = useState<'template' | 'upload'>('template');
   const pdf = usePdfFiles();
-  // Real text measurement needs a browser canvas; the server render uses the built-in approximation.
+  /** Cart item being edited (/business-cards?edit=<id>), saved back instead of added. */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  // Unsaved design from an earlier visit (U7); saved as the customer works, cleared once in the cart.
+  const [draftReady, setDraftReady] = useState(false);
+  useEffect(() => {
+    if (editingItemId()) return;
+    const draft = loadDraft();
+    if (draft && draft.design.templateCode && templates.some((t) => t.code === draft.design.templateCode)) {
+      setState({ ...draft.state, selection: resolveSelection(catalog, draft.state.selection) });
+      setDesign(draft.design);
+      setMode(draft.mode === 'upload' ? 'upload' : 'template');
+    }
+    setDraftReady(true);
+  }, [catalog, templates]);
+  useEffect(() => {
+    if (!draftReady || editingId) return;
+    const timer = setTimeout(() => saveDraft({ state, design, mode }), 400);
+    return () => clearTimeout(timer);
+  }, [draftReady, editingId, state, design, mode]);
+
+  useEffect(() => {
+    const id = editingItemId();
+    if (!id) return;
+    void loadItemToEdit(id)
+      .then((loaded) => {
+        if (!loaded) {
+          setDesignNotice('That cart item is no longer in your cart. You are designing a new one.');
+          return;
+        }
+        const { item, logoDataUrl, files } = loaded;
+        setEditingId(item.id);
+        setState((s) => ({
+          selection: resolveSelection(catalog, item.configuration.selection),
+          quantity: item.quantity,
+          customSize: item.configuration.customSize ?? s.customSize,
+        }));
+        if (item.design.mode === 'template') {
+          const editedTemplate = templates.find((t) => t.code === (item.design as { templateCode: string }).templateCode);
+          const logoKey = editedTemplate ? logoFieldKey(editedTemplate) : null;
+          setMode('template');
+          setDesign({
+            templateCode: item.design.templateCode,
+            values: { ...item.design.values, ...(logoKey && logoDataUrl ? { [logoKey]: logoDataUrl } : {}) },
+          });
+        } else {
+          setMode('upload');
+          if (files.front) void pdf.addFile('front', files.front);
+          if (files.back) void pdf.addFile('back', files.back);
+        }
+      })
+      .catch(() => setDesignNotice('Could not load that cart item.'));
+    // Runs once on arrival (pdf.addFile is stable; catalog and templates come from the server render).
+  }, []);
+  // Real text measurement needs a browser canvas and the template fonts (the same files the print
+  // PDF embeds); until they load, layout uses the built-in approximation.
   const [measure, setMeasure] = useState<MeasureText | undefined>(undefined);
-  useEffect(() => setMeasure(() => canvasMeasure), []);
+  useEffect(() => {
+    const ready = () => setMeasure(() => canvasMeasure);
+    loadTemplateFonts().then(ready, ready);
+  }, []);
 
   const groups = useMemo(() => sortedGroups(catalog), [catalog]);
   const allowed = useMemo(() => getAllowedValues(catalog, state.selection), [catalog, state.selection]);
@@ -82,15 +153,16 @@ export function Configurator({ catalog, defaults, templates }: Props) {
   // Typing stays responsive; the artwork re-renders right after.
   const values = useDeferredValue(design.values);
   const artwork = useMemo(
-    () => (template ? renderArtwork(template, values, size, backMode, measure) : null),
+    () => (template ? layoutArtwork(template, values, size, backMode, measure) : null),
     [template, values, size, backMode, measure],
   );
-  const thumbnails = useMemo(() => {
+  const artworkScenes = useMemo(() => ({ front: artwork?.front ?? null, back: artwork?.back ?? null }), [artwork]);
+  const artworkImages = useScenePngs(artworkScenes, TEXTURE_PX_PER_PT);
+  const thumbnailScenes = useMemo(() => {
     const geometry = { widthIn: size.widthIn, heightIn: size.heightIn, bleedIn: size.bleedIn, safeIn: size.safeIn };
-    return Object.fromEntries(
-      availableTemplates.map((t) => [t.code, renderFace({ layout: t.layout, side: 'front', values, geometry, measure }).svg]),
-    );
+    return Object.fromEntries(availableTemplates.map((t) => [t.code, layoutFace({ layout: t.layout, side: 'front', values, geometry, measure })]));
   }, [availableTemplates, values, size, measure]);
+  const thumbnails = useScenePngs(thumbnailScenes, THUMBNAIL_PX_PER_PT);
 
   const expectedSize = useMemo(
     () => ({ widthIn: size.widthIn, heightIn: size.heightIn, bleedIn: size.bleedIn }),
@@ -103,8 +175,8 @@ export function Configurator({ catalog, defaults, templates }: Props) {
   const previewImages =
     mode === 'upload'
       ? { front: pdfFront, back: pdfBack }
-      : artwork
-        ? { front: svgDataUrl(artwork.frontSvg), back: artwork.backSvg ? svgDataUrl(artwork.backSvg) : null }
+      : artwork && artworkImages.front
+        ? { front: artworkImages.front, back: artworkImages.back ?? null }
         : undefined;
 
   /** Applies a new configurator state and keeps the template valid for the (possibly new) size. */
@@ -200,6 +272,23 @@ export function Configurator({ catalog, defaults, templates }: Props) {
 
         <div className={styles.priceDock}>
           <PriceSummary quote={currentQuote} />
+          <ShipEstimate calendar={calendar} businessDays={turnaroundDays(catalog, currentQuote.selection)} />
+          <AddToCart
+            editingItemId={editingId}
+            onAdded={clearDraft}
+            productCode={catalog.product.code}
+            configuration={{
+              selection: currentQuote.selection,
+              quantity: state.quantity,
+              ...(size.code === CUSTOM_SIZE_VALUE ? { customSize: state.customSize } : {}),
+            }}
+            logoDataUrl={mode === 'template' && template ? (design.values[logoFieldKey(template) ?? ''] || null) : null}
+            prepareDesign={(logoKey) =>
+              mode === 'template'
+                ? prepareTemplateDesign(template, design.values, logoKey)
+                : prepareUploadDesign(pdf.files, pdfSources.checks)
+            }
+          />
         </div>
       </section>
 

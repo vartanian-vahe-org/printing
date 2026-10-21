@@ -4,6 +4,9 @@
 set -eu
 
 ENDPOINT="http://storage:9000"
+# Sites allowed to upload from the browser (comma separated). Local defaults; the demo sets its domains.
+CORS_ORIGINS="${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}"
+ORIGINS_JSON=$(printf '%s' "$CORS_ORIGINS" | sed 's/[^,][^,]*/"&"/g')
 s3api() { aws --endpoint-url "$ENDPOINT" s3api "$@"; }
 
 echo "Waiting for storage at $ENDPOINT ..."
@@ -26,7 +29,7 @@ fi
 
 s3api put-bucket-cors --bucket "$BUCKET" --cors-configuration '{
   "CORSRules": [{
-    "AllowedOrigins": ["http://localhost:3000", "http://localhost:5173"],
+    "AllowedOrigins": ['"$ORIGINS_JSON"'],
     "AllowedMethods": ["GET", "PUT", "POST", "HEAD"],
     "AllowedHeaders": ["*"],
     "ExposeHeaders": ["ETag"],

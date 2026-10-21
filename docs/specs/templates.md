@@ -40,7 +40,7 @@ Code: `packages/templates` (định dạng + bộ render), seed: `packages/templ
 
 | type | Thuộc tính |
 |---|---|
-| `text` | `field`, `x`, `y` (đường chân chữ), `maxWidth`, `align` (`start` / `middle` / `end`), `font` (`sans` / `serif`), `weight`, `size` (pt), `minSize`, `color`, `uppercase`, `letterSpacing` (em) |
+| `text` | `field`, `x`, `y` (đường chân chữ), `maxWidth`, `align` (`start` / `middle` / `end`), `font` (`sans` = Inter / `serif` = Lora, xem decision T16; weight lấy theo file font gần nhất), `weight`, `size` (pt), `minSize`, `color`, `uppercase`, `letterSpacing` (em) |
 | `image` | `field`, `x`, `y`, `width`, `height`, `align`, `placeholderColor` (khung "LOGO" khi chưa có ảnh) |
 | `rect` | `x`, `y`, `width`, `height`, `fill`, `radius` (pt) |
 

@@ -3,7 +3,7 @@ import { parseLayout, type Template } from '@printing/templates';
 import { describe, expect, it } from 'vitest';
 import { businessCards } from '../../../packages/pricing/test/fixtures/business-cards.js';
 import seed from '../../../packages/templates/seed/business-cards-templates.json' with { type: 'json' };
-import { ensureTemplateForSize, initialDesign, renderArtwork, templatesForSize, visibleFields } from '../lib/design-state.js';
+import { ensureTemplateForSize, initialDesign, layoutArtwork, templatesForSize, visibleFields } from '../lib/design-state.js';
 
 const templates: Template[] = seed.templates.map((t) => ({ ...t, layout: parseLayout(t.layout) }));
 const std = resolveSize(businessCards, 'std_3_5x2');
@@ -27,14 +27,15 @@ describe('design state', () => {
 
   it('renders both sides, or only the front when the back is blank', () => {
     const classic = templates[0]!;
-    const both = renderArtwork(classic, { name: 'Jamie Lee' }, std, 'separate');
-    expect(both.frontSvg).toContain('Jamie Lee');
-    expect(both.backSvg).toContain('Morgan Studio');
-    expect(renderArtwork(classic, {}, std, 'blank').backSvg).toBeNull();
+    const both = layoutArtwork(classic, { name: 'Jamie Lee' }, std, 'separate');
+    const texts = (scene: { items: { kind: string; text?: string }[] } | null) => scene?.items.flatMap((i) => (i.kind === 'text' ? [i.text] : [])) ?? [];
+    expect(texts(both.front)).toContain('Jamie Lee');
+    expect(texts(both.back)).toContain('Morgan Studio');
+    expect(layoutArtwork(classic, {}, std, 'blank').back).toBeNull();
   });
 
   it('reports text that is too long once per field', () => {
-    const art = renderArtwork(templates[0]!, { company: 'W'.repeat(80) }, std, 'separate');
+    const art = layoutArtwork(templates[0]!, { company: 'W'.repeat(80) }, std, 'separate');
     expect(art.warnings).toEqual([{ field: 'company', issue: 'text-too-long' }]);
   });
 

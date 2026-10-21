@@ -1,3 +1,77 @@
+/* Template fonts (Inter, Lora; SIL OFL), the same files the print PDFs embed. Copied to public/fonts by scripts/copy-fonts.mjs. */
+@font-face {
+  font-family: 'Inter';
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/Inter_400Regular.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/Inter_500Medium.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/Inter_600SemiBold.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/Inter_700Bold.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-weight: 800;
+  font-display: swap;
+  src: url('/fonts/Inter_800ExtraBold.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Lora';
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/Lora_400Regular.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Lora';
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/Lora_500Medium.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Lora';
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/Lora_600SemiBold.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Lora';
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/Lora_700Bold.ttf') format('truetype');
+}
+
+.card-art {
+  display: block;
+}
+
+.card-art svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 :root {
   --color-bg: #f7f7f5;
   --color-surface: #ffffff;
@@ -32,6 +106,19 @@ body {
   color: var(--color-text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Footer stays at the bottom on short pages (empty cart, etc.). */
+body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+body > main {
+  flex: 1 0 auto;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 button,

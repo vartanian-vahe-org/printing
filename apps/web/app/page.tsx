@@ -1,8 +1,8 @@
 import { quote, resolveSelection, sortedTiers, type Catalog } from '@printing/pricing';
-import { renderFace, type Template } from '@printing/templates';
+import type { Template } from '@printing/templates';
 import Link from 'next/link';
 import { getConfigurator, getTemplates } from '../lib/api';
-import { svgDataUrl } from '../lib/design-state';
+import { CardArt } from '../components/home/CardArt';
 import { formatCents } from '../lib/format';
 import styles from './home.module.css';
 
@@ -19,9 +19,6 @@ function startingPrice(catalog: Catalog): { cents: number; quantity: number } | 
   return { cents: q.totalCents, quantity: tier.quantity };
 }
 
-function thumbnail(template: Template, side: 'front' | 'back' = 'front'): string {
-  return svgDataUrl(renderFace({ layout: template.layout, side, values: {}, geometry: STANDARD_CARD }).svg);
-}
 
 const VALUE_PROPS = [
   { title: 'Fast turnaround', text: 'Production in as little as 1 business day. Order by 2 PM Pacific.' },
@@ -69,10 +66,11 @@ export default async function HomePage() {
           </div>
           <div className={styles.heroVisual} aria-hidden="true">
             {hero.map((template, i) => (
-              <img
+              <CardArt
                 key={template.code}
-                src={thumbnail(template, i === 1 ? 'back' : 'front')}
-                alt=""
+                template={template}
+                geometry={STANDARD_CARD}
+                side={i === 1 ? 'back' : 'front'}
                 className={`${styles.heroCard} ${styles[`heroCard${i}`]}`}
               />
             ))}
@@ -96,7 +94,7 @@ export default async function HomePage() {
         <div className={styles.categories}>
           <Link href="/business-cards" className={`${styles.category} ${styles.categoryActive}`}>
             <div className={styles.categoryImage}>
-              {templates[0] && <img src={thumbnail(templates[0])} alt="" />}
+              {templates[0] && <CardArt template={templates[0]} geometry={STANDARD_CARD} className={styles.categoryCard} />}
             </div>
             <span className={styles.categoryName}>Business Cards</span>
             {price && <span className={styles.categoryMeta}>From {formatCents(price.cents)}</span>}
@@ -122,7 +120,7 @@ export default async function HomePage() {
           <div className={styles.templates}>
             {templates.map((template) => (
               <Link key={template.code} href="/business-cards" className={styles.template}>
-                <img src={thumbnail(template)} alt={`${template.name} business card template`} />
+                <CardArt template={template} geometry={STANDARD_CARD} className={styles.templateCard} label={`${template.name} business card template`} />
                 <span className={styles.templateName}>{template.name}</span>
                 {template.description && <span className={styles.templateText}>{template.description}</span>}
               </Link>

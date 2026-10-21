@@ -1,8 +1,7 @@
 'use client';
 
-import type { RenderWarning, Template, TemplateField } from '@printing/templates';
+import { fieldFamilies, unsupportedCharacters, type RenderWarning, type Template, type TemplateField } from '@printing/templates';
 import { useId, useState } from 'react';
-import { svgDataUrl } from '../../lib/design-state';
 import { LOGO_TYPES, LogoFileError, readLogo } from '../../lib/logo-file';
 import styles from './design.module.css';
 
@@ -10,8 +9,8 @@ interface Props {
   /** Templates that support the selected size. */
   templates: Template[];
   selected: Template | null;
-  /** Front-side thumbnail SVG per template code, rendered with the customer's values. */
-  thumbnails: Record<string, string>;
+  /** PNG data URLs of each template's front, by template code. */
+  thumbnails: Partial<Record<string, string>>;
   fields: TemplateField[];
   values: Record<string, string>;
   warnings: RenderWarning[];
@@ -43,7 +42,7 @@ export function DesignPanel(props: Props) {
               title={template.description ?? template.name}
             >
               {thumbnails[template.code] && (
-                <img src={svgDataUrl(thumbnails[template.code]!)} alt="" className={styles.thumbImage} />
+                <img src={thumbnails[template.code]} alt="" className={styles.thumbImage} />
               )}
               <span className={styles.thumbName}>{template.name}</span>
             </button>
@@ -69,6 +68,11 @@ export function DesignPanel(props: Props) {
               field={field}
               value={values[field.key] ?? ''}
               tooLong={warnings.some((w) => w.field === field.key)}
+              unprintable={
+                selected
+                  ? [...new Set(fieldFamilies(selected.layout, field.key).flatMap((family) => unsupportedCharacters(values[field.key] ?? '', family)))]
+                  : []
+              }
               onChange={props.onChangeValue}
             />
           ),
@@ -84,11 +88,14 @@ function TextField({
   field,
   value,
   tooLong,
+  unprintable,
   onChange,
 }: {
   field: TemplateField;
   value: string;
   tooLong: boolean;
+  /** Characters the template font cannot print (emoji…); the cart refuses them too. */
+  unprintable: string[];
   onChange: (key: string, value: string) => void;
 }) {
   const id = useId();
@@ -106,10 +113,11 @@ function TextField({
         maxLength={field.maxLength}
         placeholder={field.sample}
         autoComplete="off"
-        aria-invalid={tooLong || undefined}
+        aria-invalid={tooLong || unprintable.length > 0 || undefined}
         onChange={(e) => onChange(field.key, e.target.value)}
       />
       {tooLong && <span className={styles.warning}>Too long to fit at a readable size. Try a shorter version.</span>}
+      {unprintable.length > 0 && <span className={styles.warning}>We can&apos;t print {unprintable.join(' ')}. Please remove {unprintable.length === 1 ? 'it' : 'them'}.</span>}
     </div>
   );
 }

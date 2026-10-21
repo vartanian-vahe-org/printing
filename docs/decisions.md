@@ -15,6 +15,10 @@ Cập nhật lần cuối: 2026-10-19
 | B7 | **Guest checkout**: đặt hàng không cần tài khoản | Giống Vistaprint, UPrinting |
 | B8 | Ship: chưa chốt hãng, MVP dùng **phương thức ship mẫu giá cố định**, miễn phí Standard cho đơn từ $100 | |
 | B9 | Sample pack: **để sau** | |
+| B10 | **Quyền nhân viên xưởng** (vai trò `staff`): xem mọi thứ; với đơn hàng được chuyển "Đang in", nhập tracking, đánh dấu đã giao, ghi chú, gửi lại email. **Không** được ghi nhận thanh toán, huỷ đơn, hoàn tiền, sửa sản phẩm/giá. Owner/admin làm được tất cả | Chốt 2026-10-21 (open issue A6), xem lại khi triển khai thật |
+| B11 | **Tài khoản và cài đặt admin** (bước 11): chỉ **owner** quản lý tài khoản nhân viên; owner/admin sửa cài đặt (tên shop, email, giờ chốt, ngày làm việc, ngày lễ) và xem nhật ký; luôn giữ ít nhất 1 owner đang hoạt động; khoá tài khoản, đổi vai trò, đặt lại mật khẩu thì người đó bị đăng xuất ngay; mật khẩu tối thiểu 12 ký tự | Chốt 2026-10-21 |
+| B12 | **Tài khoản khách** (bước 10): không bắt buộc, khách vẫn đặt hàng không cần tài khoản. Đơn cũ cùng email chỉ gắn vào tài khoản sau khi **xác thực email** (link 72 giờ; link đặt lại mật khẩu cũng tính là đã xác thực). Đơn đặt khi đã đăng nhập thuộc tài khoản ngay. Giỏ hàng đi theo tài khoản (gộp khi đăng nhập). Mật khẩu khách tối thiểu 10 ký tự | Chốt 2026-10-21 |
+| B13 | **Bảo mật admin**: xác thực 2 lớp (app Authenticator) **tự chọn** cho từng người (nên bật cho owner/admin), owner tắt được cho người mất điện thoại; quên mật khẩu admin qua link email 30 phút. Giới hạn chung 300 request/phút mỗi IP công khai cho API đọc catalog và báo giá. Dọn dữ liệu hằng ngày: giỏ quá 30 ngày, file upload không dùng quá 30 ngày | Chốt 2026-10-21 (làm các mục A4, A7, A8, X3, S11, X2) |
 
 ## Kiến trúc & stack
 
@@ -28,11 +32,14 @@ Cập nhật lần cuối: 2026-10-19
 | T6 | API: **NestJS + Express** (adapter mặc định) | Phổ biến, nhiều tài liệu, dễ custom. Không dùng Fastify. |
 | T7 | DB: **PostgreSQL + Drizzle ORM** | Gần SQL, kiểm soát migration |
 | T8 | Queue: **Redis + BullMQ** | Preflight, imposition, email, webhook |
-| T9 | Prepress worker: **Python** (PyMuPDF, pikepdf, Ghostscript) | Thư viện PDF mạnh |
+| T9 | Prepress worker: **Python** với **pikepdf** (đọc font, ảnh, nét vẽ), **pypdfium2** (render proof), **Pillow** (vẽ đường cắt, vùng an toàn); nhận việc qua BullMQ (gói `bullmq` cho Python). Không dùng PyMuPDF vì license AGPL | Cập nhật 2026-10-21 (bước 8) |
 | T10 | Auth: **tự viết** (session trong DB, cookie httpOnly, argon2, RBAC) | |
-| T11 | Thanh toán & thuế: **Stripe + Stripe Tax**. Lưu file: **AWS S3**. Ship: EasyPost/Shippo. Email: SES/Resend/Postmark. | |
+| T11 | Thanh toán & thuế: ~~Stripe + Stripe Tax~~ **chưa chốt hãng** (xem T14). Lưu file: **AWS S3**. Ship: **chưa chốt hãng** (xem T14). Email: SES/Resend/Postmark. | Cập nhật 2026-10-21 |
 | T12 | **Dựng toàn bộ bằng Docker**: môi trường dev chạy bằng Docker Compose, mỗi app có Dockerfile riêng để build image deploy. Chi tiết: [specs/docker.md](specs/docker.md) | Môi trường giống nhau giữa các máy và giữa dev với production |
 | T13 | Demo chạy trên **AWS EC2** (1 server, Docker Compose, Caddy HTTPS + mật khẩu). Chưa có domain nên dùng tạm **sslip.io** theo IP. Hướng dẫn: [deploy/README.md](../deploy/README.md) | Chốt ngày 2026-10-20 |
+| T14 | **Thanh toán, ship, sales tax** đi qua một "cổng" (interface) nhỏ vì chưa chọn hãng. Bản mặc định: thanh toán thủ công (admin bấm "Đã thanh toán"), bảng phí ship cố định + nhập mã tracking tay, bảng thuế suất theo bang. Chọn hãng xong chỉ cần thêm phần cắm, không sửa giỏ hàng/checkout/đơn hàng. Chỉ áp dụng cho 3 phần này; các dịch vụ khác vẫn theo T2. | Chốt 2026-10-21 |
+| T15 | **Email gửi qua SMTP** (thư viện nodemailer), không viết riêng cho từng hãng: SES, Postmark, Resend đều có SMTP, đổi hãng chỉ đổi biến môi trường `SMTP_*`. Local dùng Mailpit. Email đơn hàng đi qua **hàng đợi BullMQ** (T8): SMTP chậm hay lỗi không làm hỏng checkout, tự gửi lại tối đa 5 lần. **Link xem đơn** tạo bằng HMAC từ id đơn + `ORDER_LINK_SECRET`, nên gửi lại link được ("Find my order") mà DB chỉ lưu hash | Chốt 2026-10-21 |
+| T16 | **File in và font** (Phase 2 bước 7): font template là **Inter** (sans) và **Lora** (serif), license SIL OFL, lấy từ gói npm `@expo-google-fonts/*`. Preview trên web và file in dùng **cùng file font**, cùng bước dàn trang (`layoutFace` trong `@printing/templates`); web vẽ bằng canvas, server vẽ PDF bằng **pdf-lib** (nhúng nguyên font vì subset của pdf-lib làm mất chữ), logo đổi sang PNG bằng **sharp**. PDF: 1 trang mỗi mặt in, khổ = bleed, có TrimBox/BleedBox, màu RGB. Thông số in (kích thước, mặt sau, layout template) được **chốt vào đơn lúc đặt** (`order_items.print_spec`) | Chốt 2026-10-21 (giải quyết U8) |
 
 ## Sản phẩm & UX
 
