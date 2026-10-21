@@ -1,6 +1,6 @@
 # Phase 1: Configurator + Preview 3D
 
-Trạng thái: **Draft**, chờ duyệt
+Trạng thái: **Hoàn thành phần code** (2026-10-21). Còn bước 7.5 deploy staging, chờ server EC2.
 Cập nhật: 2026-10-19
 Spec liên quan: [specs/business-card-mvp.md](../specs/business-card-mvp.md), [specs/docker.md](../specs/docker.md)
 
@@ -142,8 +142,8 @@ Thay đổi trong admin hiện ngay trên homepage.
 | 7 ✅ | Template: định dạng layout JSON + bộ render JSON → SVG + migration seed 4–6 template + form điền nội dung | Nội dung hiện lên card 3D |
 | 7.1 ✅ | **Homepage** (`/`): hero, ưu điểm, danh mục, template, loại giấy, CTA. Configurator chuyển sang `/business-cards`. Header/footer dùng chung. | Homepage → bấm nút sang trang business card |
 | **7.5** | **Deploy demo** (AWS EC2 + sslip.io, file sẵn trong `deploy/`, đã chạy thử trên máy, chờ server): 1 server chạy Docker Compose bằng image production, Caddy (HTTPS), basic auth | Khách vào link demo, nhập mật khẩu, xem được |
-| 8 | Upload PDF + pdf.js + kiểm tra cơ bản | PDF hiện lên card 3D |
-| 9 | Admin cơ bản | Sửa trong admin, homepage đổi theo |
+| 8 ✅ | Upload PDF + pdf.js + kiểm tra cơ bản | PDF hiện lên card 3D |
+| 9 ✅ | Admin cơ bản | Sửa trong admin, homepage đổi theo |
 
 Mỗi bước xong là chạy được và kiểm tra được, không dồn tới cuối mới chạy.
 

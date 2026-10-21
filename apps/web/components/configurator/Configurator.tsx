@@ -33,9 +33,13 @@ import {
   renderArtwork,
   templatesForSize,
   visibleFields,
+  svgDataUrl,
   type DesignState,
 } from '../../lib/design-state';
+import { useArtworkSources, usePageImage, usePdfFiles } from '../../lib/use-pdf-artwork';
 import { DesignPanel } from '../design/DesignPanel';
+import { UploadPanel } from '../design/UploadPanel';
+import designStyles from '../design/design.module.css';
 import { CardPreview } from '../preview/CardPreview';
 import styles from './configurator.module.css';
 import { CustomSizeInputs } from './CustomSizeInputs';
@@ -56,6 +60,9 @@ export function Configurator({ catalog, defaults, templates }: Props) {
   const [designNotice, setDesignNotice] = useState<string | null>(null);
   /** Which panel is shown when the screen is too narrow for three columns. */
   const [tab, setTab] = useState<'options' | 'design'>('options');
+  /** Design source: fill a template, or upload a print-ready PDF. */
+  const [mode, setMode] = useState<'template' | 'upload'>('template');
+  const pdf = usePdfFiles();
   // Real text measurement needs a browser canvas; the server render uses the built-in approximation.
   const [measure, setMeasure] = useState<MeasureText | undefined>(undefined);
   useEffect(() => setMeasure(() => canvasMeasure), []);
@@ -84,6 +91,21 @@ export function Configurator({ catalog, defaults, templates }: Props) {
       availableTemplates.map((t) => [t.code, renderFace({ layout: t.layout, side: 'front', values, geometry, measure }).svg]),
     );
   }, [availableTemplates, values, size, measure]);
+
+  const expectedSize = useMemo(
+    () => ({ widthIn: size.widthIn, heightIn: size.heightIn, bleedIn: size.bleedIn }),
+    [size.widthIn, size.heightIn, size.bleedIn],
+  );
+  const pdfSources = useArtworkSources(pdf.files, expectedSize, backMode);
+  const pdfFront = usePageImage(mode === 'upload' ? pdfSources.front : null);
+  const pdfBack = usePageImage(mode === 'upload' ? pdfSources.back : null);
+
+  const previewImages =
+    mode === 'upload'
+      ? { front: pdfFront, back: pdfBack }
+      : artwork
+        ? { front: svgDataUrl(artwork.frontSvg), back: artwork.backSvg ? svgDataUrl(artwork.backSvg) : null }
+        : undefined;
 
   /** Applies a new configurator state and keeps the template valid for the (possibly new) size. */
   function apply(next: ConfiguratorState, changes: AutoChange[]) {
@@ -187,28 +209,59 @@ export function Configurator({ catalog, defaults, templates }: Props) {
           catalog={catalog}
           selection={state.selection}
           size={size}
-          artwork={artwork ? { front: artwork.frontSvg, back: artwork.backSvg } : undefined}
+          artwork={previewImages}
         />
       </section>
 
       <section className={`${styles.column} ${styles.designColumn}`} aria-label="Design">
         <div className={styles.columnBody}>
           <h2 className={styles.columnTitle}>Your design</h2>
-          <p className={styles.columnText}>Pick a template and fill in your details. Your card updates as you type.</p>
-          <DesignPanel
-            templates={availableTemplates}
-            selected={template}
-            thumbnails={thumbnails}
-            fields={template ? visibleFields(template, backMode) : []}
-            values={design.values}
-            warnings={artwork?.warnings ?? []}
-            notice={designNotice}
-            onSelectTemplate={(code) => {
-              setDesign((d) => ({ ...d, templateCode: code }));
-              setDesignNotice(null);
-            }}
-            onChangeValue={(key, value) => setDesign((d) => ({ ...d, values: { ...d.values, [key]: value } }))}
-          />
+          <div className={designStyles.modeSwitch} role="group" aria-label="How do you want to design?">
+            <button
+              type="button"
+              className={designStyles.modeButton}
+              aria-pressed={mode === 'template'}
+              onClick={() => setMode('template')}
+            >
+              Use a template
+            </button>
+            <button
+              type="button"
+              className={designStyles.modeButton}
+              aria-pressed={mode === 'upload'}
+              onClick={() => setMode('upload')}
+            >
+              Upload your design
+            </button>
+          </div>
+          {mode === 'template' ? (
+            <>
+              <p className={styles.columnText}>Pick a template and fill in your details. Your card updates as you type.</p>
+              <DesignPanel
+                templates={availableTemplates}
+                selected={template}
+                thumbnails={thumbnails}
+                fields={template ? visibleFields(template, backMode) : []}
+                values={design.values}
+                warnings={artwork?.warnings ?? []}
+                notice={designNotice}
+                onSelectTemplate={(code) => {
+                  setDesign((d) => ({ ...d, templateCode: code }));
+                  setDesignNotice(null);
+                }}
+                onChangeValue={(key, value) => setDesign((d) => ({ ...d, values: { ...d.values, [key]: value } }))}
+              />
+            </>
+          ) : (
+            <UploadPanel
+              files={pdf.files}
+              checks={pdfSources.checks}
+              backMode={backMode}
+              size={expectedSize}
+              onAdd={(side, file) => void pdf.addFile(side, file)}
+              onRemove={pdf.removeFile}
+            />
+          )}
         </div>
       </section>
     </div>

@@ -3,22 +3,22 @@
 import { useThree } from '@react-three/fiber';
 import { useEffect, useRef, useState } from 'react';
 import { CanvasTexture, SRGBColorSpace, type Texture } from 'three';
-import { svgDataUrl } from '../../lib/design-state';
 
 const PX_PER_INCH = 300;
 
 /**
- * Rasterizes an SVG face into a texture. Keeps showing the previous texture until the new
- * one is ready, so typing does not flicker. Returns null while there is nothing to show.
+ * Loads an image URL (SVG data URL from a template, PNG of an uploaded PDF page) into a texture
+ * sized for the card. Keeps showing the previous texture until the new one is ready, so typing
+ * does not flicker. Returns null while there is nothing to show.
  */
-export function useSvgTexture(svg: string | null, widthIn: number, heightIn: number): Texture | null {
+export function useImageTexture(src: string | null, widthIn: number, heightIn: number): Texture | null {
   const gl = useThree((state) => state.gl);
   const invalidate = useThree((state) => state.invalidate);
   const [texture, setTexture] = useState<Texture | null>(null);
   const current = useRef<Texture | null>(null);
 
   useEffect(() => {
-    if (!svg) {
+    if (!src) {
       current.current?.dispose();
       current.current = null;
       setTexture(null);
@@ -26,7 +26,7 @@ export function useSvgTexture(svg: string | null, widthIn: number, heightIn: num
     }
     let cancelled = false;
     const image = new Image();
-    image.src = svgDataUrl(svg);
+    image.src = src;
     image
       .decode()
       .then(() => {
@@ -44,12 +44,12 @@ export function useSvgTexture(svg: string | null, widthIn: number, heightIn: num
         invalidate();
       })
       .catch(() => {
-        // Keep the previous texture if this SVG cannot be decoded.
+        // Keep the previous texture if this image cannot be decoded.
       });
     return () => {
       cancelled = true;
     };
-  }, [svg, widthIn, heightIn, gl, invalidate]);
+  }, [src, widthIn, heightIn, gl, invalidate]);
 
   useEffect(() => () => current.current?.dispose(), []);
 

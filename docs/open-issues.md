@@ -16,6 +16,7 @@ Cập nhật: 2026-10-20. Khi giải quyết xong một mục: ghi quyết đị
 |---|---|---|---|---|
 | I1 | Domain thật | Demo dùng tạm `<ip>.sslip.io` (decision T13) | Mua domain nào, subdomain gì | Cao (trước khi công khai) |
 | I2 | Nơi chạy server | **Đã chốt: AWS EC2** cho demo (decision T13) | Production: EC2 hay ECS | Thấp |
+| I7 | Staging chưa bật **upload PDF lên storage** và **admin**: API và storage chưa mở ra internet, `NEXT_PUBLIC_API_URL` chưa có lúc build web. Khách vẫn xem trước được, chỉ hiện "Not uploaded" | Chỉ chạy được ở local | Khi deploy: mở `api.<domain>`, `files.<domain>`, `admin.<domain>` qua Caddy; đặt `S3_PUBLIC_ENDPOINT`, CORS, `COOKIE_SECURE=true`; build web với `NEXT_PUBLIC_API_URL` và admin với `VITE_API_URL` | Cao (khi deploy) |
 | I3 | Bản demo chạy Postgres/Redis trong container | Chấp nhận cho demo | Production thật chuyển sang RDS/ElastiCache khi nào | Cao |
 | I4 | Registry lưu image, CI/CD | Chưa có | ECR hay GHCR; build/deploy tự động bằng gì | Thấp |
 | I5 | Quản lý secret ở production (mật khẩu DB, key Stripe, mật khẩu admin đầu tiên) | Dev dùng `.env` | Dùng AWS Secrets Manager / SSM hay biến môi trường của server | Cao |
@@ -74,7 +75,17 @@ Cập nhật: 2026-10-20. Khi giải quyết xong một mục: ghi quyết đị
 |---|---|---|---|---|
 | X1 | API tạo link upload (`POST /uploads/presign`) chưa giới hạn tần suất, ai cũng gọi được | Chưa có rate limit | Thêm rate limit / chỉ cấp link khi có phiên làm việc hợp lệ | Cao |
 | X2 | File upload không dùng tới (khách bỏ dở) nằm mãi trong bucket | Chưa dọn | Lifecycle rule tự xoá sau N ngày | Thấp |
+| X4 | File PDF sai kích thước vẫn được upload (khách có thể đổi size cho khớp sau). Kiểm tra PDF hiện chỉ ở trình duyệt | Chấp nhận cho Phase 1 | Kiểm tra lại phía server khi đặt hàng (preflight) | Thấp |
 | X3 | API chưa giới hạn tần suất cho `POST /quotes` và `GET /configurator` | Không giới hạn | Thêm rate limit chung cho API công khai | Thấp |
+
+## Admin
+
+| # | Vấn đề | Hiện tại | Cần quyết | Mức |
+|---|---|---|---|---|
+| A1 | Chưa có **nhật ký thay đổi** (ai sửa gì, lúc nào). Mới chỉ ghi `updated_by` trên từng dòng | `updated_by` | Thêm bảng audit log khi cần truy vết | Thấp |
+| A2 | Chưa có màn hình **quản lý tài khoản admin**: thêm người, đổi mật khẩu, phân quyền | Chỉ có admin seed từ `.env` | Cần bao nhiêu người dùng admin, vai trò ra sao | Cao (trước khi giao cho nhân viên) |
+| A3 | Admin chưa **thêm mới** được option, mức số lượng, sản phẩm. Mới chỉ sửa, ẩn/hiện cái đã có | Thêm bằng migration | Có cần thêm mới trong admin không | Thấp |
+| A4 | Giới hạn đăng nhập sai lưu trong bộ nhớ của API: khởi động lại API là mất, chạy nhiều instance thì mỗi cái đếm riêng | Đủ cho 1 instance | Chuyển sang Redis khi chạy nhiều instance | Thấp |
 
 ## Dữ liệu & migration
 

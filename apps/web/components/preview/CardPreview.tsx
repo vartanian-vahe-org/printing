@@ -6,7 +6,7 @@ import { Component, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { cardSpec, finishLabel } from '../../lib/card3d';
 import { formatInches } from '../../lib/format';
 import { CardPlaceholder } from '../configurator/CardPlaceholder';
-import type { ArtworkSvg, CardSide } from './CardScene';
+import type { ArtworkImages, CardSide } from './CardScene';
 import styles from './preview.module.css';
 
 /** three.js is loaded only in the browser, after the page is interactive. */
@@ -38,7 +38,7 @@ interface Props {
   catalog: Catalog;
   selection: Selection;
   size: ResolvedSize;
-  artwork?: ArtworkSvg;
+  artwork?: ArtworkImages;
   /** Stretch to the parent's height instead of the default fixed stage height. */
   fill?: boolean;
 }

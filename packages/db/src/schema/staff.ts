@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { boolean, check, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { boolean, check, index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { id, timestamps } from './columns.js';
 
 export const staffUsers = pgTable(
@@ -19,4 +19,25 @@ export const staffUsers = pgTable(
     uniqueIndex('staff_users_email_key').on(sql`lower(${t.email})`),
     check('staff_users_role_check', sql`${t.role} in ('owner', 'admin', 'staff')`),
   ],
+);
+
+/**
+ * Admin login sessions. Only a SHA-256 hash of the session token is stored, so a database
+ * leak does not expose usable cookies.
+ */
+export const staffSessions = pgTable(
+  'staff_sessions',
+  {
+    id: id(),
+    tokenHash: text('token_hash').notNull(),
+    staffUserId: uuid('staff_user_id')
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: 'cascade' }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    userAgent: text('user_agent'),
+    ip: text('ip'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('staff_sessions_token_hash_key').on(t.tokenHash), index('staff_sessions_staff_user_idx').on(t.staffUserId)],
 );

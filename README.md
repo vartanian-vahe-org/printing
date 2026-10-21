@@ -18,7 +18,7 @@ The first run installs dependencies inside the containers and takes a few minute
 | Service | URL |
 |---|---|
 | Storefront (Next.js) | http://localhost:3000 |
-| Admin (React + Vite) | http://localhost:5173 |
+| Admin (React + Vite) | http://localhost:5173 (sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`) |
 | API (NestJS) | http://localhost:4000/health |
 | Mailpit (dev email inbox) | http://localhost:8025 |
 | Storage (RustFS, S3-compatible) | API http://localhost:9000, console http://localhost:9001 |
@@ -38,13 +38,21 @@ On startup the `migrate` service applies all database migrations (schema + defau
 | GET | `/products/:code/templates` | Active templates with validated layouts |
 | POST | `/quotes` | Official price; 400 with `issues` if the configuration is invalid |
 | POST | `/uploads/presign` | Presigned PUT URL for a PDF (exact size and content type, 15 min) |
+| POST | `/admin/auth/login` · `/logout` · GET `/me` | Admin session (httpOnly cookie, 5 failed attempts / 15 min limit) |
+| GET | `/admin/products/:code/catalog` | Full configuration incl. hidden values (admin) |
+| PATCH | `/admin/products/:code/groups/:group/values/:value` | Edit label, description, order, active, default, attributes (admin) |
+| PUT | `/admin/products/:code/rules` | Set or remove a rule (admin) |
+| PUT | `/admin/products/:code/pricing` | Base prices, tier visibility/default, upcharges (admin) |
+| PATCH | `/admin/products/:code/templates/:template` | Show or hide a template (admin) |
+
+Admin writes run in a transaction and are rejected if the storefront could no longer build and price a default configuration.
 
 API tests (stack must be running):
 
 ```bash
 cd apps/api
 DATABASE_URL=postgres://printing:printing@localhost:5432/printing corepack pnpm test:integration
-corepack pnpm test:e2e
+set -a; . ../../.env; set +a; corepack pnpm test:e2e      # admin tests need ADMIN_EMAIL / ADMIN_PASSWORD
 ```
 
 ## Database
@@ -60,6 +68,7 @@ Schema lives in `packages/db/src/schema/`, migrations in `packages/db/migrations
 | `0004_seed_production_settings` | 2 PM Pacific cutoff, Mon–Fri, US holidays 2026–2027 |
 | `0005_seed_shipping_methods` | Sample shipping methods |
 | `0006_seed_business_card_templates` | 5 card templates (source: `packages/templates/seed/`) |
+| `0007_staff_sessions` | Admin login sessions |
 
 ```bash
 docker compose run --rm migrate      # apply pending migrations
@@ -75,6 +84,12 @@ corepack pnpm build && corepack pnpm generate:custom --name <seed_name>         
 ```
 
 Rules for data migrations: reference rows by `code`, insert with `ON CONFLICT DO NOTHING`, and never edit a migration that has already run in a shared environment — add a new one.
+
+## Troubleshooting
+
+- **The page keeps reloading by itself** (usually right after adding a dependency): clear the Next.js cache and restart web:
+  `docker compose exec web sh -c 'rm -rf /app/apps/web/.next/*' && docker compose restart web`
+- **A new workspace package is not found in a container**: add a `node_modules` volume for it in `docker-compose.yml` (see the existing `*_node_modules` volumes), then `docker compose run --rm deps`.
 
 ## Common commands
 

@@ -27,6 +27,11 @@ export const config = {
     secretAccessKey: required('S3_SECRET_ACCESS_KEY'),
     forcePathStyle: process.env.S3_FORCE_PATH_STYLE === 'true',
   },
+  admin: {
+    /** Send the session cookie over HTTPS only. Must be true outside local development. */
+    cookieSecure: process.env.COOKIE_SECURE === 'true',
+    sessionDays: Number(process.env.ADMIN_SESSION_DAYS ?? 7),
+  },
   uploads: {
     /** Placeholder limit, see docs/open-issues.md S2. */
     maxBytes: Number(process.env.UPLOAD_MAX_MB ?? 50) * MB,

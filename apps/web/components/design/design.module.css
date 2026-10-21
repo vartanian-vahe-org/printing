@@ -196,3 +196,188 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ---------- Mode switch (template / upload) ---------- */
+
+.modeSwitch {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+}
+
+.modeButton {
+  flex: 1;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.modeButton[aria-pressed='true'] {
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* ---------- Upload ---------- */
+
+.guide {
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  font-size: 13px;
+}
+
+.guide ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--color-muted);
+  line-height: 1.5;
+}
+
+.fileBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fileHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 22px 12px;
+  border: 2px dashed #cfcfca;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.dropzone:hover,
+.dropzoneActive {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.dropTitle {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.fileCard {
+  border: 1px solid var(--color-border);
+  border-left-width: 4px;
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fileCard[data-level='ok'],
+.fileCard[data-level='info'] {
+  border-left-color: var(--color-positive);
+}
+
+.fileCard[data-level='warning'] {
+  border-left-color: #d97706;
+}
+
+.fileCard[data-level='error'] {
+  border-left-color: #dc2626;
+}
+
+.fileRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.fileName {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileSize {
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.checks li {
+  display: flex;
+  gap: 8px;
+}
+
+.checkIcon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+  color: #ffffff;
+  background: var(--color-muted);
+}
+
+.checks li[data-level='ok'] .checkIcon {
+  background: var(--color-positive);
+}
+
+.checks li[data-level='warning'] .checkIcon {
+  background: #d97706;
+}
+
+.checks li[data-level='error'] .checkIcon {
+  background: #dc2626;
+}
+
+.uploadState {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.uploadState[data-state='done'] {
+  color: var(--color-positive);
+}
+
+.uploadState[data-state='failed'] {
+  color: #b45309;
+}
+
+.fileActions {
+  display: flex;
+  gap: 14px;
+}

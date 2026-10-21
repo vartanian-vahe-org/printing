@@ -8,7 +8,8 @@
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
     "test:integration": "vitest run test/integration",
-    "test:e2e": "vitest run test/e2e"
+    "test:e2e": "vitest run test/e2e",
+    "test": "vitest run test/unit"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1153.0",
@@ -16,6 +17,7 @@
     "@nestjs/common": "^11.2.7",
     "@nestjs/core": "^11.2.7",
     "@nestjs/platform-express": "^11.2.7",
+    "@node-rs/argon2": "^2.2.2",
     "@printing/db": "workspace:*",
     "@printing/pricing": "workspace:*",
     "@printing/templates": "workspace:*",

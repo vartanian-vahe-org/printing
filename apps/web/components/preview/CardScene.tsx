@@ -6,7 +6,7 @@ import { useEffect, useRef } from 'react';
 import { NeutralToneMapping, type Group } from 'three';
 import { cameraDistance, type CardSpec } from '../../lib/card3d';
 import { CardMesh } from './CardMesh';
-import { useSvgTexture } from './useSvgTexture';
+import { useImageTexture } from './useImageTexture';
 
 const FOV = 32;
 const AUTO_ROTATE_SPEED = 0.45; // radians per second
@@ -14,15 +14,15 @@ const BASE_TILT_X = -0.12;
 
 export type CardSide = 'front' | 'back';
 
-/** SVG artwork per side (from the template renderer); null shows the built-in sample design. */
-export interface ArtworkSvg {
+/** Artwork image URL per side (template SVG or uploaded PDF page); null shows the sample design. */
+export interface ArtworkImages {
   front: string | null;
   back: string | null;
 }
 
 interface SceneProps {
   spec: CardSpec;
-  artwork?: ArtworkSvg;
+  artwork?: ArtworkImages;
   /** Bumped by the Front/Back buttons; the card turns to that side. */
   turnRequest: { side: CardSide; id: number } | null;
   autoRotate: boolean;
@@ -39,8 +39,8 @@ function TurningCard({ spec, artwork, turnRequest, autoRotate }: Omit<SceneProps
   const group = useRef<Group>(null);
   const target = useRef<number | null>(null);
   const invalidate = useThree((state) => state.invalidate);
-  const front = useSvgTexture(artwork?.front ?? null, spec.widthIn, spec.heightIn);
-  const back = useSvgTexture(artwork?.back ?? null, spec.widthIn, spec.heightIn);
+  const front = useImageTexture(artwork?.front ?? null, spec.widthIn, spec.heightIn);
+  const back = useImageTexture(artwork?.back ?? null, spec.widthIn, spec.heightIn);
 
   useEffect(() => {
     if (!turnRequest || !group.current) return;
