@@ -1,0 +1,383 @@
+/*
+ * "Design studio" layout.
+ *   >= 1280px: three columns that fit the viewport (options | 3D preview | design); each side column
+ *              scrolls on its own, so the design form is reachable without scrolling the page.
+ *   900-1279px: preview + one panel with Options / Design tabs.
+ *   < 900px:   preview on top, tabs and panel below, normal page scroll.
+ */
+.studio {
+  display: grid;
+  grid-template-columns: 340px minmax(420px, 1fr) 400px;
+  grid-template-areas: 'options preview design';
+  gap: 20px;
+  height: calc(100dvh - 190px);
+  min-height: 620px;
+}
+
+.tabs {
+  display: none;
+  grid-area: tabs;
+  align-items: center;
+  gap: 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 6px;
+}
+
+.tab {
+  flex: 1;
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 9px 12px;
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.tab[aria-selected='true'] {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.tabTotal {
+  padding: 0 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.previewColumn {
+  grid-area: preview;
+  min-height: 0;
+}
+
+.column {
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+}
+
+.optionsColumn {
+  grid-area: options;
+}
+
+.designColumn {
+  grid-area: design;
+}
+
+.columnBody {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.columnTitle {
+  margin: 0;
+  font-size: 17px;
+}
+
+.columnText {
+  margin: -10px 0 0;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+/* Price stays visible at the bottom of the options column while it scrolls. */
+.priceDock {
+  position: sticky;
+  bottom: 0;
+  margin-top: auto;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  padding: 14px 20px 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.smallLabel {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.select {
+  width: 100%;
+  appearance: none;
+  background: var(--color-surface)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b6b70' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")
+    no-repeat right 14px center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 11px 38px 11px 12px;
+  font-size: 15px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.select:hover {
+  border-color: #c9c9c4;
+}
+
+.select:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+.hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.customSize {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 12px;
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+}
+
+.customSizeField {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.times {
+  padding-bottom: 12px;
+  color: var(--color-muted);
+}
+
+.notice {
+  background: var(--color-notice-bg);
+  border: 1px solid var(--color-notice-border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.notice p {
+  margin: 0;
+}
+
+.notice p + p {
+  margin-top: 4px;
+}
+
+/* ---------- Price ---------- */
+
+.price {
+  display: flex;
+  flex-direction: column;
+}
+
+.priceRow {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.priceTotal {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.priceEach {
+  color: var(--color-muted);
+}
+
+.breakdown {
+  margin-top: 10px;
+  font-size: 14px;
+}
+
+.breakdown summary {
+  cursor: pointer;
+  color: var(--color-accent);
+  width: fit-content;
+}
+
+.breakdown dl {
+  margin: 10px 0 0;
+}
+
+.breakdown dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.breakdown dt {
+  color: var(--color-muted);
+}
+
+.breakdown dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.breakdownTotal {
+  border-top: 1px dashed var(--color-border);
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+.breakdownTotal dt {
+  color: var(--color-text);
+}
+
+.finePrint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+/* ---------- Temporary flat preview (replaced by 3D in step 6) ---------- */
+
+.previewStage {
+  background: linear-gradient(160deg, #eceae4, #dcd9d1);
+  border-radius: var(--radius-lg);
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  gap: 20px;
+}
+
+.card {
+  max-width: 420px;
+  max-height: 420px;
+  background: #fbfbfa;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 8%;
+  transition: border-radius 0.2s ease, width 0.2s ease;
+}
+
+.card[data-finish='gloss'],
+.card[data-finish='silk'] {
+  background: linear-gradient(125deg, #ffffff 0%, #f4f4f2 45%, #ffffff 55%, #f2f2ef 100%);
+}
+
+.card[data-finish='uv'] {
+  background: linear-gradient(125deg, #ffffff 0%, #ecece9 40%, #ffffff 50%, #e9e9e6 100%);
+}
+
+.card[data-finish='none'] {
+  background: #f6f3ec;
+}
+
+.card[data-finish='soft_touch'] {
+  background: #f3f3f1;
+}
+
+.cardName {
+  font-weight: 700;
+  font-size: clamp(14px, 2.2vw, 22px);
+}
+
+.cardTitle {
+  color: var(--color-muted);
+  font-size: clamp(11px, 1.4vw, 14px);
+  margin-top: 4px;
+}
+
+.previewCaption {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+/* ---------- Mobile ---------- */
+
+@media (max-width: 1279px) {
+  .studio {
+    grid-template-columns: minmax(0, 1.15fr) minmax(360px, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      'preview tabs'
+      'preview panel';
+  }
+
+  .tabs {
+    display: flex;
+  }
+
+  .optionsColumn,
+  .designColumn {
+    grid-area: panel;
+  }
+
+  .studio[data-tab='options'] .designColumn,
+  .studio[data-tab='design'] .optionsColumn {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .studio {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    grid-template-areas:
+      'preview'
+      'tabs'
+      'panel';
+    height: auto;
+    min-height: 0;
+    gap: 14px;
+  }
+
+  .previewColumn {
+    height: 360px;
+  }
+
+  .column {
+    overflow: visible;
+  }
+
+  .previewStage {
+    min-height: 260px;
+    padding: 28px;
+  }
+
+  /* On phones the price becomes a compact bar pinned to the bottom of the screen. */
+  .priceDock {
+    padding: 10px 16px;
+    box-shadow: 0 -8px 20px rgba(0, 0, 0, 0.08);
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  }
+
+  .priceDock .finePrint {
+    display: none;
+  }
+
+  .priceTotal {
+    font-size: 24px;
+  }
+}

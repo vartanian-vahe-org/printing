@@ -1,0 +1,22 @@
+{
+	email {$ACME_EMAIL}
+}
+
+# Storefront demo, password protected. HTTPS certificates are issued automatically.
+{$DOMAIN} {
+	encode zstd gzip
+
+	basic_auth {
+		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Keep the demo out of search engines.
+		X-Robots-Tag "noindex, nofollow"
+	}
+
+	reverse_proxy web:3000
+}

@@ -1,0 +1,163 @@
+/* ---------- Header ---------- */
+
+.header {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.topBar {
+  background: #1c1c1e;
+  color: #f2f2f0;
+  text-align: center;
+  font-size: 13px;
+  padding: 7px 16px;
+}
+
+.headerInner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+
+.brand {
+  font-weight: 800;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex: 1;
+}
+
+.navLink {
+  color: var(--color-text);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.navLink:hover {
+  color: var(--color-accent);
+}
+
+.navSoon {
+  color: #a2a2a7;
+  font-size: 15px;
+  cursor: default;
+}
+
+.headerCta {
+  background: var(--color-accent);
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.headerCta:hover {
+  background: #1747c9;
+}
+
+/* ---------- Footer ---------- */
+
+.footer {
+  background: #1c1c1e;
+  color: #d4d4d1;
+  margin-top: 64px;
+}
+
+.footerInner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 44px 24px 28px;
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 32px;
+}
+
+.footerBrand .brand {
+  color: #ffffff;
+}
+
+.footerBrand p {
+  margin: 10px 0 0;
+  max-width: 340px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.footerColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.footerColumn h2 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #ffffff;
+}
+
+.footerColumn a {
+  color: #d4d4d1;
+  text-decoration: none;
+}
+
+.footerColumn a:hover {
+  color: #ffffff;
+}
+
+.footerSoon {
+  color: #8a8a8f;
+}
+
+.footerBottom {
+  border-top: 1px solid #333336;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px 24px 24px;
+  font-size: 13px;
+  color: #8a8a8f;
+}
+
+@media (max-width: 760px) {
+  .headerInner {
+    padding: 12px 16px;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  .nav {
+    order: 3;
+    flex-basis: 100%;
+    gap: 16px;
+    overflow-x: auto;
+  }
+
+  .headerCta {
+    margin-left: auto;
+  }
+
+  .footerInner {
+    grid-template-columns: 1fr;
+    padding: 32px 16px 20px;
+  }
+
+  .footerBottom {
+    padding: 16px;
+  }
+}

@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/*.tsbuildinfo
+**/__pycache__
+**/.venv
+.git
+.env
+.env.*
+!.env.example
+docs

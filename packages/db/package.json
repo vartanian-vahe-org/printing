@@ -1,0 +1,32 @@
+{
+  "name": "@printing/db",
+  "version": "0.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "migrations"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "typecheck": "tsc --noEmit",
+    "generate": "drizzle-kit generate",
+    "generate:custom": "drizzle-kit generate --custom",
+    "migrate": "node dist/scripts/migrate.js",
+    "seed:admin": "node dist/scripts/seed-admin.js"
+  },
+  "dependencies": {
+    "@node-rs/argon2": "^2.2.2",
+    "drizzle-orm": "~0.45.4",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@printing/tsconfig": "workspace:*",
+    "@types/node": "^24.19.2",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "~0.31.11",
+    "typescript": "~5.9.3"
+  }
+}

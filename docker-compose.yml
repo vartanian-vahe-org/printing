@@ -1,0 +1,208 @@
+# Local development environment.
+#   cp .env.example .env
+#   docker compose up
+name: printing
+
+x-node-app: &node-app
+  build:
+    context: .
+    dockerfile: docker/node-dev.Dockerfile
+  image: printing-node-dev
+  volumes:
+    - .:/app
+    - node_modules:/app/node_modules
+    - api_node_modules:/app/apps/api/node_modules
+    - web_node_modules:/app/apps/web/node_modules
+    - admin_node_modules:/app/apps/admin/node_modules
+    - db_node_modules:/app/packages/db/node_modules
+    - pricing_node_modules:/app/packages/pricing/node_modules
+    - templates_node_modules:/app/packages/templates/node_modules
+    - pnpm_store:/pnpm/store
+
+services:
+  # ---------- Infrastructure ----------
+  postgres:
+    image: postgres:18.6-trixie
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      # Postgres 18+ images keep data under /var/lib/postgresql/<major>/docker
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8.8.3-trixie
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  storage:
+    # S3-compatible object storage for local dev (stands in for AWS S3).
+    image: rustfs/rustfs:1.0.3
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY_ID}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_ACCESS_KEY}
+      RUSTFS_CONSOLE_ENABLE: "true"
+    ports:
+      - "${STORAGE_PORT}:9000"
+      - "${STORAGE_CONSOLE_PORT}:9001"
+    volumes:
+      - storage_data:/data
+
+  storage-init:
+    # Creates the upload bucket and its CORS rules, then exits.
+    image: amazon/aws-cli:2.38.1
+    depends_on:
+      - storage
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: ${S3_REGION}
+      BUCKET: ${S3_BUCKET}
+    volumes:
+      - ./docker/storage-init.sh:/storage-init.sh:ro
+    entrypoint: ["sh", "/storage-init.sh"]
+    restart: "no"
+
+  mailpit:
+    image: axllent/mailpit:v1.31.6
+    ports:
+      - "${MAILPIT_UI_PORT}:8025"
+      - "${MAILPIT_SMTP_PORT}:1025"
+
+  # ---------- Node apps ----------
+  deps:
+    # Installs workspace dependencies into the shared volumes, then exits.
+    <<: *node-app
+    command: ["pnpm", "install", "--frozen-lockfile", "--config.confirm-modules-purge=false"]
+    restart: "no"
+
+  migrate:
+    # Applies schema + data (seed) migrations and creates the first admin, then exits.
+    <<: *node-app
+    command:
+      - sh
+      - -c
+      - pnpm --filter @printing/db build && pnpm --filter @printing/db migrate && pnpm --filter @printing/db seed:admin
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      ADMIN_NAME: ${ADMIN_NAME}
+    restart: "no"
+
+  api:
+    <<: *node-app
+    # Builds @printing/db and @printing/pricing first, then watches them together with the API.
+    command: ["pnpm", "turbo", "run", "dev", "--filter=@printing/api...", "--ui=stream"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
+    environment:
+      PORT: 4000
+      CORS_ORIGINS: http://localhost:${WEB_PORT},http://localhost:${ADMIN_PORT}
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://storage:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:${STORAGE_PORT}
+      S3_FORCE_PATH_STYLE: "true"
+      S3_REGION: ${S3_REGION}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      UPLOAD_MAX_MB: 50
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+    ports:
+      - "${API_PORT}:4000"
+
+  web:
+    <<: *node-app
+    # Builds workspace packages it uses (e.g. @printing/pricing) once; the api service keeps them rebuilt on change.
+    command: ["sh", "-c", "pnpm turbo run build --filter=@printing/web^... --ui=stream && pnpm --filter @printing/web dev"]
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+      api:
+        condition: service_started
+    environment:
+      API_INTERNAL_URL: http://api:4000
+      NEXT_PUBLIC_API_URL: http://localhost:${API_PORT}
+      NEXT_TELEMETRY_DISABLED: 1
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+      - api_node_modules:/app/apps/api/node_modules
+      - web_node_modules:/app/apps/web/node_modules
+      - admin_node_modules:/app/apps/admin/node_modules
+      - db_node_modules:/app/packages/db/node_modules
+      - pricing_node_modules:/app/packages/pricing/node_modules
+      - templates_node_modules:/app/packages/templates/node_modules
+      - pnpm_store:/pnpm/store
+      - web_next:/app/apps/web/.next
+    ports:
+      - "${WEB_PORT}:3000"
+
+  admin:
+    <<: *node-app
+    command: ["pnpm", "--filter", "@printing/admin", "dev"]
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+      api:
+        condition: service_started
+    environment:
+      VITE_API_URL: http://localhost:${API_PORT}
+    ports:
+      - "${ADMIN_PORT}:5173"
+
+  # ---------- Python worker ----------
+  worker-prepress:
+    build:
+      context: apps/worker-prepress
+      target: dev
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - ./apps/worker-prepress/src:/app/src
+
+volumes:
+  postgres_data:
+  redis_data:
+  storage_data:
+  node_modules:
+  api_node_modules:
+  web_node_modules:
+  admin_node_modules:
+  db_node_modules:
+  pricing_node_modules:
+  templates_node_modules:
+  pnpm_store:
+  web_next:
