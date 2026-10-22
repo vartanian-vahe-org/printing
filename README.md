@@ -182,9 +182,10 @@ packages/
   db/                Drizzle schema, migrations, migrate + admin seed scripts
   pricing/           Option rules, custom size and price calculation (shared by web and api)
   templates/         Template layout format + JSON -> SVG renderer (shared by web and api)
+  api-proxy/         Same-origin /api proxy used by web and admin on Vercel (plain JS)
   tsconfig/          Shared TypeScript config
 docker/              Dev Dockerfile and init scripts
-deploy/              Demo deployment (EC2 + Caddy), see deploy/README.md
+deploy/              Demo deployment: all on EC2 (deploy/README.md) or sites on Vercel + API on EC2 (deploy/VERCEL.md)
 docs/                Decisions, research, specs, plans
 ```
 

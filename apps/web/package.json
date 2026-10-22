@@ -13,6 +13,7 @@
   "dependencies": {
     "@expo-google-fonts/inter": "0.4.2",
     "@expo-google-fonts/lora": "0.4.2",
+    "@printing/api-proxy": "workspace:*",
     "@printing/pricing": "workspace:*",
     "@printing/templates": "workspace:*",
     "@react-three/drei": "^10.7.9",

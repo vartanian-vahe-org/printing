@@ -31,6 +31,8 @@ export const config = {
   webUrl: required('WEB_URL').replace(/\/+$/, ''),
   /** Admin app base URL, for links in staff emails (password reset). */
   adminUrl: required('ADMIN_URL').replace(/\/+$/, ''),
+  /** Shared with the sites' /api proxies on Vercel (@printing/api-proxy); unset when they run next to the API. */
+  apiProxySecret: process.env.API_PROXY_SECRET || undefined,
   /** Encrypts secrets stored in the database (TOTP keys). Changing it disables existing 2FA. */
   dataEncryptionKey: required('DATA_ENCRYPTION_KEY'),
   /** Signs the private order links; changing it breaks links already emailed. */

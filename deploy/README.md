@@ -4,6 +4,13 @@ Single server running the production images with Docker Compose. Caddy terminate
 (Let's Encrypt) and protects the site with a password. Hostname comes from sslip.io
 (`1.2.3.4` → `1-2-3-4.sslip.io`) until a real domain is chosen (docs/open-issues.md I1).
 
+Two layouts, chosen when `.env.demo` is generated:
+
+| Layout | Storefront and admin | Server runs | Guide |
+|---|---|---|---|
+| **All-in-one** | Containers on the server | Everything | This page |
+| **Split** | Two Vercel projects (`apps/web`, `apps/admin`) | API, worker, database, storage, mail | [VERCEL.md](VERCEL.md), then steps 1–3 here |
+
 ## 1. Create the server (AWS console)
 
 | Setting | Value |
@@ -19,7 +26,8 @@ Single server running the production images with Docker Compose. Caddy terminate
 ## 2. Prepare (from this repo, on your machine)
 
 ```bash
-deploy/make-env.sh <elastic-ip> <your-email>      # writes deploy/.env.demo + deploy/.demo-credentials
+deploy/make-env.sh <elastic-ip> <your-email>      # all-in-one: writes deploy/.env.demo + deploy/.demo-credentials
+# split: deploy/make-env.sh <elastic-ip> <your-email> <storefront-url> <admin-url>   (see VERCEL.md)
 scp -i ~/.ssh/printing-demo.pem deploy/server-setup.sh ubuntu@<elastic-ip>:~
 ssh -i ~/.ssh/printing-demo.pem ubuntu@<elastic-ip> 'bash server-setup.sh'
 ```
@@ -32,6 +40,8 @@ DEPLOY_HOST=<elastic-ip> DEPLOY_KEY=~/.ssh/printing-demo.pem deploy/deploy.sh
 
 The first build takes several minutes. Then open `https://<ip-with-dashes>.sslip.io`; the
 username and password are in `deploy/.demo-credentials` (git-ignored, share it privately).
+In the split layout the storefront and admin are the Vercel URLs instead, and the server only
+answers on `api.`, `files.` and `mail.`.
 
 | Address | What |
 |---|---|
@@ -45,9 +55,9 @@ username and password are in `deploy/.demo-credentials` (git-ignored, share it p
 
 | Service | Notes |
 |---|---|
-| caddy | Only public service (80/443). HTTPS for every subdomain, basic auth on the site, admin and mail, `noindex` header |
-| web | Next.js storefront (production image), built with `NEXT_PUBLIC_API_URL=https://api.<domain>` |
-| admin | Admin SPA (nginx), built with `VITE_API_URL=https://api.<domain>` |
+| caddy | Only public service (80/443). HTTPS for every subdomain, basic auth on the site, admin and mail, `noindex` header. Split layout: `Caddyfile.backend` (api, files, mail only) |
+| web | All-in-one only. Next.js storefront (production image), built with `NEXT_PUBLIC_API_URL=https://api.<domain>` |
+| admin | All-in-one only. Admin SPA (nginx), built with `VITE_API_URL=https://api.<domain>` |
 | api | NestJS API (production image), `COOKIE_SECURE=true`, CORS for the site and admin |
 | worker-prepress | File checks and proof images (Python) |
 | mailpit | Catches all outgoing email (no real email is sent from the demo) |

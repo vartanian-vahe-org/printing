@@ -1,0 +1,31 @@
+{
+	email {$ACME_EMAIL}
+}
+
+# Split layout: storefront and admin run on Vercel and call this API through their /api proxy
+# (with API_PROXY_SECRET). This server serves the API, file storage and the demo mailbox only.
+
+api.{$DOMAIN} {
+	encode zstd gzip
+	header X-Robots-Tag "noindex, nofollow"
+	reverse_proxy api:4000
+}
+
+# Presigned uploads and downloads go straight from the browser to storage (Host header kept,
+# the signatures include it).
+files.{$DOMAIN} {
+	header X-Robots-Tag "noindex, nofollow"
+	request_body {
+		max_size 60MB
+	}
+	reverse_proxy storage:9000
+}
+
+# Emails the demo sent (Mailpit), behind the demo password.
+mail.{$DOMAIN} {
+	basic_auth {
+		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+	}
+	header X-Robots-Tag "noindex, nofollow"
+	reverse_proxy mailpit:8025
+}

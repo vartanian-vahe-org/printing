@@ -17,6 +17,9 @@ importers:
 
   apps/admin:
     dependencies:
+      '@printing/api-proxy':
+        specifier: workspace:*
+        version: link:../../packages/api-proxy
       qrcode:
         specifier: 1.5.4
         version: 1.5.4
@@ -154,6 +157,9 @@ importers:
       '@expo-google-fonts/lora':
         specifier: 0.4.2
         version: 0.4.2
+      '@printing/api-proxy':
+        specifier: workspace:*
+        version: link:../../packages/api-proxy
       '@printing/pricing':
         specifier: workspace:*
         version: link:../../packages/pricing
@@ -203,6 +209,8 @@ importers:
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.19.2)(vite@7.3.7(@types/node@24.19.2)(terser@5.51.2)(tsx@4.23.15))
+
+  packages/api-proxy: {}
 
   packages/db:
     dependencies:

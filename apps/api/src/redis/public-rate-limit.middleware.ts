@@ -1,5 +1,6 @@
 import { Injectable, type NestMiddleware } from '@nestjs/common';
-import type { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Response } from 'express';
+import type { TrustedRequest } from '../common/trusted-proxy.js';
 import { RateLimiter } from './rate-limiter.js';
 
 const PER_MINUTE = 300;
@@ -27,9 +28,10 @@ export function isInternalIp(ip: string): boolean {
 export class PublicRateLimitMiddleware implements NestMiddleware {
   constructor(private readonly limiter: RateLimiter) {}
 
-  async use(request: Request, _response: Response, next: NextFunction) {
+  async use(request: TrustedRequest, _response: Response, next: NextFunction) {
     const ip = request.ip ?? '';
-    if (!ip || isInternalIp(ip)) return next();
+    // The storefront's server rendering pages (on Vercel it has a public address) is not a visitor.
+    if (!ip || isInternalIp(ip) || request.fromSiteServer) return next();
     try {
       await this.limiter.consume(`public:ip:${ip}`, PER_MINUTE, 60);
       next();

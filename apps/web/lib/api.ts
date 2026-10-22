@@ -7,7 +7,16 @@ export interface ConfiguratorResponse {
   calendar: ProductionCalendar;
 }
 
-/** Server-side only: the API is reached on the internal Docker network. */
+/**
+ * Headers for server-side calls: with the API on another host (EC2) the shared secret marks them as
+ * the storefront's own server, so they are not counted against a visitor's rate limit.
+ */
+function serverHeaders(): HeadersInit {
+  const secret = process.env.API_PROXY_SECRET;
+  return secret ? { 'x-proxy-secret': secret } : {};
+}
+
+/** Server-side only: the API is reached on the internal Docker network (or its public URL from Vercel). */
 export async function getConfigurator(productCode: string): Promise<ConfiguratorResponse> {
   const apiUrl = process.env.API_INTERNAL_URL;
   if (!apiUrl) throw new Error('API_INTERNAL_URL is not set');
@@ -15,6 +24,7 @@ export async function getConfigurator(productCode: string): Promise<Configurator
   // No caching: admin changes to options and prices must show up immediately.
   const res = await fetch(`${apiUrl}/products/${encodeURIComponent(productCode)}/configurator`, {
     cache: 'no-store',
+    headers: serverHeaders(),
   });
   if (!res.ok) throw new Error(`Configurator request failed with HTTP ${res.status}`);
   return (await res.json()) as ConfiguratorResponse;
@@ -24,7 +34,7 @@ export async function getConfigurator(productCode: string): Promise<Configurator
 export async function getTemplates(productCode: string): Promise<Template[]> {
   const apiUrl = process.env.API_INTERNAL_URL;
   if (!apiUrl) throw new Error('API_INTERNAL_URL is not set');
-  const res = await fetch(`${apiUrl}/products/${encodeURIComponent(productCode)}/templates`, { cache: 'no-store' });
+  const res = await fetch(`${apiUrl}/products/${encodeURIComponent(productCode)}/templates`, { cache: 'no-store', headers: serverHeaders() });
   if (!res.ok) throw new Error(`Templates request failed with HTTP ${res.status}`);
   return ((await res.json()) as { templates: Template[] }).templates;
 }

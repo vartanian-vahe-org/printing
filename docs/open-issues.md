@@ -20,6 +20,7 @@ Cập nhật: 2026-10-20. Khi giải quyết xong một mục: ghi quyết đị
 | I4 | Registry lưu image, CI/CD | Chưa có | ECR hay GHCR; build/deploy tự động bằng gì | Thấp |
 | I5 | Quản lý secret ở production (mật khẩu DB, key Stripe, mật khẩu admin đầu tiên) | Dev dùng `.env` | Dùng AWS Secrets Manager / SSM hay biến môi trường của server | Cao |
 | I6 | Phiên bản thư viện: đang dùng bản ổn định cũ hơn một major (pnpm 10, NestJS 11, Vite 7, TypeScript 5.9) | Ổn định | Khi nào nâng cấp | Thấp |
+| I7 | Deploy tách Vercel + EC2 (decision T17): preview deployment của Vercel không nằm trong CORS của storage, nên trên preview không upload file được | Chỉ URL production được thêm vào `SITE_URLS` | Có cần preview upload được không (thêm wildcard CORS cho `*.vercel.app` của team, hoặc chỉ dùng production) | Thấp |
 
 ## Giá
 
