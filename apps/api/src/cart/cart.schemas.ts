@@ -18,6 +18,8 @@ const templateDesignSchema = z
     /** Text fields only. The logo is uploaded first and referenced by `logoKey`. */
     values: z.record(z.string().regex(/^[a-z][a-z0-9_]*$/), z.string().max(300)).default({}),
     logoKey: key.optional(),
+    /** The customer reviewed and approved the preview when adding to the cart: no proof after ordering. */
+    reviewed: z.literal(true).optional(),
   })
   .strict();
 
@@ -34,6 +36,8 @@ const uploadDesignSchema = z
     mode: z.literal('upload'),
     front: fileRefSchema,
     back: fileRefSchema.optional(),
+    /** 'send': a proof to approve after ordering · 'skip': print right away once the file check passes. */
+    proof: z.enum(['send', 'skip']).default('send'),
   })
   .strict();
 

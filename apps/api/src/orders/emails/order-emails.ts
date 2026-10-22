@@ -3,6 +3,11 @@ import type { OrderView } from '../orders.service.js';
 import { addressLines, button, datesLine, escapeHtml, itemsTableHtml, itemsText, layout, money, type RenderedEmail, type StoreIdentity } from './layout.js';
 
 /** Estimates assume production starts now; manual payment and proofs can move them. */
+
+/** Items that still need the customer's proof approval (not approved up front, not "print right away"). */
+function proofsToCome(order: OrderView): boolean {
+  return order.items.some((item) => item.proof.status !== 'approved' && !(item.design.mode === 'upload' && item.design.proof === 'skip'));
+}
 const DATES_NOTE = 'Dates assume payment and proof approval today and move if either comes later.';
 
 /** To the customer right after checkout. */
@@ -11,6 +16,10 @@ export function orderConfirmationEmail(order: OrderView, store: StoreIdentity, o
   const subject = `Order #${order.number} received – ${store.storeName}`;
   const payment = order.paymentInstructions;
   const dates = datesLine(order);
+  const next = proofsToCome(order)
+    ? ['We check your design and send you a proof to approve.', 'We print in our California shop once payment and proof are done.']
+    : ['We check your print file and get it ready for the press.', 'We print in our California shop once payment is received.'];
+  next.push('You get a tracking number when your order ships.');
   const html = layout(
     store,
     subject,
@@ -24,9 +33,7 @@ ${itemsTableHtml(order)}
 <p style="margin:0;">${addressLines(order).map(escapeHtml).join('<br>')}</p>
 <h2 style="font-size:16px;margin:24px 0 6px;">What happens next</h2>
 <ol style="margin:0;padding-left:20px;">
-<li>We check your design and send you a proof to approve.</li>
-<li>We print in our California shop once payment and proof are done.</li>
-<li>You get a tracking number when your order ships.</li>
+${next.map((step) => `<li>${escapeHtml(step)}</li>`).join('\n')}
 </ol>`,
   );
   const text = [
@@ -43,9 +50,7 @@ ${itemsTableHtml(order)}
     ...addressLines(order),
     '',
     'What happens next:',
-    '1. We check your design and send you a proof to approve.',
-    '2. We print in our California shop once payment and proof are done.',
-    '3. You get a tracking number when your order ships.',
+    ...next.map((step, i) => `${i + 1}. ${step}`),
     '',
     `Questions? Reply to this email or write to ${store.supportEmail}.`,
   ].join('\n');

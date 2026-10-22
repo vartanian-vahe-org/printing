@@ -165,8 +165,12 @@ export class CheckoutService {
           printSpec: item.printSpec as unknown as Record<string, unknown>,
           quantity: item.quote.quantity,
           totalCents: item.totalCents,
-          // Our designer makes the file first; the file check runs once it is delivered.
+          // Our designer makes the file first; the file check runs once it is delivered. A template the
+          // customer reviewed and approved when adding it to the cart needs no proof after ordering.
           ...(item.designService ? { proofStatus: 'awaiting_design' } : {}),
+          ...(item.design.mode === 'template' && item.design.reviewed
+            ? { proofStatus: 'approved', proofApprovedAt: new Date(), proofApprovedBy: 'customer' }
+            : {}),
         })),
       );
 

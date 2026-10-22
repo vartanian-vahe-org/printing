@@ -60,6 +60,9 @@ import { TemplateBrowser } from '../design/TemplateBrowser';
 import { UploadPanel } from '../design/UploadPanel';
 import { CardPreview } from '../preview/CardPreview';
 import { AddToCart } from './AddToCart';
+import { DesignReview } from './DesignReview';
+import { ProofChoice } from './ProofChoice';
+import type { UploadProof } from '../../lib/cart';
 import styles from './configurator.module.css';
 import { CustomSizeInputs } from './CustomSizeInputs';
 import { OptionSelect } from './OptionSelect';
@@ -105,6 +108,11 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
   const [method, setMethod] = useState<DesignMethod | null>(null);
   const [tierCode, setTierCode] = useState<string | null>(null);
   const [brief, setBrief] = useState<BriefState>(EMPTY_BRIEF);
+  /** Template: the customer approved the preview (needed to add to the cart). Any change asks again. */
+  const [reviewed, setReviewed] = useState(false);
+  useEffect(() => setReviewed(false), [design, state]);
+  /** Upload: a proof after ordering, or print right away. */
+  const [uploadProof, setUploadProof] = useState<UploadProof>('send');
   const pdf = usePdfFiles();
   /** Cart item being edited (/business-cards?edit=<id>), saved back instead of added. */
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -167,6 +175,7 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
           });
         } else {
           setMethod('upload');
+          setUploadProof(itemDesign.proof ?? 'send');
           if (files.front) void pdf.addFile('front', files.front);
           if (files.back) void pdf.addFile('back', files.back);
         }
@@ -478,6 +487,15 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
                   </div>
                 ))}
               </dl>
+              {isEnabled('cart') && method === 'template' && template && (
+                <DesignReview
+                  fields={visibleFields(template, backMode).filter((f) => f.type === 'text')}
+                  values={design.values}
+                  checked={reviewed}
+                  onChange={setReviewed}
+                />
+              )}
+              {isEnabled('cart') && method === 'upload' && <ProofChoice value={uploadProof} onChange={setUploadProof} />}
             </div>
             <div className={styles.priceDock}>
               {priceAndDate}
@@ -494,9 +512,9 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
                   logoDataUrl={method === 'template' && template ? (design.values[logoFieldKey(template) ?? ''] || null) : null}
                   prepareDesign={(logoKey) =>
                     method === 'template'
-                      ? prepareTemplateDesign(template, design.values, logoKey)
+                      ? prepareTemplateDesign(template, design.values, logoKey, reviewed)
                       : method === 'upload'
-                        ? prepareUploadDesign(pdf.files, pdfSources.checks)
+                        ? prepareUploadDesign(pdf.files, pdfSources.checks, uploadProof)
                         : prepareServiceDesign(tierCode, brief)
                   }
                 />

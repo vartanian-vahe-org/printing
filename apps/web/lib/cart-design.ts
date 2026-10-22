@@ -3,7 +3,7 @@
  * cart's design payload, or explains what is still missing.
  */
 import type { Template } from '@printing/templates';
-import type { CartItem, ServiceBrief } from './cart';
+import type { CartItem, ServiceBrief, UploadProof } from './cart';
 import { worstLevel, type CheckResult } from './pdf-checks';
 import type { PdfFileState } from './use-pdf-artwork';
 
@@ -25,12 +25,15 @@ export function logoFieldKey(template: Template): string | null {
   return template.layout.fields.find((f) => f.type === 'image')?.key ?? null;
 }
 
+/** `reviewed`: the customer approved the preview (no proof after ordering, as on Vistaprint). */
 export function prepareTemplateDesign(
   template: Template | null,
   values: Record<string, string>,
   logoKey: string | null,
+  reviewed: boolean,
 ): PreparedDesign {
   if (!template) return { ok: false, message: 'Choose a template first.' };
+  if (!reviewed) return { ok: false, message: 'Review your design and tick the box to approve it.' };
   return {
     ok: true,
     design: {
@@ -38,6 +41,7 @@ export function prepareTemplateDesign(
       templateCode: template.code,
       values: templateTextValues(template, values),
       ...(logoKey ? { logoKey } : {}),
+      reviewed: true,
     },
   };
 }
@@ -45,6 +49,7 @@ export function prepareTemplateDesign(
 export function prepareUploadDesign(
   files: Partial<Record<'front' | 'back', PdfFileState>>,
   checks: { front: CheckResult[]; back: CheckResult[] },
+  proof: UploadProof = 'send',
 ): PreparedDesign {
   const front = files.front;
   if (!front) return { ok: false, message: 'Upload your front PDF first.' };
@@ -61,7 +66,7 @@ export function prepareUploadDesign(
 
   const ref = (file: PdfFileState) => ({ key: file.key!, fileName: file.fileName, pageCount: file.pdf?.pageCount ?? 1 });
   const back = files.back?.status === 'ready' ? files.back : undefined;
-  return { ok: true, design: { mode: 'upload', front: ref(front), ...(back ? { back: ref(back) } : {}) } };
+  return { ok: true, design: { mode: 'upload', front: ref(front), ...(back ? { back: ref(back) } : {}), proof } };
 }
 
 /** A logo or reference file picked for the designer; `key` is set once it is uploaded. */

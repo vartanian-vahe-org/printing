@@ -8,6 +8,7 @@ Web in ấn online cho thị trường Mỹ, in tại xưởng riêng. Sản ph�
 | [open-issues.md](open-issues.md) | **Vấn đề còn mở / đang dùng tạm**, giải quyết lần lượt sau demo |
 | [research/01-market-overview.md](research/01-market-overview.md) | Tổng quan thị trường in online ở Mỹ, đối thủ, traffic |
 | [research/02-business-card-competitors.md](research/02-business-card-competitors.md) | Dữ liệu configurator business card lấy trực tiếp từ các site lớn |
+| [research/03-checkout-flows.md](research/03-checkout-flows.md) | Luồng từ thiết kế tới checkout của Vistaprint, UPrinting, 48HourPrint, MOO so với mình |
 | [specs/business-card-mvp.md](specs/business-card-mvp.md) | Spec MVP business card: option, ràng buộc, giá, file in, data model, seed |
 | [specs/templates.md](specs/templates.md) | Định dạng layout JSON của template, bộ render, 5 template đã seed |
 | [specs/docker.md](specs/docker.md) | Docker: môi trường dev bằng Compose, image deploy cho từng app |

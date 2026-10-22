@@ -30,11 +30,15 @@ describe('template design', () => {
   });
 
   it('needs a template and references the uploaded logo', () => {
-    expect(prepareTemplateDesign(null, {}, null)).toEqual({ ok: false, message: 'Choose a template first.' });
-    expect(prepareTemplateDesign(classic, { name: 'Jamie' }, 'logos/2026/10/x.png')).toEqual({
+    expect(prepareTemplateDesign(null, {}, null, true)).toEqual({ ok: false, message: 'Choose a template first.' });
+    expect(prepareTemplateDesign(classic, { name: 'Jamie' }, 'logos/2026/10/x.png', true)).toEqual({
       ok: true,
-      design: { mode: 'template', templateCode: 'classic', values: { name: 'Jamie' }, logoKey: 'logos/2026/10/x.png' },
+      design: { mode: 'template', templateCode: 'classic', values: { name: 'Jamie' }, logoKey: 'logos/2026/10/x.png', reviewed: true },
     });
+  });
+
+  it('needs the customer to approve the preview', () => {
+    expect(prepareTemplateDesign(classic, { name: 'Jamie' }, null, false)).toMatchObject({ ok: false, message: expect.stringContaining('approve') });
   });
 });
 
@@ -54,8 +58,9 @@ describe('upload design', () => {
   it('builds front and optional back references with page counts', () => {
     expect(prepareUploadDesign({ front: file() }, ok)).toEqual({
       ok: true,
-      design: { mode: 'upload', front: { key: file().key, fileName: 'card.pdf', pageCount: 2 } },
+      design: { mode: 'upload', front: { key: file().key, fileName: 'card.pdf', pageCount: 2 }, proof: 'send' },
     });
+    expect(prepareUploadDesign({ front: file() }, ok, 'skip')).toMatchObject({ ok: true, design: { proof: 'skip' } });
     const withBack = prepareUploadDesign({ front: file(), back: file({ fileName: 'back.pdf' }) }, ok);
     expect(withBack.ok && withBack.design.mode === 'upload' && withBack.design.back?.fileName).toBe('back.pdf');
   });

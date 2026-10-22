@@ -30,6 +30,8 @@ const order: OrderView = {
       design: { mode: 'template', templateCode: 'classic', values: { name: '"Jamie" & <Co>' } },
       quantity: 500,
       totalCents: 3948,
+      proof: { status: 'pending', issues: [], images: [], approvedAt: null, checkFailed: false },
+      designService: null,
     },
   ],
   shipments: [],

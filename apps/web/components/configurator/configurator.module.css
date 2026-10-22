@@ -588,3 +588,59 @@
     padding: 28px;
   }
 }
+
+/* ---------- Approval before the cart ---------- */
+
+.review,
+.proofChoice {
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.review ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--color-muted);
+}
+
+.reviewWarning {
+  margin: 0;
+  color: #8a5a00;
+}
+
+.reviewCheck,
+.proofOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.reviewCheck input,
+.proofOption input {
+  margin-top: 3px;
+}
+
+.proofChoice legend {
+  float: left;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.proofOption span {
+  display: flex;
+  flex-direction: column;
+}
+
+.proofOption small {
+  color: var(--color-muted);
+  font-size: 12px;
+}

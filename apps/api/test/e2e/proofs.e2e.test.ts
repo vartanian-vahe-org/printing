@@ -142,4 +142,36 @@ describe('proofs', () => {
     const file = await uploadPdf(await cardPdf(true), 'card.pdf');
     expect((await post(`/orders/${order.number}/items/1/file`, { front: file }, { 'x-order-token': order.accessToken })).status).toBe(409);
   });
+  it('template approved when added to the cart: no proof to approve after ordering', async () => {
+    const email = uniqueEmail();
+    const order = await placeOrder(email, { mode: 'template', templateCode: 'classic', values: { name: 'Jamie Rivera' }, reviewed: true });
+    const placed = await customerOrder(order.number, order.accessToken);
+    expect(placed.items[0].proof).toMatchObject({ status: 'approved', approvedAt: expect.any(String) });
+    // The print file and proof images are still made, and the approval stays.
+    const checked = await waitFor(async () => {
+      const o = await customerOrder(order.number, order.accessToken);
+      return o.items[0].proof.images.length > 0 ? o : undefined;
+    });
+    expect(checked.items[0].proof.status).toBe('approved');
+    expect(checked.proofStatus).toBe('approved');
+    const confirmation = await waitFor(async () => (await searchMail(`to:"${email}" subject:"received"`))[0]);
+    expect(confirmation).toBeTruthy();
+    // No proof-ready email for a design approved up front.
+    expect(await searchMail(`to:"${email}" subject:"proof"`)).toHaveLength(0);
+  });
+
+  it('upload with "print right away": approved once the file check passes', async () => {
+    const pdf = await uploadPdf(await cardPdf(true), 'ready.pdf');
+    const order = await placeOrder(uniqueEmail(), { mode: 'upload', front: pdf, proof: 'skip' });
+    const checked = await waitForProofs(order.number, order.accessToken);
+    expect(checked.items[0].proof.status).toBe('approved');
+    expect(checked.items[0].design.proof).toBe('skip');
+  });
+
+  it('upload with "print right away" still stops on file errors', async () => {
+    const pdf = await uploadPdf(await cardPdf(false), 'not-embedded.pdf');
+    const order = await placeOrder(uniqueEmail(), { mode: 'upload', front: pdf, proof: 'skip' });
+    const checked = await waitForProofs(order.number, order.accessToken);
+    expect(checked.items[0].proof.status).toBe('needs_new_file');
+  });
 });

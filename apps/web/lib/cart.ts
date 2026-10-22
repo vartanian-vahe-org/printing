@@ -10,11 +10,13 @@ export interface CartItem {
     customSize?: { widthIn: number; heightIn: number };
   };
   design:
-    | { mode: 'template'; templateCode: string; values: Record<string, string>; logoKey?: string }
+    | { mode: 'template'; templateCode: string; values: Record<string, string>; logoKey?: string; reviewed?: true }
     | {
         mode: 'upload';
         front: { key: string; fileName: string; pageCount: number };
         back?: { key: string; fileName: string; pageCount: number };
+        /** 'send': proof to approve after ordering · 'skip': print right away. */
+        proof?: UploadProof;
       }
     | { mode: 'service'; tierCode: string; brief: ServiceBrief };
   summary: { label: string; value: string }[];
@@ -30,6 +32,8 @@ export interface CartItem {
   /** "Let us design it" package and its fee (included in totalCents), or null. */
   designService: { code: string; name: string; priceCents: number } | null;
 }
+
+export type UploadProof = 'send' | 'skip';
 
 /** What the customer tells our designer ("let us design it for you"). */
 export interface ServiceBrief {

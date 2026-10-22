@@ -429,7 +429,13 @@ export class CartService {
         if (value.trim()) values[fieldKey] = value.trim();
       }
       if (design.logoKey) await this.assertUploaded('logo', design.logoKey, 'The logo');
-      return { mode: 'template', templateCode: template.code, values, ...(design.logoKey ? { logoKey: design.logoKey } : {}) };
+      return {
+        mode: 'template',
+        templateCode: template.code,
+        values,
+        ...(design.logoKey ? { logoKey: design.logoKey } : {}),
+        ...(design.reviewed ? { reviewed: true as const } : {}),
+      };
     }
 
     await this.assertUploaded('artwork', design.front.key, 'The front PDF');
@@ -438,6 +444,6 @@ export class CartService {
       throw new BadRequestException('Add your back design: upload a back file or a 2-page PDF.');
     }
     // A back file is not used when the back is blank or repeats the front.
-    return backMode === 'separate' ? design : { mode: 'upload', front: design.front };
+    return backMode === 'separate' ? design : { mode: 'upload', front: design.front, proof: design.proof };
   }
 }

@@ -122,12 +122,18 @@ export class PrepressService implements OnModuleInit, OnModuleDestroy {
       message: `${labels.get(w.field) ?? w.field}: the text is long, so it is printed at the smallest size and may be hard to read.`,
     }));
     const record: PreflightRecord = { run, queuedAt: new Date().toISOString(), layoutIssues };
+    const design = item.design as { mode: 'template' | 'upload' | 'service' };
+    // A template approved by the customer stays approved: the check only makes the print file and proof images.
+    const keepApproval = design.mode === 'template' && item.proofStatus === 'approved';
     await this.db
       .update(orderItems)
-      .set({ printKey, proofStatus: 'pending', preflight: record as unknown as Record<string, unknown>, proofApprovedAt: null, proofApprovedBy: null })
+      .set({
+        printKey,
+        preflight: record as unknown as Record<string, unknown>,
+        ...(keepApproval ? {} : { proofStatus: 'pending', proofApprovedAt: null, proofApprovedBy: null }),
+      })
       .where(eq(orderItems.id, item.id));
 
-    const design = item.design as { mode: 'template' | 'upload' | 'service' };
     await this.jobs.add(
       'check',
       // A designer's file is checked like a customer's upload.
@@ -158,16 +164,41 @@ export class PrepressService implements OnModuleInit, OnModuleDestroy {
         ...previous.layoutIssues,
         ...(result.issues ?? []).map((i) => ({ ...i, id: issueId(i.code, i.page) })),
       ];
-      const status = issues.some((i) => i.level === 'error') ? 'needs_new_file' : 'awaiting_customer';
-      const record: PreflightRecord = { ...previous, checkedAt: new Date().toISOString(), issues, proofs: result.proofs ?? [], error: undefined };
-      await tx.update(orderItems).set({ proofStatus: status, preflight: record as unknown as Record<string, unknown> }).where(eq(orderItems.id, item.id));
-
       const errors = issues.filter((i) => i.level === 'error').length;
       const warnings = issues.length - errors;
+      const design = item.design as { mode: string; proof?: 'send' | 'skip' };
+      const record: PreflightRecord = { ...previous, checkedAt: new Date().toISOString(), issues, proofs: result.proofs ?? [], error: undefined };
+
+      let status: string;
+      let outcome: string;
+      if (item.proofStatus === 'approved') {
+        // Approved by the customer before ordering (reviewed template): stays approved.
+        status = 'approved';
+        outcome = 'design approved by the customer before ordering';
+      } else if (errors) {
+        status = 'needs_new_file';
+        outcome = 'blocked, new file needed';
+      } else if (design.mode === 'upload' && design.proof === 'skip') {
+        // The customer chose to print right away; the notes of the check are theirs to accept.
+        status = 'approved';
+        outcome = 'printing without a proof, as the customer chose';
+      } else {
+        status = 'awaiting_customer';
+        outcome = 'ready for the customer';
+      }
+      await tx
+        .update(orderItems)
+        .set({
+          proofStatus: status,
+          preflight: record as unknown as Record<string, unknown>,
+          ...(status === 'approved' && item.proofStatus !== 'approved' ? { proofApprovedAt: new Date(), proofApprovedBy: 'customer' } : {}),
+        })
+        .where(eq(orderItems.id, item.id));
+
       await tx.insert(orderEvents).values({
         orderId: item.orderId,
         type: 'preflight',
-        message: `File check for ${item.productName}: ${errors ? `${errors} error(s), ` : ''}${warnings} warning(s) · proof ${status === 'needs_new_file' ? 'blocked, new file needed' : 'ready for the customer'}`,
+        message: `File check for ${item.productName}: ${errors ? `${errors} error(s), ` : ''}${warnings} warning(s) · ${outcome}`,
         data: { orderItemId: item.id, status },
         createdBy: 'system',
       });

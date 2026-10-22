@@ -113,7 +113,8 @@ export class ProofsService {
       if (backMode === 'separate' && !files.back && files.front.pageCount < 2) {
         throw new BadRequestException('Add your back design: upload a back file or a 2-page PDF.');
       }
-      const design = { mode: 'upload', front: files.front, ...(backMode === 'separate' && files.back ? { back: files.back } : {}) };
+      const proof = (item.design as { proof?: 'send' | 'skip' }).proof ?? 'send';
+      const design = { mode: 'upload', front: files.front, ...(backMode === 'separate' && files.back ? { back: files.back } : {}), proof };
       await tx.update(orderItems).set({ design }).where(eq(orderItems.id, item.id));
       await tx.insert(orderEvents).values({
         orderId: order.id,
