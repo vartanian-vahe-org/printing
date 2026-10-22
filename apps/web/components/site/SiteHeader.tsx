@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { AccountLink } from './AccountLink';
+import { isEnabled } from '../../lib/features';
 import { CartLink } from './CartLink';
 import styles from './site.module.css';
 
@@ -25,11 +26,8 @@ export function SiteHeader() {
             Stickers &amp; Labels
           </span>
         </nav>
-        <AccountLink />
-        <CartLink />
-        <Link href="/business-cards" className={styles.headerCta}>
-          Start designing
-        </Link>
+        {isEnabled('account') && <AccountLink />}
+        {isEnabled('cart') && <CartLink />}
       </div>
     </header>
   );

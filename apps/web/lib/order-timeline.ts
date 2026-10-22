@@ -36,7 +36,9 @@ export function orderTimeline(order: Order): TimelineStep[] {
           ? 'Your proof is ready. Please review and approve it below.'
           : order.proofStatus === 'needs_new_file'
             ? 'We need a new file from you. See below.'
-            : 'We are checking your design.',
+            : order.proofStatus === 'awaiting_design'
+              ? 'Our designer is working on your design. We will email you the proof.'
+              : 'We are checking your design.',
     },
     {
       key: 'printing',

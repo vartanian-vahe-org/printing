@@ -8,10 +8,17 @@ import { StorageService } from '../storage/storage.service.js';
 import { UPLOAD_KINDS } from './upload-kinds.js';
 
 const LOGO_MAX_BYTES = 5 * 1024 * 1024;
+const REFERENCE_MAX_BYTES = 25 * 1024 * 1024;
+
+const TYPE_ERRORS = {
+  artwork: 'Only PDF files are accepted',
+  logo: 'Logos must be PNG, JPG, WebP or SVG',
+  reference: 'Files must be PNG, JPG, WebP, SVG or PDF',
+} as const;
 
 const presignRequestSchema = z
   .object({
-    kind: z.enum(['artwork', 'logo']).default('artwork'),
+    kind: z.enum(['artwork', 'logo', 'reference']).default('artwork'),
     filename: z.string().trim().min(1).max(255),
     contentType: z.string(),
     sizeBytes: z.number().int().positive(),
@@ -22,10 +29,10 @@ const presignRequestSchema = z
       ctx.addIssue({
         code: 'custom',
         path: ['contentType'],
-        message: body.kind === 'artwork' ? 'Only PDF files are accepted' : 'Logos must be PNG, JPG, WebP or SVG',
+        message: TYPE_ERRORS[body.kind],
       });
     }
-    const max = body.kind === 'artwork' ? config.uploads.maxBytes : LOGO_MAX_BYTES;
+    const max = { artwork: config.uploads.maxBytes, logo: LOGO_MAX_BYTES, reference: REFERENCE_MAX_BYTES }[body.kind];
     if (body.sizeBytes > max) {
       ctx.addIssue({ code: 'custom', path: ['sizeBytes'], message: `File must be at most ${max / 1024 / 1024} MB` });
     }

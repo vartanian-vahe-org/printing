@@ -47,7 +47,40 @@ const pricingSchema = z.object({
     .optional(),
 });
 
-const templatePatchSchema = z.object({ isActive: z.boolean() }).strict();
+const slug = z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, 'Use lowercase letters, numbers and dashes').max(60);
+
+const templatePatchSchema = z
+  .object({ isActive: z.boolean().optional(), tags: z.record(slug, z.array(slug).max(50)).optional() })
+  .strict()
+  .refine((p) => Object.keys(p).length > 0, { message: 'Nothing to update' });
+
+const facetsSchema = z.object({
+  facets: z
+    .array(
+      z
+        .object({
+          code: slug,
+          name: z.string().trim().min(1).max(60),
+          values: z.array(z.object({ code: slug, name: z.string().trim().min(1).max(60) }).strict()).max(50),
+        })
+        .strict(),
+    )
+    .max(10),
+});
+
+const designTierPatchSchema = z
+  .object({
+    name: z.string().trim().min(1).max(60).optional(),
+    description: z.string().trim().max(300).nullable().optional(),
+    priceCents: z.number().int().min(0).max(1_000_000).optional(),
+    features: z.array(z.string().trim().min(1).max(200)).max(12).optional(),
+    designDays: z.number().int().min(1).max(60).optional(),
+    revisions: z.number().int().min(0).max(100).nullable().optional(),
+    sortOrder: z.number().int().min(0).max(10_000).optional(),
+    isActive: z.boolean().optional(),
+  })
+  .strict()
+  .refine((p) => Object.keys(p).length > 0, { message: 'Nothing to update' });
 
 @Controller('admin/products/:code')
 @UseGuards(AdminGuard)
@@ -106,5 +139,26 @@ export class AdminCatalogController {
     @Req() request: AdminRequest,
   ) {
     await this.catalog.updateTemplate(productCode, template, body, request.staff!.id);
+  }
+
+  @Put('template-filters')
+  @HttpCode(204)
+  async setTemplateFilters(
+    @Param('code') productCode: string,
+    @Body(new ZodValidationPipe(facetsSchema)) body: z.infer<typeof facetsSchema>,
+    @Req() request: AdminRequest,
+  ) {
+    await this.catalog.setFacets(productCode, body.facets, request.staff!.id);
+  }
+
+  @Patch('design-services/:tier')
+  @HttpCode(204)
+  async updateDesignService(
+    @Param('code') productCode: string,
+    @Param('tier') tier: string,
+    @Body(new ZodValidationPipe(designTierPatchSchema)) body: z.infer<typeof designTierPatchSchema>,
+    @Req() request: AdminRequest,
+  ) {
+    await this.catalog.updateDesignTier(productCode, tier, body, request.staff!.id);
   }
 }

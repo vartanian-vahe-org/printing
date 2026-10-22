@@ -6,48 +6,40 @@ import { LOGO_TYPES, LogoFileError, readLogo } from '../../lib/logo-file';
 import styles from './design.module.css';
 
 interface Props {
-  /** Templates that support the selected size. */
-  templates: Template[];
   selected: Template | null;
-  /** PNG data URLs of each template's front, by template code. */
-  thumbnails: Partial<Record<string, string>>;
   fields: TemplateField[];
   values: Record<string, string>;
   warnings: RenderWarning[];
   notice: string | null;
-  onSelectTemplate: (code: string) => void;
+  /** Back to the template list. */
+  onChangeTemplate: () => void;
   onChangeValue: (key: string, value: string) => void;
 }
 
+/** Step 3 with a template: the customer's text and logo, shown live on the card preview. */
 export function DesignPanel(props: Props) {
-  const { templates, selected, thumbnails, fields, values, warnings, notice } = props;
+  const { selected, fields, values, warnings, notice } = props;
 
-  if (templates.length === 0) {
-    return <p className={styles.empty}>No templates are available for this size yet. Try a standard size.</p>;
+  if (!selected) {
+    return (
+      <div className={styles.panel}>
+        <p className={styles.empty}>Choose a template first.</p>
+        <button type="button" className={styles.linkButton} onClick={props.onChangeTemplate}>
+          Browse templates
+        </button>
+      </div>
+    );
   }
 
   return (
     <div className={styles.panel}>
-      <div className={styles.picker} role="radiogroup" aria-label="Template">
-        {templates.map((template) => {
-          const active = template.code === selected?.code;
-          return (
-            <button
-              key={template.code}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              className={`${styles.thumb} ${active ? styles.thumbActive : ''}`}
-              onClick={() => props.onSelectTemplate(template.code)}
-              title={template.description ?? template.name}
-            >
-              {thumbnails[template.code] && (
-                <img src={thumbnails[template.code]} alt="" className={styles.thumbImage} />
-              )}
-              <span className={styles.thumbName}>{template.name}</span>
-            </button>
-          );
-        })}
+      <div className={styles.chosen}>
+        <span>
+          Template: <strong>{selected.name}</strong>
+        </span>
+        <button type="button" className={styles.linkButton} onClick={props.onChangeTemplate}>
+          Change template
+        </button>
       </div>
 
       {notice && (

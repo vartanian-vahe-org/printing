@@ -1165,6 +1165,11 @@ h1 .pill {
   color: var(--danger);
 }
 
+.pill-proof-awaiting_design {
+  background: #ede7fb;
+  color: #5b3cc4;
+}
+
 .pill-proof-approved {
   background: #e3f4e9;
   color: var(--ok);
@@ -1275,4 +1280,69 @@ a.sidebar-user {
 .login-card .link-btn {
   font-size: 13px;
   align-self: center;
+}
+
+/* ---------- Design services, template filters ---------- */
+
+.field textarea,
+.textarea {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+  background: var(--surface);
+}
+
+.facet-editor {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.facet-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tag-editor {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.tag-editor fieldset {
+  border: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tag-editor legend {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.brief {
+  white-space: pre-wrap;
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 4px 0 10px;
+  font-size: 14px;
 }

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { isEnabled } from '../../lib/features';
 import { BRAND_NAME } from './SiteHeader';
 import styles from './site.module.css';
 
@@ -22,7 +23,7 @@ export function SiteFooter() {
           <span>Production in 1–5 business days</span>
           <span>Order by 2 PM Pacific, Monday–Friday</span>
           <span>Free proof before we print</span>
-          <Link href="/orders/find">Track your order</Link>
+          {isEnabled('cart') && <Link href="/orders/find">Track your order</Link>}
         </div>
       </div>
       <div className={styles.footerBottom}>

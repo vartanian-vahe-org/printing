@@ -94,6 +94,29 @@ export interface AdminTemplate {
   sortOrder: number;
   isActive: boolean;
   supportedSizeCodes: string[];
+  /** Filter values by filter code. */
+  tags: Record<string, string[]>;
+}
+
+/** A template filter shown on the storefront (Industry, Style…). */
+export interface AdminFacet {
+  code: string;
+  name: string;
+  values: { code: string; name: string }[];
+}
+
+/** A "let us design it for you" package. */
+export interface AdminDesignService {
+  code: string;
+  name: string;
+  description: string | null;
+  priceCents: number;
+  features: string[];
+  designDays: number;
+  /** Rounds of changes included; null = unlimited. */
+  revisions: number | null;
+  sortOrder: number;
+  isActive: boolean;
 }
 
 export interface AdminCatalog {
@@ -103,6 +126,8 @@ export interface AdminCatalog {
   quantityTiers: AdminTier[];
   upcharges: AdminUpcharge[];
   templates: AdminTemplate[];
+  templateFacets: AdminFacet[];
+  designServices: AdminDesignService[];
 }
 
 export const PRODUCT = 'business-cards';

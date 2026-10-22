@@ -132,8 +132,9 @@ export const orderItems = pgTable(
     quantity: integer('quantity').notNull(),
     totalCents: integer('total_cents').notNull(),
     /**
-     * pending: file check not done yet · awaiting_customer: proof ready to approve ·
-     * needs_new_file: the check found errors, the customer must upload again · approved.
+     * pending: file check not done yet · awaiting_design: our designer is making the design (design
+     * service) · awaiting_customer: proof ready to approve · needs_new_file: the check found errors,
+     * the customer must upload again · approved.
      */
     proofStatus: text('proof_status').notNull().default('pending'),
     /** Result of the last file check: { checkedAt, issues: [{ code, level, message, page? }], proofs: [{ page, key }] }. */
@@ -148,7 +149,7 @@ export const orderItems = pgTable(
   },
   (t) => [
     index('order_items_order_idx').on(t.orderId),
-    check('order_items_proof_status_check', sql`${t.proofStatus} in ('pending', 'awaiting_customer', 'needs_new_file', 'approved')`),
+    check('order_items_proof_status_check', sql`${t.proofStatus} in ('pending', 'awaiting_design', 'awaiting_customer', 'needs_new_file', 'approved')`),
     check(
       'order_items_production_status_check',
       sql`${t.productionStatus} in ('waiting', 'in_production', 'printed', 'shipped')`,

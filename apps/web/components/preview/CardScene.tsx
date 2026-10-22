@@ -23,6 +23,8 @@ export interface ArtworkImages {
 interface SceneProps {
   spec: CardSpec;
   artwork?: ArtworkImages;
+  /** Plain card without the sample design. */
+  blank?: boolean;
   /** Bumped by the Front/Back buttons; the card turns to that side. */
   turnRequest: { side: CardSide; id: number } | null;
   autoRotate: boolean;
@@ -35,7 +37,7 @@ function targetAngle(current: number, side: CardSide): number {
   return Math.round((current - offset) / (2 * Math.PI)) * 2 * Math.PI + offset;
 }
 
-function TurningCard({ spec, artwork, turnRequest, autoRotate }: Omit<SceneProps, 'onUserInteract'>) {
+function TurningCard({ spec, artwork, blank, turnRequest, autoRotate }: Omit<SceneProps, 'onUserInteract'>) {
   const group = useRef<Group>(null);
   const target = useRef<number | null>(null);
   const invalidate = useThree((state) => state.invalidate);
@@ -73,7 +75,7 @@ function TurningCard({ spec, artwork, turnRequest, autoRotate }: Omit<SceneProps
 
   return (
     <group ref={group} rotation={[BASE_TILT_X, 0, 0]}>
-      <CardMesh spec={spec} artwork={{ front: front ?? undefined, back: back ?? undefined }} />
+      <CardMesh spec={spec} blank={blank} artwork={{ front: front ?? undefined, back: back ?? undefined }} />
     </group>
   );
 }
@@ -93,7 +95,7 @@ function FrameCamera({ spec }: { spec: CardSpec }) {
   return null;
 }
 
-export default function CardScene({ spec, artwork, turnRequest, autoRotate, onUserInteract }: SceneProps) {
+export default function CardScene({ spec, artwork, blank, turnRequest, autoRotate, onUserInteract }: SceneProps) {
   const maxDim = Math.max(spec.widthIn, spec.heightIn);
   const distance = cameraDistance(spec, FOV, 1.4);
 
@@ -120,7 +122,7 @@ export default function CardScene({ spec, artwork, turnRequest, autoRotate, onUs
         <Lightformer form="rect" intensity={1} position={[5, 0, 3]} rotation-y={-Math.PI / 3} scale={[3, 6, 1]} />
       </Environment>
 
-      <TurningCard spec={spec} artwork={artwork} turnRequest={turnRequest} autoRotate={autoRotate} />
+      <TurningCard spec={spec} artwork={artwork} blank={blank} turnRequest={turnRequest} autoRotate={autoRotate} />
 
       <ContactShadows position={[0, -maxDim * 0.7, 0]} opacity={0.35} scale={maxDim * 3} blur={2.4} far={maxDim * 2} />
 

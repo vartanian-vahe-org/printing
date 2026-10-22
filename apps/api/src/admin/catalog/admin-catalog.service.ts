@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   type Database,
+  designServiceTiers,
   optionGroups,
   optionValuePrices,
   optionValueRuleAllowed,
@@ -8,6 +9,7 @@ import {
   optionValues,
   productQuantityTiers,
   products,
+  templateFacets,
   templates,
 } from '@printing/db';
 import { defaultQuantity, InvalidConfigurationError, quote, resolveSelection, UnsatisfiableSelectionError } from '@printing/pricing';
@@ -36,6 +38,29 @@ export interface RuleInput {
   targetGroup: string;
   /** null removes the rule (no restriction). */
   allowed: string[] | null;
+}
+
+export interface TemplatePatch {
+  isActive?: boolean;
+  /** Filter values by facet code; replaces the template's tags. */
+  tags?: Record<string, string[]>;
+}
+
+export interface FacetInput {
+  code: string;
+  name: string;
+  values: { code: string; name: string }[];
+}
+
+export interface DesignTierPatch {
+  name?: string;
+  description?: string | null;
+  priceCents?: number;
+  features?: string[];
+  designDays?: number;
+  revisions?: number | null;
+  sortOrder?: number;
+  isActive?: boolean;
 }
 
 export interface PricingInput {
@@ -105,7 +130,7 @@ export class AdminCatalogService {
     const targetGroup = alias(optionGroups, 'target_group');
     const allowedValue = alias(optionValues, 'allowed_value');
 
-    const [groups, values, rules, allowed, tiers, prices, templateRows] = await Promise.all([
+    const [groups, values, rules, allowed, tiers, prices, templateRows, facetRows, designRows] = await Promise.all([
       this.db.select().from(optionGroups).where(eq(optionGroups.productId, productId)).orderBy(asc(optionGroups.sortOrder)),
       this.db
         .select({ value: optionValues, groupCode: optionGroups.code })
@@ -145,6 +170,8 @@ export class AdminCatalogService {
         .innerJoin(productQuantityTiers, eq(productQuantityTiers.id, optionValuePrices.quantityTierId))
         .where(eq(optionGroups.productId, productId)),
       this.db.select().from(templates).where(eq(templates.productId, productId)).orderBy(asc(templates.sortOrder)),
+      this.db.select().from(templateFacets).where(eq(templateFacets.productId, productId)).orderBy(asc(templateFacets.sortOrder)),
+      this.db.select().from(designServiceTiers).where(eq(designServiceTiers.productId, productId)).orderBy(asc(designServiceTiers.sortOrder)),
     ]);
 
     return {
@@ -188,6 +215,19 @@ export class AdminCatalogService {
         sortOrder: t.sortOrder,
         isActive: t.isActive,
         supportedSizeCodes: t.supportedSizeCodes,
+        tags: t.tags,
+      })),
+      templateFacets: facetRows.map((f) => ({ code: f.code, name: f.name, values: f.values })),
+      designServices: designRows.map((d) => ({
+        code: d.code,
+        name: d.name,
+        description: d.description,
+        priceCents: d.priceCents,
+        features: d.features,
+        designDays: d.designDays,
+        revisions: d.revisions,
+        sortOrder: d.sortOrder,
+        isActive: d.isActive,
       })),
     };
   }
@@ -375,20 +415,111 @@ export class AdminCatalogService {
     });
   }
 
-  async updateTemplate(productCode: string, templateCode: string, patch: { isActive: boolean }, staffId: string) {
+  async updateTemplate(productCode: string, templateCode: string, patch: TemplatePatch, staffId: string) {
     await this.db.transaction(async (tx) => {
       const productId = await this.productId(tx, productCode);
-      const updated = await tx
-        .update(templates)
-        .set({ isActive: patch.isActive, updatedBy: staffId })
+      const [before] = await tx
+        .select({ name: templates.name, isActive: templates.isActive, tags: templates.tags })
+        .from(templates)
         .where(and(eq(templates.productId, productId), eq(templates.code, templateCode)))
-        .returning({ name: templates.name });
-      if (updated.length === 0) throw new NotFoundException(`Template "${templateCode}" not found`);
+        .for('update');
+      if (!before) throw new NotFoundException(`Template "${templateCode}" not found`);
+
+      let tags: Record<string, string[]> | undefined;
+      if (patch.tags) {
+        const facets = await tx.select().from(templateFacets).where(eq(templateFacets.productId, productId));
+        tags = {};
+        for (const [facetCode, codes] of Object.entries(patch.tags)) {
+          const facet = facets.find((f) => f.code === facetCode);
+          if (!facet) throw new BadRequestException(`Unknown filter "${facetCode}"`);
+          const unknown = codes.filter((c) => !facet.values.some((v) => v.code === c));
+          if (unknown.length) throw new BadRequestException(`${facet.name} has no value ${unknown.join(', ')}`);
+          if (codes.length) tags[facetCode] = [...new Set(codes)];
+        }
+      }
+
+      await tx
+        .update(templates)
+        .set({ ...(patch.isActive !== undefined ? { isActive: patch.isActive } : {}), ...(tags ? { tags } : {}), updatedBy: staffId })
+        .where(and(eq(templates.productId, productId), eq(templates.code, templateCode)));
+      const summary =
+        patch.isActive !== undefined && patch.isActive !== before.isActive
+          ? `${patch.isActive ? 'Showed' : 'Hid'} the ${before.name} template`
+          : `Updated the filters of the ${before.name} template`;
       await this.audit.record(tx, staffId, {
         action: 'catalog.template.update',
         target: `${productCode} · template ${templateCode}`,
-        summary: `${patch.isActive ? 'Showed' : 'Hid'} the ${updated[0]!.name} template`,
-        changes: { after: patch },
+        summary,
+        changes: { before: { isActive: before.isActive, tags: before.tags }, after: patch },
+      });
+    });
+  }
+
+  /** Replaces the template filters (Industry, Style…). Values no longer offered are removed from templates. */
+  async setFacets(productCode: string, facets: FacetInput[], staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const productId = await this.productId(tx, productCode);
+      const before = await tx.select().from(templateFacets).where(eq(templateFacets.productId, productId)).orderBy(asc(templateFacets.sortOrder));
+      const codes = facets.map((f) => f.code);
+      if (new Set(codes).size !== codes.length) throw new BadRequestException('Two filters have the same code');
+      for (const facet of facets) {
+        const valueCodes = facet.values.map((v) => v.code);
+        if (new Set(valueCodes).size !== valueCodes.length) throw new BadRequestException(`${facet.name} has two values with the same code`);
+      }
+
+      const removed = before.filter((f) => !codes.includes(f.code)).map((f) => f.code);
+      if (removed.length) await tx.delete(templateFacets).where(and(eq(templateFacets.productId, productId), inArray(templateFacets.code, removed)));
+      for (const [index, facet] of facets.entries()) {
+        const values = { name: facet.name, sortOrder: index + 1, values: facet.values, updatedBy: staffId };
+        await tx
+          .insert(templateFacets)
+          .values({ productId, code: facet.code, ...values, createdBy: staffId })
+          .onConflictDoUpdate({ target: [templateFacets.productId, templateFacets.code], set: values });
+      }
+
+      // Templates keep only tags that still exist.
+      const rows = await tx.select({ id: templates.id, tags: templates.tags }).from(templates).where(eq(templates.productId, productId));
+      for (const row of rows) {
+        const kept = Object.fromEntries(
+          Object.entries(row.tags)
+            .map(([facetCode, values]) => {
+              const facet = facets.find((f) => f.code === facetCode);
+              return [facetCode, facet ? values.filter((v) => facet.values.some((fv) => fv.code === v)) : []] as const;
+            })
+            .filter(([, values]) => values.length > 0),
+        );
+        if (JSON.stringify(kept) !== JSON.stringify(row.tags)) await tx.update(templates).set({ tags: kept, updatedBy: staffId }).where(eq(templates.id, row.id));
+      }
+
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.template_filters.update',
+        target: `${productCode} · template filters`,
+        summary: `Updated template filters: ${facets.map((f) => `${f.name} (${f.values.length})`).join(', ') || 'none'}`,
+        changes: { before: before.map((f) => ({ code: f.code, name: f.name, values: f.values })), after: facets },
+      });
+    });
+  }
+
+  /** Edits a "let us design it" package (price, what it includes, turnaround, rounds of changes). */
+  async updateDesignTier(productCode: string, tierCode: string, patch: DesignTierPatch, staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const productId = await this.productId(tx, productCode);
+      const [before] = await tx
+        .select()
+        .from(designServiceTiers)
+        .where(and(eq(designServiceTiers.productId, productId), eq(designServiceTiers.code, tierCode)))
+        .for('update');
+      if (!before) throw new NotFoundException(`Design service "${tierCode}" not found`);
+      await tx.update(designServiceTiers).set({ ...patch, updatedBy: staffId }).where(eq(designServiceTiers.id, before.id));
+      const changed = Object.keys(patch) as (keyof DesignTierPatch)[];
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.design_service.update',
+        target: `${productCode} · design service ${tierCode}`,
+        summary:
+          patch.priceCents !== undefined && patch.priceCents !== before.priceCents
+            ? `${before.name} design service: price $${(before.priceCents / 100).toFixed(2)} → $${(patch.priceCents / 100).toFixed(2)}`
+            : `Updated the ${patch.name ?? before.name} design service`,
+        changes: { before: Object.fromEntries(changed.map((k) => [k, before[k]])), after: patch },
       });
     });
   }

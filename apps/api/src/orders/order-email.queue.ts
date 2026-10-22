@@ -8,6 +8,7 @@ import { DATABASE } from '../database/database.tokens.js';
 import { MailService, type MailMessage } from '../mail/mail.service.js';
 import type { RenderedEmail, StoreIdentity } from './emails/layout.js';
 import {
+  changesRequestedEmail,
   filesNeededEmail,
   newOrderNotificationEmail,
   orderCancelledEmail,
@@ -29,6 +30,7 @@ export const ORDER_EMAIL_KINDS = [
   'order-cancelled',
   'proof-ready',
   'files-needed',
+  'changes-requested',
 ] as const;
 
 export type OrderEmailKind = (typeof ORDER_EMAIL_KINDS)[number];
@@ -38,7 +40,7 @@ export const RESENDABLE_EMAILS = ['order-confirmation', 'proof-ready', 'payment-
 
 interface OrderEmailJob {
   orderId: string;
-  /** Optional text for the customer (cancellation reason). */
+  /** Optional text: cancellation reason for the customer, or the customer's change request for staff. */
   note?: string;
 }
 
@@ -53,6 +55,7 @@ const LABELS: Record<OrderEmailKind, string> = {
   'order-cancelled': 'Cancellation',
   'proof-ready': 'Proof ready',
   'files-needed': 'New file needed',
+  'changes-requested': 'Design changes requested',
 };
 
 /**
@@ -164,6 +167,10 @@ export class OrderEmailQueue implements OnModuleInit, OnModuleDestroy {
         return toCustomer(filesNeededEmail(order, store, link));
       case 'new-order-notification':
         return staffEmails.length ? { to: staffEmails, replyTo: order.email, ...newOrderNotificationEmail(order, store) } : null;
+      case 'changes-requested':
+        return staffEmails.length
+          ? { to: staffEmails, replyTo: order.email, ...changesRequestedEmail(order, store, note ?? '', `${config.adminUrl}/orders/${order.number}`) }
+          : null;
     }
   }
 }

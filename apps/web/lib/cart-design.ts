@@ -1,9 +1,9 @@
 /**
- * Turns the on-page design (template values or uploaded PDFs) into the cart's design payload,
- * or explains what is still missing.
+ * Turns the on-page design (template values, uploaded PDFs or a brief for our designer) into the
+ * cart's design payload, or explains what is still missing.
  */
 import type { Template } from '@printing/templates';
-import type { CartItem } from './cart';
+import type { CartItem, ServiceBrief } from './cart';
 import { worstLevel, type CheckResult } from './pdf-checks';
 import type { PdfFileState } from './use-pdf-artwork';
 
@@ -62,4 +62,31 @@ export function prepareUploadDesign(
   const ref = (file: PdfFileState) => ({ key: file.key!, fileName: file.fileName, pageCount: file.pdf?.pageCount ?? 1 });
   const back = files.back?.status === 'ready' ? files.back : undefined;
   return { ok: true, design: { mode: 'upload', front: ref(front), ...(back ? { back: ref(back) } : {}) } };
+}
+
+/** A logo or reference file picked for the designer; `key` is set once it is uploaded. */
+export interface BriefFile {
+  id: string;
+  fileName: string;
+  status: 'uploading' | 'done' | 'error';
+  key?: string;
+  error?: string;
+}
+
+export interface BriefState {
+  content: string;
+  notes: string;
+  files: BriefFile[];
+}
+
+export const EMPTY_BRIEF: BriefState = { content: '', notes: '', files: [] };
+
+export function prepareServiceDesign(tierCode: string | null, brief: BriefState): PreparedDesign {
+  if (!tierCode) return { ok: false, message: 'Choose a design package first.' };
+  if (!brief.content.trim()) return { ok: false, message: 'Tell us what to put on your card.' };
+  if (brief.files.some((f) => f.status === 'uploading')) return { ok: false, message: 'Still uploading your files…' };
+  const failed = brief.files.find((f) => f.status === 'error');
+  if (failed) return { ok: false, message: `"${failed.fileName}" was not uploaded. Remove it or try again.` };
+  const files: ServiceBrief['files'] = brief.files.map((f) => ({ key: f.key!, fileName: f.fileName }));
+  return { ok: true, design: { mode: 'service', tierCode, brief: { content: brief.content.trim(), notes: brief.notes.trim(), files } } };
 }

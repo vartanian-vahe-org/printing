@@ -194,7 +194,10 @@ ${button(orderUrl, 'Review your proof')}`,
 /** At least one item failed the file check; the customer uploads a new file. */
 export function filesNeededEmail(order: OrderView, store: StoreIdentity, orderUrl: string): RenderedEmail {
   const subject = `We need a new file for order #${order.number} – ${store.storeName}`;
-  const problems = order.items.flatMap((item) => item.proof.issues.filter((i) => i.level === 'error').map((i) => `${item.productName}: ${i.message}`));
+  // Designs we make for the customer are fixed by our designer, not listed here.
+  const problems = order.items
+    .filter((item) => item.design.mode !== 'service')
+    .flatMap((item) => item.proof.issues.filter((i) => i.level === 'error').map((i) => `${item.productName}: ${i.message}`));
   const intro = 'Our file check found problems that would spoil the print. Please upload a corrected file; we check it again right away.';
   const html = layout(
     store,
@@ -205,4 +208,19 @@ export function filesNeededEmail(order: OrderView, store: StoreIdentity, orderUr
 ${button(orderUrl, 'Upload a new file')}`,
   );
   return { subject, html, text: [intro, '', ...problems.map((p) => `- ${p}`), '', `Upload a new file: ${orderUrl}`].join('\n') };
+}
+
+/** To the shop's staff addresses: a customer asked the designer for changes ("let us design it"). */
+export function changesRequestedEmail(order: OrderView, store: StoreIdentity, request: string, adminOrderUrl: string): RenderedEmail {
+  const subject = `Design changes requested – order #${order.number}`;
+  const html = layout(
+    store,
+    subject,
+    `<h1 style="font-size:20px;margin:0 0 8px;">Changes requested on order #${order.number}</h1>
+<p style="margin:0 0 4px;">Customer: <a href="mailto:${escapeHtml(order.email)}">${escapeHtml(order.email)}</a></p>
+<blockquote style="margin:12px 0;padding:10px 14px;border-left:3px solid #c9c9c4;white-space:pre-wrap;">${escapeHtml(request)}</blockquote>
+${button(adminOrderUrl, 'Open the order')}`,
+    false,
+  );
+  return { subject, html, text: [`Changes requested on order #${order.number}`, `Customer: ${order.email}`, '', request, '', `Open the order: ${adminOrderUrl}`].join('\n') };
 }

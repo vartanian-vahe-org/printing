@@ -93,6 +93,7 @@ Storefront (`apps/web`):
 | `API_PROXY_SECRET` | from `.vercel-env` | Secret. Same value as on the server |
 | `SITE_BASIC_AUTH` | `demo:<password>` | Optional, off by default. Password-protects the whole storefront (commented out in `.vercel-env`) |
 | `SITE_NOINDEX` | `true` | Optional. Tells search engines not to index the demo |
+| `NEXT_PUBLIC_HIDDEN_FEATURES` | e.g. `account,cart` | Optional. Hides features not ready to show (`apps/web/lib/features.ts`): `account` = sign-in and account pages, `cart` = cart, Add to cart, checkout and order pages, `design-service` = "Let us design it for you". Remove a name and redeploy to show it |
 
 Admin (`apps/admin`):
 

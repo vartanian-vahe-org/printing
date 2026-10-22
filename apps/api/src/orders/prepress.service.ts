@@ -91,12 +91,18 @@ export class PrepressService implements OnModuleInit, OnModuleDestroy {
     await this.jobs?.close();
   }
 
-  /** Checks every item of a new order. */
+  /** Checks every item of a new order (designed-for-you items wait for the designer's file). */
   async queueOrder(orderId: string): Promise<void> {
     const [order] = await this.db.select({ number: orders.number }).from(orders).where(eq(orders.id, orderId)).limit(1);
     if (!order) return;
-    const items = await this.db.select({ id: orderItems.id }).from(orderItems).where(eq(orderItems.orderId, orderId)).orderBy(asc(orderItems.createdAt));
-    for (const [index] of items.entries()) await this.queueItem(order.number, index + 1);
+    const items = await this.db
+      .select({ id: orderItems.id, proofStatus: orderItems.proofStatus })
+      .from(orderItems)
+      .where(eq(orderItems.orderId, orderId))
+      .orderBy(asc(orderItems.createdAt));
+    for (const [index, item] of items.entries()) {
+      if (item.proofStatus !== 'awaiting_design') await this.queueItem(order.number, index + 1);
+    }
   }
 
   /** (Re)checks one item: new print file, proof back to "pending". `itemNumber` is 1-based. */
@@ -121,10 +127,11 @@ export class PrepressService implements OnModuleInit, OnModuleDestroy {
       .set({ printKey, proofStatus: 'pending', preflight: record as unknown as Record<string, unknown>, proofApprovedAt: null, proofApprovedBy: null })
       .where(eq(orderItems.id, item.id));
 
-    const design = item.design as { mode: 'template' | 'upload' };
+    const design = item.design as { mode: 'template' | 'upload' | 'service' };
     await this.jobs.add(
       'check',
-      { orderItemId: item.id, printKey, run, mode: design.mode, geometry: spec.geometry, expectedPages: file.pageCount },
+      // A designer's file is checked like a customer's upload.
+      { orderItemId: item.id, printKey, run, mode: design.mode === 'template' ? 'template' : 'upload', geometry: spec.geometry, expectedPages: file.pageCount },
       { jobId: `${item.id}_${run}` },
     );
   }
@@ -173,9 +180,11 @@ export class PrepressService implements OnModuleInit, OnModuleDestroy {
   private async notifyWhenOrderChecked(orderId: string) {
     const [order] = await this.db.select({ status: orders.status }).from(orders).where(eq(orders.id, orderId)).limit(1);
     if (!order || order.status === 'cancelled') return;
-    const items = await this.db.select({ status: orderItems.proofStatus }).from(orderItems).where(eq(orderItems.orderId, orderId));
+    const items = await this.db.select({ status: orderItems.proofStatus, design: orderItems.design }).from(orderItems).where(eq(orderItems.orderId, orderId));
     if (items.some((i) => i.status === 'pending')) return;
-    if (items.some((i) => i.status === 'needs_new_file')) await this.emails.send('files-needed', orderId);
+    // A designer's file with errors is ours to fix, not the customer's.
+    const customerFileNeeded = items.some((i) => i.status === 'needs_new_file' && (i.design as { mode?: string }).mode !== 'service');
+    if (customerFileNeeded) await this.emails.send('files-needed', orderId);
     else if (items.some((i) => i.status === 'awaiting_customer')) await this.emails.send('proof-ready', orderId);
   }
 }

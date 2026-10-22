@@ -1,10 +1,12 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { orderEvents, orderItems, orders, type Database } from '@printing/db';
 import { asc, eq } from 'drizzle-orm';
+import { PDFDocument } from 'pdf-lib';
 import { DATABASE } from '../database/database.tokens.js';
 import type { PrintSpec } from '../print/print-spec.js';
 import { StorageService } from '../storage/storage.service.js';
 import { isUploadKey } from '../uploads/upload-kinds.js';
+import { OrderEmailQueue } from './order-email.queue.js';
 import { hashOrderToken } from './order-link.js';
 import { OrderScheduleService } from './order-schedule.service.js';
 import { PrepressService, type PreflightRecord } from './prepress.service.js';
@@ -17,6 +19,23 @@ export interface FileRef {
   key: string;
   fileName: string;
   pageCount: number;
+}
+
+/** A designed-for-you item's design (cart `service` mode plus what the designer and customer add later). */
+export interface ServiceDesign {
+  mode: 'service';
+  tierCode: string;
+  brief: { content: string; notes: string; files: { key: string; fileName: string }[] };
+  /** The designer's latest file; `round` counts deliveries (1 = first draft). */
+  artwork?: { front: FileRef; back?: FileRef; round: number; deliveredAt: string };
+  /** The customer's change requests, oldest first. */
+  changeRequests?: { message: string; at: string; round: number }[];
+}
+
+/** Design package bought with the item (order_items.quote.designService). */
+interface PurchasedTier {
+  name: string;
+  revisions: number | null;
 }
 
 /** Who acts on a proof: the customer (from the order link) or a staff user. */
@@ -37,6 +56,7 @@ export class ProofsService {
     private readonly prepress: PrepressService,
     private readonly storage: StorageService,
     private readonly schedule: OrderScheduleService,
+    private readonly emails: OrderEmailQueue,
   ) {}
 
   async approve(orderNumber: number, itemNumber: number, actor: ProofActor, acknowledged: string[] = []): Promise<void> {
@@ -79,9 +99,9 @@ export class ProofsService {
     await this.db.transaction(async (tx) => {
       const { order, item } = await this.lock(tx, orderNumber, itemNumber, actor);
       if (!OPEN_STATUSES.has(order.status)) throw new ConflictException('This order can no longer change.');
-      if ((item.design as { mode: string }).mode !== 'upload') {
-        throw new ConflictException('This item uses a template; reply to your order email to change it.');
-      }
+      const mode = (item.design as { mode: string }).mode;
+      if (mode === 'service') throw new ConflictException('Our designer makes this file. Ask for changes on the proof instead.');
+      if (mode !== 'upload') throw new ConflictException('This item uses a template; reply to your order email to change it.');
       if (item.proofStatus === 'pending') throw new ConflictException('We are still checking the current file. Try again in a minute.');
 
       for (const [label, file] of [['front', files.front], ['back', files.back]] as const) {
@@ -103,6 +123,91 @@ export class ProofsService {
       });
     });
     await this.prepress.queueItem(orderNumber, itemNumber);
+  }
+
+  /**
+   * Staff (the designer) delivers the design of a "let us design it" item: it becomes the print file
+   * and is checked, then the customer gets the proof to approve or ask for changes.
+   */
+  async deliverDesign(
+    orderNumber: number,
+    itemNumber: number,
+    staffId: string,
+    uploaded: { front: Omit<FileRef, 'pageCount'>; back?: Omit<FileRef, 'pageCount'> },
+  ): Promise<void> {
+    const files = {
+      front: await this.withPageCount(uploaded.front, 'front'),
+      ...(uploaded.back ? { back: await this.withPageCount(uploaded.back, 'back') } : {}),
+    };
+    await this.db.transaction(async (tx) => {
+      const { order, item } = await this.lock(tx, orderNumber, itemNumber, { kind: 'staff', staffId });
+      if (!OPEN_STATUSES.has(order.status)) throw new ConflictException('This order can no longer change.');
+      const design = item.design as unknown as ServiceDesign;
+      if (design.mode !== 'service') throw new ConflictException('This item was not ordered with the design service.');
+      if (item.proofStatus === 'approved') throw new ConflictException('The customer already approved this design.');
+      if (item.proofStatus === 'pending') throw new ConflictException('The last file is still being checked. Try again in a minute.');
+
+      const backMode = (item.printSpec as unknown as PrintSpec | null)?.backMode ?? 'separate';
+      if (backMode === 'separate' && !files.back && files.front.pageCount < 2) {
+        throw new BadRequestException('This card has a back: upload a back file or a 2-page PDF.');
+      }
+      const round = (design.artwork?.round ?? 0) + 1;
+      const artwork = { front: files.front, ...(backMode === 'separate' && files.back ? { back: files.back } : {}), round, deliveredAt: new Date().toISOString() };
+      await tx.update(orderItems).set({ design: { ...design, artwork } }).where(eq(orderItems.id, item.id));
+      await tx.insert(orderEvents).values({
+        orderId: order.id,
+        type: 'design_delivered',
+        message: `Design ${round === 1 ? 'first draft' : `revision ${round - 1}`} delivered for item ${itemNumber}: ${files.front.fileName}${files.back ? ` + ${files.back.fileName}` : ''}`,
+        createdBy: staffId,
+      });
+    });
+    await this.prepress.queueItem(orderNumber, itemNumber);
+  }
+
+  /**
+   * The customer asks the designer for changes to a "let us design it" proof. Limited to the rounds
+   * included in the package bought; staff are told by email.
+   */
+  async requestChanges(orderNumber: number, itemNumber: number, actor: ProofActor, message: string): Promise<void> {
+    const orderId = await this.db.transaction(async (tx) => {
+      const { order, item } = await this.lock(tx, orderNumber, itemNumber, actor);
+      if (!OPEN_STATUSES.has(order.status)) throw new ConflictException('This order can no longer change.');
+      const design = item.design as unknown as ServiceDesign;
+      if (design.mode !== 'service') throw new ConflictException('Changes can only be requested on designs we make for you.');
+      if (item.proofStatus !== 'awaiting_customer') throw new ConflictException('This proof is not waiting for your review.');
+
+      const tier = (item.quote as { designService?: PurchasedTier | null }).designService ?? null;
+      const requests = design.changeRequests ?? [];
+      if (tier?.revisions != null && requests.length >= tier.revisions) {
+        throw new ConflictException(
+          `Your ${tier.name} package includes ${tier.revisions} round${tier.revisions === 1 ? '' : 's'} of changes and they have been used. Reply to your order email and we will help.`,
+        );
+      }
+      const round = design.artwork?.round ?? 0;
+      const changeRequests = [...requests, { message, at: new Date().toISOString(), round }];
+      await tx.update(orderItems).set({ design: { ...design, changeRequests }, proofStatus: 'awaiting_design' }).where(eq(orderItems.id, item.id));
+      await tx.insert(orderEvents).values({
+        orderId: order.id,
+        type: 'changes_requested',
+        message: `Changes requested for item ${itemNumber} (${changeRequests.length}${tier?.revisions != null ? ` of ${tier.revisions}` : ''}): ${message.length > 300 ? `${message.slice(0, 300)}…` : message}`,
+        createdBy: actor.kind === 'customer' ? 'customer' : actor.staffId,
+      });
+      return order.id;
+    });
+    await this.emails.send('changes-requested', orderId, `Item ${itemNumber}: ${message}`);
+  }
+
+  /** An uploaded artwork PDF with its page count, read from the file itself. */
+  private async withPageCount(file: Omit<FileRef, 'pageCount'>, label: string): Promise<FileRef> {
+    if (!isUploadKey('artwork', file.key) || !(await this.storage.describe(file.key))) {
+      throw new BadRequestException(`The ${label} PDF was not found. Please upload it again.`);
+    }
+    try {
+      const pdf = await PDFDocument.load(await this.storage.read(file.key), { ignoreEncryption: true, updateMetadata: false });
+      return { ...file, pageCount: pdf.getPageCount() };
+    } catch {
+      throw new BadRequestException(`The ${label} file is not a readable PDF.`);
+    }
   }
 
   /** Staff: build the print file and check it again (after a failed check, or a template change). */

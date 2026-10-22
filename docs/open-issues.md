@@ -31,6 +31,7 @@ Cập nhật: 2026-10-20. Khi giải quyết xong một mục: ghi quyết đị
 | P3 | Hệ số custom size dùng một con số cho mọi mức số lượng; UPrinting thực tế thay đổi 1.6–2.6 lần theo số lượng | Một hệ số | Có tính hệ số theo từng mức số lượng không | Thấp |
 | P4 | Trộn hai kiểu tính giá: phụ phí cộng thêm (Vistaprint) cho option, hệ số nhân (UPrinting) cho size | Theo spec mục 4 | Giữ hay thống nhất một kiểu khi thiết kế lại bảng giá | Thấp |
 | P5 | Giá hiển thị mặc định là **$39.48** cho 500 card vì mặc định in 2 mặt. Vistaprint quảng cáo $24.99 vì mặc định in 1 mặt. | Mặc định `front_back` | Đổi mặc định sang in 1 mặt để giá "từ" thấp hơn không | Cao |
+| P6 | **Giá và quyền lợi các gói thiết kế là tạm**: Standard $29 (2 lần sửa, 2 ngày), Premium $59 (4 lần sửa), Elite $99 (sửa không giới hạn, 1 ngày) | Seed trong `0023_seed_design_choices`, admin sửa được ở Design services | Giá thật, số lần sửa, ai là designer và năng lực làm bao nhiêu đơn mỗi ngày | Cao |
 
 ## Sản phẩm & option
 
@@ -57,6 +58,8 @@ Cập nhật: 2026-10-20. Khi giải quyết xong một mục: ghi quyết đị
 | U10 | Admin chưa sửa được layout template (bước 9 chỉ bật/tắt) | Sửa bằng migration | Có cần trình chỉnh template trong admin không | Thấp |
 | U16 | Tài khoản khách: chưa đổi được **email** (đổi tên, mật khẩu đã có), chưa có đăng nhập bằng Google/Apple | Đổi email qua hỗ trợ | Đổi email cần xác thực email mới và gắn lại đơn; social login nếu khách cần | Thấp |
 | U6 | Cảnh báo `THREE.Clock deprecated` trong console, đến từ bên trong `@react-three/fiber` | Vô hại | Tự hết khi thư viện cập nhật | Thấp |
+| U17 | Bộ lọc template và tag của 5 template đang gán tạm theo nhìn mẫu (ngành nghề, phong cách, màu) | Seed trong `0023_seed_design_choices`, admin sửa ở Templates | Danh sách ngành nghề và tag thật; khi có nhiều template hơn có cần tìm kiếm theo chữ không | Thấp |
+| U18 | Gói thiết kế: khách chưa nhắn trao đổi qua lại được với designer, chỉ có ô "yêu cầu sửa" trên proof; designer chưa có danh sách việc riêng (đang lọc trong Orders → Waiting for proof) | Đủ cho demo | Có cần màn hình riêng cho designer, chat với khách, giao việc cho từng designer không | Thấp |
 
 ## Đặt hàng, thanh toán, ship, thuế
 

@@ -38,6 +38,8 @@ export async function loadItemToEdit(id: string): Promise<ItemToEdit | null> {
     const logo = await download(item.previewUrls.logo);
     return { item, logoDataUrl: logo ? await blobToDataUrl(logo) : null, files: {} };
   }
+  // The brief and its files are already stored; nothing to download.
+  if (item.design.mode === 'service') return { item, logoDataUrl: null, files: {} };
   const { front, back } = item.design;
   const [frontBlob, backBlob] = await Promise.all([download(item.previewUrls.front), download(item.previewUrls.back)]);
   return {

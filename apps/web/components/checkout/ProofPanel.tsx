@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import { approveProof, CheckoutError, replaceItemFile, type OrderView, type ReplacementFile } from '../../lib/checkout';
+import { approveProof, CheckoutError, replaceItemFile, requestDesignChanges, type OrderView, type ReplacementFile } from '../../lib/checkout';
 import { openPdf, PdfReadError } from '../../lib/pdf-render';
 import { uploadArtwork } from '../../lib/upload';
 import styles from './order.module.css';
@@ -31,7 +31,8 @@ export function ProofPanel({ item, orderNumber, token, editable, onChanged }: Pr
   const warnings = proof.issues.filter((i) => i.level === 'warning');
   const errors = proof.issues.filter((i) => i.level === 'error');
   const allChecked = warnings.every((w) => checked[w.id]);
-  const isUpload = (item.design as { mode?: string }).mode === 'upload';
+  const isUpload = item.design.mode === 'upload';
+  const service = item.design.mode === 'service' ? item.design : null;
   const image = proof.images[Math.min(side, proof.images.length - 1)];
 
   async function approve() {
@@ -45,6 +46,24 @@ export function ProofPanel({ item, orderNumber, token, editable, onChanged }: Pr
     } finally {
       setBusy(false);
     }
+  }
+
+  // "Let us design it": the designer is making (or adjusting) the design. A designer's file that
+  // failed the check is ours to fix, so the customer sees the same message.
+  if (service && (proof.status === 'awaiting_design' || proof.status === 'needs_new_file' || (proof.status === 'pending' && !service.artwork))) {
+    const lastRequest = service.changeRequests?.at(-1);
+    return (
+      <div className={styles.proof}>
+        <p className={styles.proofStatus}>
+          {lastRequest
+            ? 'Thanks, we got your changes. Your designer will email you a new proof.'
+            : `Our designer is working on your ${item.designService?.name ?? ''} design. We will email you the first proof${
+                item.designService ? ` within ${item.designService.designDays} business day${item.designService.designDays === 1 ? '' : 's'}` : ''
+              }.`}
+        </p>
+        {lastRequest && <blockquote className={styles.changeRequest}>{lastRequest.message}</blockquote>}
+      </div>
+    );
   }
 
   if (proof.status === 'pending') {
@@ -114,6 +133,16 @@ export function ProofPanel({ item, orderNumber, token, editable, onChanged }: Pr
             {busy ? 'Approving…' : 'Approve proof'}
           </button>
           <p className={styles.muted}>We print exactly what you see here. Spelling and contact details are your responsibility.</p>
+          {service && (
+            <ChangeRequestForm
+              orderNumber={orderNumber}
+              itemNumber={item.number}
+              token={token}
+              used={service.changeRequests?.length ?? 0}
+              included={item.designService?.revisions ?? null}
+              onDone={onChanged}
+            />
+          )}
         </div>
       )}
 
@@ -174,6 +203,52 @@ function ReplaceFileForm({ orderNumber, itemNumber, token, onDone }: { orderNumb
       </label>
       <button type="submit" className={styles.approveButton} disabled={busy || !front}>
         {busy ? 'Uploading…' : 'Upload and check again'}
+      </button>
+      {error && <p className={styles.error}>{error}</p>}
+    </form>
+  );
+}
+
+/** "Let us design it": the customer tells the designer what to change instead of approving. */
+function ChangeRequestForm(props: { orderNumber: number; itemNumber: number; token: string; used: number; included: number | null; onDone: () => void }) {
+  const { orderNumber, itemNumber, token, used, included, onDone } = props;
+  const [open, setOpen] = useState(false);
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const left = included === null ? null : Math.max(0, included - used);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await requestDesignChanges(orderNumber, itemNumber, token, message.trim());
+      onDone();
+    } catch (err) {
+      setError(err instanceof CheckoutError ? err.message : 'Could not send your changes. Please try again.');
+      setBusy(false);
+    }
+  }
+
+  if (left === 0) {
+    return <p className={styles.muted}>You have used the {included} rounds of changes in your package. Reply to your order email if you need more.</p>;
+  }
+  if (!open) {
+    return (
+      <button type="button" className={styles.linkButton} onClick={() => setOpen(true)}>
+        Ask the designer for changes{left !== null ? ` (${left} round${left === 1 ? '' : 's'} left)` : ''}
+      </button>
+    );
+  }
+  return (
+    <form className={styles.replaceForm} onSubmit={(e) => void submit(e)}>
+      <label>
+        <strong>What should we change?</strong>
+        <textarea rows={4} maxLength={3000} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="E.g. make the logo bigger, use a darker blue, fix the phone number…" />
+      </label>
+      <button type="submit" className={styles.approveButton} disabled={busy || message.trim().length < 5}>
+        {busy ? 'Sending…' : 'Send changes'}
       </button>
       {error && <p className={styles.error}>{error}</p>}
     </form>

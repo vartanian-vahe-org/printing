@@ -6,6 +6,7 @@ import { CheckoutError, getOrder, type OrderView as Order } from '../../lib/chec
 import { formatBusinessDays, formatCents } from '../../lib/format';
 import { orderTimeline } from '../../lib/order-timeline';
 import { getMe } from '../../lib/account';
+import { isEnabled } from '../../lib/features';
 import { ProofPanel } from './ProofPanel';
 import { formatDateRange, formatShopDate } from '../../lib/schedule-text';
 import styles from './order.module.css';
@@ -162,7 +163,9 @@ export function OrderView({ number }: { number: number }) {
                   <small>
                     {item.design.mode === 'upload'
                       ? `Your design: ${item.design.front.fileName}${item.design.back ? ` + ${item.design.back.fileName}` : ''}`
-                      : `Template design${item.design.values.name ? ` · ${item.design.values.name}` : ''}`}
+                      : item.design.mode === 'service'
+                        ? `Designed for you · ${item.designService?.name ?? item.design.tierCode} package`
+                        : `Template design${item.design.values.name ? ` · ${item.design.values.name}` : ''}`}
                   </small>
                   <small>{item.summary.map((s) => s.value).join(' · ')}</small>
                 </div>
@@ -218,7 +221,7 @@ export function OrderView({ number }: { number: number }) {
         </aside>
       </div>
 
-      {!signedIn && (
+      {!signedIn && isEnabled('account') && (
         <p className={styles.muted}>
           Keep all your orders in one place:{' '}
           <Link

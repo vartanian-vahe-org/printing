@@ -19,8 +19,8 @@ import { config } from '../config.js';
 import { DATABASE } from '../database/database.tokens.js';
 import { StorageService } from '../storage/storage.service.js';
 import { TemplatesService } from '../templates/templates.service.js';
-import { isUploadKey } from '../uploads/upload-kinds.js';
-import { fieldFamilies, unsupportedCharacters } from '@printing/templates';
+import { isUploadKey, type UploadKind } from '../uploads/upload-kinds.js';
+import { fieldFamilies, unsupportedCharacters, type DesignServiceTier } from '@printing/templates';
 import { buildPrintSpec, type PrintSpec } from '../print/print-spec.js';
 import type { AddItemInput, Configuration, Design } from './cart.schemas.js';
 
@@ -46,6 +46,8 @@ export interface CartItemView {
   shipDate: string | null;
   /** Short-lived links to the customer's own files (logo, PDFs) for previews and editing. */
   previewUrls: { logo?: string; front?: string; back?: string };
+  /** "Let us design it for you" package and its fee (included in totalCents), or null. */
+  designService: { code: string; name: string; priceCents: number } | null;
 }
 
 /** A validated, priced item ready to be stored in a cart. */
@@ -81,6 +83,10 @@ export interface CheckoutItem {
   /** Production business days of the chosen turnaround. */
   turnaroundDays: number;
   printSpec: PrintSpec;
+  /** Design service package (snapshot for the order), or null. */
+  designService: DesignServiceTier | null;
+  /** Printing plus the design fee. */
+  totalCents: number;
 }
 
 type CartItemRow = typeof cartItems.$inferSelect;
@@ -98,10 +104,18 @@ function sizeLabel(catalog: Catalog, q: Quote): string {
   return catalog.groups.find((g) => g.code === SIZE_GROUP)?.values.find((v) => v.code === q.size.code)?.label ?? q.size.code;
 }
 
-/** Option list shown in the cart, checkout and orders. */
-function itemSummary(catalog: Catalog, q: Quote): { label: string; value: string }[] {
-  return [{ label: 'Size', value: sizeLabel(catalog, q) }, ...q.lines.map((l) => ({ label: l.groupLabel, value: l.valueLabel }))];
+const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+
+/** Option list shown in the cart, checkout and orders (with the design service, when chosen). */
+function itemSummary(catalog: Catalog, q: Quote, tier: DesignServiceTier | null = null): { label: string; value: string }[] {
+  return [
+    { label: 'Size', value: sizeLabel(catalog, q) },
+    ...q.lines.map((l) => ({ label: l.groupLabel, value: l.valueLabel })),
+    ...(tier ? [{ label: 'Design service', value: `${tier.name} · ${dollars(tier.priceCents)}` }] : []),
+  ];
 }
+
+const tierView = (tier: DesignServiceTier | null) => (tier ? { code: tier.code, name: tier.name, priceCents: tier.priceCents } : null);
 
 @Injectable()
 export class CartService {
@@ -170,6 +184,12 @@ export class CartService {
       }
       return catalogCache.get(productCode)!;
     };
+    const tierCache = new Map<string, DesignServiceTier[]>();
+    const tierFor = async (productCode: string, design: Design) => {
+      if (design.mode !== 'service') return null;
+      if (!tierCache.has(productCode)) tierCache.set(productCode, await this.templates.listDesignServices(productCode).catch(() => []));
+      return tierCache.get(productCode)!.find((t) => t.code === design.tierCode) ?? null;
+    };
 
     const items: CartItemView[] = [];
     for (const row of rows) {
@@ -184,23 +204,32 @@ export class CartService {
         quantity: configuration.quantity,
         addedTotalCents: row.totalCents,
         previewUrls: await this.previewUrls(design),
+        designService: null,
       };
       if (!catalog) {
         items.push({ ...base, productName: row.productCode, summary: [], totalCents: null, unitPriceCents: null, priceChanged: false, issues: ['This product is no longer available'], shipDate: null });
         continue;
       }
+      const tier = await tierFor(row.productCode, design);
+      if (design.mode === 'service' && !tier) {
+        items.push({ ...base, productName: catalog.product.name, summary: [], totalCents: null, unitPriceCents: null, priceChanged: false, issues: ['This design service is no longer offered'], shipDate: null });
+        continue;
+      }
       try {
         const q = quote(catalog, configuration);
         const days = turnaroundDays(catalog, q.selection);
+        const totalCents = q.totalCents + (tier?.priceCents ?? 0);
         items.push({
           ...base,
           productName: catalog.product.name,
-          summary: itemSummary(catalog, q),
-          totalCents: q.totalCents,
+          summary: itemSummary(catalog, q, tier),
+          totalCents,
           unitPriceCents: q.unitPriceCents,
-          priceChanged: q.totalCents !== row.totalCents,
+          priceChanged: totalCents !== row.totalCents,
           issues: [],
-          shipDate: days ? productionSchedule(now, days, calendar).shipDate : null,
+          // The designer's first draft comes before production.
+          shipDate: days ? productionSchedule(now, days + (tier?.designDays ?? 0), calendar).shipDate : null,
+          designService: tierView(tier),
         });
       } catch (err) {
         const issues = err instanceof InvalidConfigurationError ? err.issues : ['This configuration is no longer available'];
@@ -234,6 +263,7 @@ export class CartService {
         const configuration = row.configuration as Configuration;
         const q = this.priced(catalog, configuration);
         const design = await this.validateDesign(catalog, q, row.design as Design);
+        const tier = await this.serviceTier(catalog.product.code, design);
         const days = turnaroundDays(catalog, q.selection);
         if (!days) throw new ConflictException('The turnaround of this item is not available');
         const template =
@@ -246,9 +276,11 @@ export class CartService {
           configuration,
           design,
           quote: q,
-          summary: itemSummary(catalog, q),
+          summary: itemSummary(catalog, q, tier),
           turnaroundDays: days,
           printSpec: buildPrintSpec(catalog, q, template),
+          designService: tier,
+          totalCents: q.totalCents + (tier?.priceCents ?? 0),
         });
       } catch (err) {
         if (!(err instanceof HttpException)) throw err;
@@ -276,7 +308,8 @@ export class CartService {
       ...(q.size.code === CUSTOM_SIZE_VALUE ? { customSize: input.configuration.customSize } : {}),
     };
     const design = await this.validateDesign(catalog, q, input.design);
-    return { productCode: input.productCode, configuration, design, totalCents: q.totalCents };
+    const tier = await this.serviceTier(catalog.product.code, design);
+    return { productCode: input.productCode, configuration, design, totalCents: q.totalCents + (tier?.priceCents ?? 0) };
   }
 
   async addItem(cartId: string, item: PreparedItem): Promise<void> {
@@ -294,9 +327,10 @@ export class CartService {
     const row = await this.item(cartId, itemId);
     const configuration = { ...(row.configuration as Configuration), quantity };
     const q = this.priced(await this.catalogs.loadCatalog(row.productCode), configuration);
+    const tier = await this.serviceTier(row.productCode, row.design as Design);
     await this.db
       .update(cartItems)
-      .set({ configuration, totalCents: q.totalCents })
+      .set({ configuration, totalCents: q.totalCents + (tier?.priceCents ?? 0) })
       .where(eq(cartItems.id, itemId));
     await this.touch(cartId);
   }
@@ -319,6 +353,7 @@ export class CartService {
   private async previewUrls(design: Design): Promise<CartItemView['previewUrls']> {
     const link = (key: string, name: string) => this.storage.presignGet(key, name, PREVIEW_LINK_SECONDS, 'inline');
     if (design.mode === 'template') return design.logoKey ? { logo: await link(design.logoKey, 'logo') } : {};
+    if (design.mode === 'service') return {};
     return {
       front: await link(design.front.key, design.front.fileName),
       ...(design.back ? { back: await link(design.back.key, design.back.fileName) } : {}),
@@ -350,7 +385,15 @@ export class CartService {
     }
   }
 
-  private async assertUploaded(kind: 'artwork' | 'logo', key: string, label: string) {
+  /** The design service package of a "let us design it" item (400 when no longer offered), else null. */
+  private async serviceTier(productCode: string, design: Design): Promise<DesignServiceTier | null> {
+    if (design.mode !== 'service') return null;
+    const tier = (await this.templates.listDesignServices(productCode)).find((t) => t.code === design.tierCode);
+    if (!tier) throw new BadRequestException('This design service is no longer offered');
+    return tier;
+  }
+
+  private async assertUploaded(kind: UploadKind, key: string, label: string) {
     if (!isUploadKey(kind, key) || !(await this.storage.describe(key))) {
       throw new BadRequestException(`${label} was not found. Please upload it again.`);
     }
@@ -359,6 +402,14 @@ export class CartService {
   /** Checks the design against the template and uploaded files; returns it normalized. */
   private async validateDesign(catalog: Catalog, q: Quote, design: Design): Promise<Design> {
     const backMode = String(attributes(catalog, 'printed_side', q.selection.printed_side).back ?? 'separate');
+
+    if (design.mode === 'service') {
+      await this.serviceTier(catalog.product.code, design);
+      for (const [index, file] of design.brief.files.entries()) {
+        await this.assertUploaded('reference', file.key, `File ${index + 1} (${file.fileName})`);
+      }
+      return { mode: 'service', tierCode: design.tierCode, brief: design.brief };
+    }
 
     if (design.mode === 'template') {
       const template = (await this.templates.listTemplates(catalog.product.code)).find((t) => t.code === design.templateCode);

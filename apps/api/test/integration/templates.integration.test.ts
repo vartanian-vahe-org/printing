@@ -1,5 +1,5 @@
 /**
- * Templates in the real database (seeded by migration 0006) must match the seed source
+ * Templates in the real database (seeded by migration 0006, tagged by 0023) must match the seed source
  * packages/templates/seed/business-cards-templates.json, and every layout must render.
  * Requires DATABASE_URL pointing at a migrated database.
  */
@@ -30,8 +30,11 @@ describe('TemplatesService.listTemplates (real DB)', () => {
         sortOrder: t.sortOrder,
         supportedSizeCodes: t.supportedSizeCodes,
         layout: parseLayout(t.layout),
+        // Filter tags come from migration 0023 (and admin edits), not from the layout seed.
+        tags: expect.any(Object),
       })),
     );
+    for (const t of templates) expect(Object.keys(t.tags ?? {}).length).toBeGreaterThan(0);
   });
 
   it('every template renders both sides', async () => {

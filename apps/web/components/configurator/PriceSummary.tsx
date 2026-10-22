@@ -4,15 +4,23 @@ import styles from './configurator.module.css';
 
 const qty = new Intl.NumberFormat('en-US');
 
-export function PriceSummary({ quote }: { quote: Quote }) {
+interface Props {
+  quote: Quote;
+  /** "Let us design it" package, charged once on top of the printing. */
+  designFee?: { name: string; priceCents: number } | null;
+}
+
+export function PriceSummary({ quote, designFee = null }: Props) {
   const upcharges = quote.lines.filter((line) => line.upchargeCents !== 0);
+  const totalCents = quote.totalCents + (designFee?.priceCents ?? 0);
 
   return (
     <div className={styles.price}>
       <div className={styles.priceRow}>
-        <span className={styles.priceTotal}>{formatCents(quote.totalCents)}</span>
+        <span className={styles.priceTotal}>{formatCents(totalCents)}</span>
         <span className={styles.priceEach}>
           {qty.format(quote.quantity)} cards · {formatCents(quote.unitPriceCents)} each
+          {designFee ? ` + ${designFee.name} design` : ''}
         </span>
       </div>
 
@@ -37,9 +45,15 @@ export function PriceSummary({ quote }: { quote: Quote }) {
               <dd>× {quote.size.priceMultiplier.toFixed(2)}</dd>
             </div>
           )}
+          {designFee && (
+            <div>
+              <dt>{designFee.name} design service</dt>
+              <dd>{formatDelta(designFee.priceCents)}</dd>
+            </div>
+          )}
           <div className={styles.breakdownTotal}>
             <dt>Total</dt>
-            <dd>{formatCents(quote.totalCents)}</dd>
+            <dd>{formatCents(totalCents)}</dd>
           </div>
         </dl>
       </details>

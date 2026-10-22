@@ -52,7 +52,12 @@ export interface OrderDetail {
     };
     productName: string;
     summary: { label: string; value: string }[];
-    design: { mode: 'template'; templateCode: string; values: Record<string, string> } | { mode: 'upload'; front: { fileName: string; pageCount: number }; back?: { fileName: string } };
+    design:
+      | { mode: 'template'; templateCode: string; values: Record<string, string> }
+      | { mode: 'upload'; front: { fileName: string; pageCount: number }; back?: { fileName: string } }
+      | ServiceDesign;
+    /** "Let us design it" package bought with the item, or null. */
+    designService: { name: string; designDays: number; revisions: number | null } | null;
     quantity: number;
     totalCents: number;
     templateName: string | null;
@@ -69,10 +74,20 @@ export interface OrderDetail {
   customerUrl: string;
 }
 
-export type ProofStatus = 'pending' | 'awaiting_customer' | 'needs_new_file' | 'approved';
+/** "Let us design it": the customer's brief, the designer's deliveries and the change requests. */
+export interface ServiceDesign {
+  mode: 'service';
+  tierCode: string;
+  brief: { content: string; notes: string; files: { fileName: string }[] };
+  artwork?: { front: { fileName: string }; back?: { fileName: string }; round: number; deliveredAt: string };
+  changeRequests?: { message: string; at: string; round: number }[];
+}
+
+export type ProofStatus = 'pending' | 'awaiting_design' | 'awaiting_customer' | 'needs_new_file' | 'approved';
 
 export const PROOF_LABELS: Record<ProofStatus, string> = {
   pending: 'Checking file',
+  awaiting_design: 'Designer to do',
   awaiting_customer: 'Waiting for customer',
   needs_new_file: 'New file needed',
   approved: 'Approved',

@@ -13,6 +13,7 @@ import { RulesPage } from './pages/RulesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { StaffPage } from './pages/StaffPage';
 import { TemplatesPage } from './pages/TemplatesPage';
+import { DesignServicesPage } from './pages/DesignServicesPage';
 
 const STOREFRONT_URL = import.meta.env.VITE_STOREFRONT_URL ?? 'http://localhost:3000/business-cards';
 
@@ -31,6 +32,7 @@ export function App() {
             <Route path="/rules" element={<RulesPage />} />
             <Route path="/pricing" element={<PricingPage />} />
             <Route path="/templates" element={<TemplatesPage />} />
+            <Route path="/design-services" element={<DesignServicesPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/staff" element={<StaffPage />} />
             <Route path="/activity" element={<ActivityPage />} />
@@ -66,7 +68,8 @@ const NAV: { section?: string; items: { to: string; label: string; hint: string;
       { to: '/options', label: 'Options', hint: 'Sizes, papers, coatings…' },
       { to: '/rules', label: 'Rules', hint: 'Which options go together' },
       { to: '/pricing', label: 'Pricing', hint: 'Base prices and upcharges' },
-      { to: '/templates', label: 'Templates', hint: 'Show or hide designs' },
+      { to: '/templates', label: 'Templates', hint: 'Designs and their filters' },
+      { to: '/design-services', label: 'Design services', hint: 'Packages we design for you' },
     ],
   },
   {

@@ -1,10 +1,13 @@
 /**
- * Optional password for a demo deployment (SITE_BASIC_AUTH="user:password"), the role Caddy's basic
- * auth plays on EC2. Unset (local development, a public launch): every request passes.
+ * Pages of hidden features (lib/features.ts) go to the home page, and an optional password protects a
+ * demo deployment (SITE_BASIC_AUTH="user:password", the role Caddy's basic auth plays on EC2).
+ * Neither set (local development, a public launch): every request passes.
  */
 import { NextResponse, type NextRequest } from 'next/server';
+import { isHiddenPath } from './lib/features';
 
 export function proxy(request: NextRequest) {
+  if (isHiddenPath(request.nextUrl.pathname)) return NextResponse.redirect(new URL('/', request.url));
   const expected = process.env.SITE_BASIC_AUTH;
   if (!expected) return NextResponse.next();
   const header = request.headers.get('authorization') ?? '';

@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router';
 import { api, apiHref, errorText } from '../api';
 import { useAuth } from '../auth';
 import { OrderActions } from '../components/OrderActions';
 import { ShipBy } from '../components/ShipBy';
 import { Toast } from '../components/Toast';
-import { EMAIL_LABELS, money, PAYMENT_LABELS, PROOF_LABELS, shopDate, shopDateTime, STATUS_LABELS, transitDays, type OrderDetail, type ResendableEmail } from '../orders';
+import { EMAIL_LABELS, money, PAYMENT_LABELS, PROOF_LABELS, shopDate, shopDateTime, STATUS_LABELS, transitDays, type OrderDetail, type ResendableEmail, type ServiceDesign } from '../orders';
+import { uploadPdf } from '../upload';
 
 export function OrderDetailPage() {
   const { number } = useParams();
@@ -165,13 +166,24 @@ export function OrderDetailPage() {
                       </dl>
                       {item.files.length === 0 && <p className="muted">No logo uploaded.</p>}
                     </>
+                  ) : item.design.mode === 'service' ? (
+                    <ServiceDesignBox
+                      design={item.design}
+                      packageName={item.designService?.name ?? item.design.tierCode}
+                      revisions={item.designService?.revisions ?? null}
+                      canDeliver={order.status === 'placed' && item.proof.status !== 'approved' && item.proof.status !== 'pending'}
+                      busy={busy}
+                      onDeliver={(files) => run(() => api(`${path}/items/${item.number}/design`, { method: 'POST', body: files }), 'Design delivered, file check started')}
+                    />
                   ) : (
                     <div className="design-title">Customer artwork (PDF upload)</div>
                   )}
                   <div className="file-links">
-                    <a href={apiHref(`${path}/items/${i + 1}/print-file`)} className="btn btn-small btn-primary">
-                      ↓ Print file (PDF)
-                    </a>
+                    {(item.design.mode !== 'service' || item.design.artwork) && (
+                      <a href={apiHref(`${path}/items/${i + 1}/print-file`)} className="btn btn-small btn-primary">
+                        ↓ Print file (PDF)
+                      </a>
+                    )}
                     {item.files.map((f) => (
                       <a key={f.label} href={f.url} className="btn btn-small">
                         ↓ {f.label}: {f.fileName}
@@ -333,5 +345,92 @@ export function OrderDetailPage() {
       </div>
       <Toast status={status} onClose={() => setStatus(null)} />
     </div>
+  );
+}
+
+/** "Let us design it": the customer's brief, change requests, and the designer's upload. */
+function ServiceDesignBox(props: {
+  design: ServiceDesign;
+  packageName: string;
+  revisions: number | null;
+  canDeliver: boolean;
+  busy: boolean;
+  onDeliver: (files: { front: { key: string; fileName: string }; back?: { key: string; fileName: string } }) => Promise<unknown>;
+}) {
+  const { design, packageName, revisions, canDeliver, busy, onDeliver } = props;
+  const requests = design.changeRequests ?? [];
+  const [front, setFront] = useState<File | null>(null);
+  const [back, setBack] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!front) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const files = { front: await uploadPdf(front), ...(back ? { back: await uploadPdf(back) } : {}) };
+      await onDeliver(files);
+      setFront(null);
+      setBack(null);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="design-title">
+        Designed for the customer · {packageName} package
+        {design.artwork ? ` · draft ${design.artwork.round} sent ${shopDateTime(design.artwork.deliveredAt)}` : ' · no draft sent yet'}
+      </div>
+      <p className="muted">Text to print</p>
+      <div className="brief">{design.brief.content}</div>
+      {design.brief.notes && (
+        <>
+          <p className="muted">Look and feel</p>
+          <div className="brief">{design.brief.notes}</div>
+        </>
+      )}
+      {requests.length > 0 && (
+        <>
+          <p className="muted">
+            Change requests ({requests.length}
+            {revisions !== null ? ` of ${revisions} included` : ', unlimited'})
+          </p>
+          {requests.map((r, index) => (
+            <div key={index} className="brief">
+              <strong>
+                {shopDateTime(r.at)} · on draft {r.round}:
+              </strong>{' '}
+              {r.message}
+            </div>
+          ))}
+        </>
+      )}
+      {canDeliver && (
+        <form className="action-form" onSubmit={(e) => void submit(e)} style={{ margin: '8px 0 12px' }}>
+          <strong>{design.artwork ? 'Send a new draft' : 'Send the first draft'}</strong>
+          <label className="field">
+            <span>Front PDF (or one PDF with front and back)</span>
+            <input type="file" accept="application/pdf" onChange={(e) => setFront(e.target.files?.[0] ?? null)} />
+          </label>
+          <label className="field">
+            <span>Back PDF (optional)</span>
+            <input type="file" accept="application/pdf" onChange={(e) => setBack(e.target.files?.[0] ?? null)} />
+          </label>
+          <div className="form-actions" style={{ marginTop: 0 }}>
+            <button type="submit" className="btn btn-primary btn-small" disabled={busy || uploading || !front}>
+              {uploading ? 'Uploading…' : 'Upload and send proof'}
+            </button>
+          </div>
+          <span className="muted">The file is checked like a customer upload, then the customer is emailed the proof.</span>
+          {error && <p className="form-error">{error}</p>}
+        </form>
+      )}
+    </>
   );
 }

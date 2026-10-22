@@ -151,7 +151,7 @@ function CartRow({
   return (
     <article className={`${styles.row} ${busy ? styles.rowBusy : ''}`}>
       <div className={styles.thumb}>
-        {preview ? <img src={preview} alt="Front of your card" /> : <span>{item.design.mode === 'upload' ? 'PDF' : ''}</span>}
+        {preview ? <img src={preview} alt="Front of your card" /> : <span>{item.design.mode === 'upload' ? 'PDF' : item.design.mode === 'service' ? 'Design' : ''}</span>}
       </div>
       <div className={styles.details}>
         <h3>{item.productName}</h3>
@@ -207,6 +207,7 @@ function designLabel(item: CartItem, product: ProductData | null): string {
     const back = item.design.back ? ` + ${item.design.back.fileName}` : '';
     return `Your design: ${item.design.front.fileName}${back}`;
   }
+  if (item.design.mode === 'service') return `Designed for you · ${item.designService?.name ?? item.design.tierCode} package`;
   const { templateCode } = item.design;
   const name = product?.templates.find((t) => t.code === templateCode)?.name ?? templateCode;
   return `${name} template${item.design.values.name ? ` · ${item.design.values.name}` : ''}`;

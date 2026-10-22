@@ -8,6 +8,12 @@ export const UPLOAD_KINDS = {
     contentTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'],
     extension: { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/svg+xml': 'svg' },
   },
+  /** Logo, photos or examples for "let us design it for you". */
+  reference: {
+    prefix: 'references/',
+    contentTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml', 'application/pdf'],
+    extension: { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/svg+xml': 'svg', 'application/pdf': 'pdf' },
+  },
 } as const;
 
 export type UploadKind = keyof typeof UPLOAD_KINDS;

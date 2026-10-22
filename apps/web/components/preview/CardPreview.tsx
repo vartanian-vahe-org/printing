@@ -41,9 +41,11 @@ interface Props {
   artwork?: ArtworkImages;
   /** Stretch to the parent's height instead of the default fixed stage height. */
   fill?: boolean;
+  /** Plain card without the sample design (our designer has not made it yet). */
+  blank?: boolean;
 }
 
-export function CardPreview({ catalog, selection, size, artwork, fill = false }: Props) {
+export function CardPreview({ catalog, selection, size, artwork, fill = false, blank = false }: Props) {
   const spec = useMemo(() => cardSpec(catalog, selection, size), [catalog, selection, size]);
   const [webgl, setWebgl] = useState<boolean | null>(null);
   const [autoRotate, setAutoRotate] = useState(true);
@@ -69,6 +71,7 @@ export function CardPreview({ catalog, selection, size, artwork, fill = false }:
             <CardScene
               spec={spec}
               artwork={artwork}
+              blank={blank}
               turnRequest={turnRequest}
               autoRotate={autoRotate}
               onUserInteract={() => setAutoRotate(false)}

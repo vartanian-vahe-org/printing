@@ -1,51 +1,79 @@
 /*
- * "Design studio" layout.
- *   >= 1280px: three columns that fit the viewport (options | 3D preview | design); each side column
- *              scrolls on its own, so the design form is reachable without scrolling the page.
- *   900-1279px: preview + one panel with Options / Design tabs.
- *   < 900px:   preview on top, tabs and panel below, normal page scroll.
+ * Product page in three steps.
+ *   Options and Details (>= 1100px): three columns that fit the viewport (preview | options or
+ *     details | quantity, price and the next button); the side columns scroll on their own.
+ *   900-1099px: preview on the left, the two panels stacked on the right; normal page scroll.
+ *   < 900px: one column; the price and the next button stay pinned to the bottom of the screen.
+ *   Design (step 2): full width, normal page scroll.
  */
-.studio {
-  display: grid;
-  grid-template-columns: 340px minmax(420px, 1fr) 400px;
-  grid-template-areas: 'options preview design';
-  gap: 20px;
-  height: calc(100dvh - 190px);
-  min-height: 620px;
+.configurator {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.tabs {
-  display: none;
-  grid-area: tabs;
-  align-items: center;
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
   gap: 6px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 6px;
+  flex-wrap: wrap;
 }
 
-.tab {
-  flex: 1;
+.stepButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   background: none;
-  border: none;
-  border-radius: var(--radius-md);
-  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 6px 14px 6px 6px;
+  font: inherit;
+  font-size: 14px;
   font-weight: 600;
-  font-size: 15px;
   color: var(--color-muted);
   cursor: pointer;
 }
 
-.tab[aria-selected='true'] {
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
+.stepButton:hover:not(:disabled) {
+  color: var(--color-text);
 }
 
-.tabTotal {
-  padding: 0 12px;
-  font-weight: 700;
-  white-space: nowrap;
+.stepButton:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.stepButton[aria-current='step'] {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+.stepNumber {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-border);
+  font-size: 13px;
+}
+
+.stepButton[aria-current='step'] .stepNumber {
+  background: var(--color-accent);
+  color: #ffffff;
+}
+
+.studio {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(300px, 1fr) minmax(300px, 360px);
+  grid-template-areas: 'preview main order';
+  gap: 20px;
+  height: calc(100dvh - 230px);
+  min-height: 620px;
 }
 
 .previewColumn {
@@ -64,12 +92,12 @@
   flex-direction: column;
 }
 
-.optionsColumn {
-  grid-area: options;
+.mainColumn {
+  grid-area: main;
 }
 
-.designColumn {
-  grid-area: design;
+.orderColumn {
+  grid-area: order;
 }
 
 .columnBody {
@@ -90,7 +118,7 @@
   color: var(--color-muted);
 }
 
-/* Price stays visible at the bottom of the options column while it scrolls. */
+/* Price and the next button stay visible at the bottom of the column while it scrolls. */
 .priceDock {
   position: sticky;
   bottom: 0;
@@ -98,6 +126,109 @@
   background: var(--color-surface);
   border-top: 1px solid var(--color-border);
   padding: 14px 20px 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.primaryButton {
+  margin-top: 12px;
+  width: 100%;
+  background: var(--color-accent);
+  color: #ffffff;
+  border: none;
+  border-radius: 999px;
+  padding: 12px 18px;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: #1747c9;
+}
+
+.primaryButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.backButton {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.orderHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.optionList {
+  margin: 0;
+  font-size: 14px;
+}
+
+.optionList > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--color-bg);
+}
+
+.optionList dt {
+  color: var(--color-muted);
+}
+
+.optionList dd {
+  margin: 0;
+  text-align: right;
+}
+
+/* ---------- Step 2: choose how to design ---------- */
+
+.choose {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-bottom: 32px;
+}
+
+.chooseHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.chooseHeader h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.uploadStep {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 24px;
+  align-items: end;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 20px;
+}
+
+.uploadNext {
+  display: flex;
+  flex-direction: column;
 }
 
 .field {
@@ -373,70 +504,87 @@
   color: var(--color-muted);
 }
 
-/* ---------- Mobile ---------- */
+/* ---------- Narrower screens ---------- */
 
-@media (max-width: 1279px) {
+@media (max-width: 1099px) {
   .studio {
-    grid-template-columns: minmax(0, 1.15fr) minmax(360px, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+    grid-template-rows: auto auto;
     grid-template-areas:
-      'preview tabs'
-      'preview panel';
+      'preview main'
+      'preview order';
+    height: auto;
+    min-height: 0;
+    align-items: start;
   }
 
-  .tabs {
-    display: flex;
+  .previewColumn {
+    position: sticky;
+    top: 16px;
+    height: 520px;
   }
 
-  .optionsColumn,
-  .designColumn {
-    grid-area: panel;
-  }
-
-  .studio[data-tab='options'] .designColumn,
-  .studio[data-tab='design'] .optionsColumn {
-    display: none;
+  .column {
+    overflow: visible;
   }
 }
 
 @media (max-width: 900px) {
   .studio {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto;
-    grid-template-areas:
-      'preview'
-      'tabs'
-      'panel';
-    height: auto;
-    min-height: 0;
+    grid-template-areas: none;
     gap: 14px;
   }
 
   .previewColumn {
-    height: 360px;
+    position: static;
+    height: 340px;
   }
 
-  .column {
-    overflow: visible;
+  .previewColumn,
+  .mainColumn,
+  .orderColumn {
+    grid-area: auto;
   }
 
-  .previewStage {
-    min-height: 260px;
-    padding: 28px;
+  /* The order column's parts become grid items so the price bar can stick to the screen bottom. */
+  .orderColumn {
+    display: contents;
   }
 
-  /* On phones the price becomes a compact bar pinned to the bottom of the screen. */
+  .orderColumn > .columnBody {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+  }
+
   .priceDock {
-    padding: 10px 16px;
+    z-index: 5;
+    padding: 10px 16px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     box-shadow: 0 -8px 20px rgba(0, 0, 0, 0.08);
-    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
   }
 
-  .priceDock .finePrint {
+  .priceDock .finePrint,
+  .priceDock .breakdown {
     display: none;
   }
 
   .priceTotal {
     font-size: 24px;
+  }
+
+  .primaryButton {
+    margin-top: 8px;
+  }
+
+  .uploadStep {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .previewStage {
+    min-height: 260px;
+    padding: 28px;
   }
 }

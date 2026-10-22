@@ -15,7 +15,7 @@ export interface AccountOrder {
   placedAt: string;
   status: string;
   paymentStatus: string;
-  proofStatus: 'pending' | 'awaiting_customer' | 'needs_new_file' | 'approved';
+  proofStatus: 'pending' | 'awaiting_design' | 'awaiting_customer' | 'needs_new_file' | 'approved';
   totalCents: number;
   deliverFrom: string | null;
   deliverTo: string | null;

@@ -32,7 +32,7 @@ const COMING_SOON = ['Flyers', 'Postcards', 'Stickers & Labels', 'Signs & Banner
 export default async function HomePage() {
   const [configurator, templates] = await Promise.all([
     getConfigurator(PRODUCT_CODE).catch(() => null),
-    getTemplates(PRODUCT_CODE).catch(() => [] as Template[]),
+    getTemplates(PRODUCT_CODE).then((r) => r.templates, () => [] as Template[]),
   ]);
   const catalog = configurator?.catalog ?? null;
   const price = catalog ? startingPrice(catalog) : null;
@@ -153,7 +153,7 @@ export default async function HomePage() {
           <p>Choose your options, see the price instantly and preview your design in 3D.</p>
         </div>
         <Link href="/business-cards" className={styles.primaryButton}>
-          Start designing
+          Order business cards
         </Link>
       </section>
     </main>

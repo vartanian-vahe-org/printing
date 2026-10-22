@@ -31,7 +31,7 @@ export interface PlacedOrder {
   next: { type: 'manual'; message: string } | { type: 'redirect'; url: string };
 }
 
-export type ProofStatus = 'pending' | 'awaiting_customer' | 'needs_new_file' | 'approved';
+export type ProofStatus = 'pending' | 'awaiting_design' | 'awaiting_customer' | 'needs_new_file' | 'approved';
 
 export interface ProofIssue {
   id: string;
@@ -71,10 +71,19 @@ export interface OrderView {
     summary: { label: string; value: string }[];
     design:
       | { mode: 'template'; templateCode: string; values: Record<string, string> }
-      | { mode: 'upload'; front: { fileName: string }; back?: { fileName: string } };
+      | { mode: 'upload'; front: { fileName: string }; back?: { fileName: string } }
+      | {
+          mode: 'service';
+          tierCode: string;
+          brief: { content: string; notes: string; files: { fileName: string }[] };
+          artwork?: { round: number };
+          changeRequests?: { message: string; at: string; round: number }[];
+        };
     quantity: number;
     totalCents: number;
     proof: ItemProof;
+    /** "Let us design it" package bought with the item, or null. */
+    designService: { name: string; designDays: number; revisions: number | null } | null;
   }[];
   shipments: { carrier: string; service: string | null; trackingNumber: string; trackingUrl: string | null; shippedAt: string }[];
   subtotalCents: number;
@@ -136,6 +145,11 @@ export function getOrder(number: number, token: string) {
 
 export function approveProof(number: number, item: number, token: string, acknowledged: string[]) {
   return call<void>(`/orders/${number}/items/${item}/proof/approve`, { method: 'POST', json: { acknowledged }, headers: { 'x-order-token': token } });
+}
+
+/** "Let us design it" items: ask our designer for changes instead of approving. */
+export function requestDesignChanges(number: number, item: number, token: string, message: string) {
+  return call<{ message: string }>(`/orders/${number}/items/${item}/proof/changes`, { method: 'POST', json: { message }, headers: { 'x-order-token': token } });
 }
 
 export interface ReplacementFile {

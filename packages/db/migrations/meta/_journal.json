@@ -155,6 +155,20 @@
       "when": 1792594201721,
       "tag": "0021_staff_totp",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792685715064,
+      "tag": "0022_design_choices",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792685720043,
+      "tag": "0023_seed_design_choices",
+      "breakpoints": true
     }
   ]
 }

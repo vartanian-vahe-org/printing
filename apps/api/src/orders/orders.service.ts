@@ -8,7 +8,7 @@ import type { PreflightRecord, ProofIssue } from './prepress.service.js';
 import { hashOrderToken } from './order-link.js';
 import { trackingUrl } from './tracking.js';
 
-export type ProofProgress = 'pending' | 'awaiting_customer' | 'needs_new_file' | 'approved';
+export type ProofProgress = 'pending' | 'awaiting_design' | 'awaiting_customer' | 'needs_new_file' | 'approved';
 
 export interface OrderView {
   number: number;
@@ -37,6 +37,8 @@ export interface OrderView {
     quantity: number;
     totalCents: number;
     proof: ItemProof;
+    /** "Let us design it" package bought with the item, or null. */
+    designService: { name: string; designDays: number; revisions: number | null } | null;
   }[];
   shipments: { carrier: string; service: string | null; trackingNumber: string; trackingUrl: string | null; shippedAt: string }[];
   subtotalCents: number;
@@ -57,6 +59,7 @@ export function proofProgress(statuses: string[]): ProofProgress {
   if (statuses.length > 0 && statuses.every((s) => s === 'approved')) return 'approved';
   if (statuses.includes('needs_new_file')) return 'needs_new_file';
   if (statuses.includes('awaiting_customer')) return 'awaiting_customer';
+  if (statuses.includes('awaiting_design')) return 'awaiting_design';
   return 'pending';
 }
 
@@ -72,6 +75,11 @@ export interface ItemProof {
 }
 
 const PROOF_LINK_SECONDS = 3600;
+
+function designServiceOf(quote: unknown): OrderView['items'][number]['designService'] {
+  const tier = (quote as { designService?: { name: string; designDays: number; revisions: number | null } | null }).designService;
+  return tier ? { name: tier.name, designDays: tier.designDays, revisions: tier.revisions } : null;
+}
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
@@ -172,6 +180,7 @@ export class OrdersService {
           quantity: item.quantity,
           totalCents: item.totalCents,
           proof: await this.proofOf(item, order.number),
+          designService: designServiceOf(item.quote),
         })),
       ),
       shipments: shipped.map((s) => ({

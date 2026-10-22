@@ -38,6 +38,9 @@ const cancelSchema = z.object({ reason: optionalText(500), notify: z.boolean().d
 const refundSchema = z.object({ reference: text(200) }).strict();
 const noteSchema = z.object({ text: text(2000) }).strict();
 const resendSchema = z.object({ kind: z.enum(RESENDABLE_EMAILS) }).strict();
+/** The API counts the pages itself. */
+const designFile = z.object({ key: z.string().min(1).max(200), fileName: z.string().trim().min(1).max(255) }).strict();
+const deliverDesignSchema = z.object({ front: designFile, back: designFile.optional() }).strict();
 
 /**
  * Order processing. Owners and admins can do everything; the 'staff' role (production floor) can
@@ -61,6 +64,20 @@ export class AdminOrdersController {
   }
 
   /** Build the print file and run the file check again. */
+  /** The designer delivers a "let us design it" design (PDFs uploaded first with POST /uploads/presign). */
+  @Post(':number/items/:item/design')
+  @AllowStaff()
+  @HttpCode(202)
+  async deliverDesign(
+    @Param('number', ParseIntPipe) number: number,
+    @Param('item', ParseIntPipe) item: number,
+    @Body(new ZodValidationPipe(deliverDesignSchema)) body: z.infer<typeof deliverDesignSchema>,
+    @Req() request: AdminRequest,
+  ) {
+    await this.proofs.deliverDesign(number, item, request.staff!.id, body);
+    return { message: 'Design delivered. The file check and proof run now.' };
+  }
+
   @Post(':number/items/:item/preflight')
   @AllowStaff()
   @HttpCode(202)

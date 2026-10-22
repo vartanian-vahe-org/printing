@@ -105,7 +105,7 @@ export class CheckoutService {
       if (rows.length === 0) throw new BadRequestException('Your cart is empty');
 
       const items = await this.carts.checkoutItems(rows);
-      const subtotalCents = items.reduce((sum, item) => sum + item.quote.totalCents, 0);
+      const subtotalCents = items.reduce((sum, item) => sum + item.totalCents, 0);
       const address = input.shippingAddress;
 
       const options = await this.shipping.rates({ address, subtotalCents });
@@ -115,8 +115,8 @@ export class CheckoutService {
       }
       const tax = await this.tax.calculate({ address, subtotalCents, shippingCents: method.priceCents });
       const totals = orderTotals(subtotalCents, method.priceCents, tax.taxCents);
-      // The order ships when its slowest item is printed.
-      const productionDays = Math.max(...items.map((item) => item.turnaroundDays));
+      // The order ships when its slowest item is printed; designed-for-you items need their first draft first.
+      const productionDays = Math.max(...items.map((item) => item.turnaroundDays + (item.designService?.designDays ?? 0)));
       const dates = estimateOrderDates(new Date(), productionDays, method, await this.calendars.calendar());
       if (totals.totalCents !== input.expectedTotalCents) {
         throw new ConflictException({
@@ -159,11 +159,14 @@ export class CheckoutService {
           productName: item.productName,
           configuration: item.configuration,
           design: item.design,
-          // Snapshot plus what later steps need: the summary to display, the turnaround to reschedule.
-          quote: { ...item.quote, summary: item.summary, turnaroundDays: item.turnaroundDays },
+          // Snapshot plus what later steps need: the summary to display, the turnaround to reschedule,
+          // the design package bought (fee, rounds of changes included).
+          quote: { ...item.quote, summary: item.summary, turnaroundDays: item.turnaroundDays, designService: item.designService },
           printSpec: item.printSpec as unknown as Record<string, unknown>,
           quantity: item.quote.quantity,
-          totalCents: item.quote.totalCents,
+          totalCents: item.totalCents,
+          // Our designer makes the file first; the file check runs once it is delivered.
+          ...(item.designService ? { proofStatus: 'awaiting_design' } : {}),
         })),
       );
 

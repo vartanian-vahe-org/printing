@@ -15,9 +15,12 @@ import { buildPrintSpec, type PrintSpec } from './print-spec.js';
 
 export type OrderItemRow = typeof orderItems.$inferSelect;
 
+type FileRef = { key: string; fileName: string; pageCount?: number };
 type Design =
   | { mode: 'template'; templateCode: string; values: Record<string, string>; logoKey?: string }
-  | { mode: 'upload'; front: { key: string; fileName: string; pageCount: number }; back?: { key: string; fileName: string } };
+  | { mode: 'upload'; front: FileRef; back?: FileRef }
+  /** Designed for the customer: `artwork` is the designer's latest file, missing until delivered. */
+  | { mode: 'service'; tierCode: string; artwork?: { front: FileRef; back?: FileRef; round: number } };
 
 export interface PrintFile {
   bytes: Uint8Array;
@@ -63,8 +66,11 @@ export class PrintFilesService {
     doc.setCreator(store?.name ?? 'Print shop');
     doc.setProducer('Print file generator (Phase 2 step 7)');
 
-    const warnings =
-      design.mode === 'template' ? await this.drawTemplate(doc, design, spec) : (await this.copyUploads(doc, design, spec), []);
+    let warnings: RenderWarning[] = [];
+    if (design.mode === 'template') warnings = await this.drawTemplate(doc, design, spec);
+    else if (design.mode === 'upload') await this.copyUploads(doc, design, spec);
+    else if (design.artwork) await this.copyUploads(doc, design.artwork, spec);
+    else throw new ConflictException('The designer has not delivered this design yet.');
 
     return {
       bytes: await doc.save(),
@@ -130,7 +136,7 @@ export class PrintFilesService {
   }
 
   /** One page per printed side from the customer's PDF(s). Size checks are preflight's job (step 8). */
-  private async copyUploads(doc: PDFDocument, design: Extract<Design, { mode: 'upload' }>, spec: PrintSpec) {
+  private async copyUploads(doc: PDFDocument, design: { front: FileRef; back?: FileRef }, spec: PrintSpec) {
     const front = await PDFDocument.load(await this.storage.read(design.front.key), { ignoreEncryption: true });
     const pages: [PDFDocument, number][] = [[front, 0]];
     if (spec.backMode === 'same_as_front') pages.push([front, 0]);

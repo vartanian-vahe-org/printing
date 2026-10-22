@@ -507,3 +507,22 @@
   flex-direction: column;
   gap: 4px;
 }
+
+.changeRequest {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--color-border);
+  color: var(--color-muted);
+  font-size: 14px;
+  white-space: pre-wrap;
+}
+
+.replaceForm textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  resize: vertical;
+}

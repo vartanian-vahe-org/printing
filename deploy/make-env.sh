@@ -94,6 +94,8 @@ API_PROXY_SECRET=$PROXY_SECRET
 # Optional: password-protect the whole storefront with the demo password.
 # SITE_BASIC_AUTH=demo:$DEMO_PASSWORD
 SITE_NOINDEX=true
+# Optional: hide features not ready to show yet (account, cart); see deploy/VERCEL.md.
+# NEXT_PUBLIC_HIDDEN_FEATURES=account,cart
 
 ## Admin project (Root Directory: apps/admin)
 VITE_API_URL=/api

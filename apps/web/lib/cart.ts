@@ -15,7 +15,8 @@ export interface CartItem {
         mode: 'upload';
         front: { key: string; fileName: string; pageCount: number };
         back?: { key: string; fileName: string; pageCount: number };
-      };
+      }
+    | { mode: 'service'; tierCode: string; brief: ServiceBrief };
   summary: { label: string; value: string }[];
   quantity: number;
   totalCents: number | null;
@@ -26,6 +27,18 @@ export interface CartItem {
   shipDate: string | null;
   /** Short-lived links to the customer's logo or PDFs (previews, editing). */
   previewUrls: { logo?: string; front?: string; back?: string };
+  /** "Let us design it" package and its fee (included in totalCents), or null. */
+  designService: { code: string; name: string; priceCents: number } | null;
+}
+
+/** What the customer tells our designer ("let us design it for you"). */
+export interface ServiceBrief {
+  /** Text to print on the card. */
+  content: string;
+  /** Look and feel. */
+  notes: string;
+  /** Logo and reference files, already uploaded. */
+  files: { key: string; fileName: string }[];
 }
 
 export interface Cart {

@@ -73,7 +73,8 @@ export interface CardArtwork {
   back?: Texture;
 }
 
-export function CardMesh({ spec, artwork }: { spec: CardSpec; artwork?: CardArtwork }) {
+/** `blank`: plain paper on both sides instead of the sample design (the design does not exist yet). */
+export function CardMesh({ spec, artwork, blank = false }: { spec: CardSpec; artwork?: CardArtwork; blank?: boolean }) {
   const gl = useThree((state) => state.gl);
   const invalidate = useThree((state) => state.invalidate);
   const anisotropy = gl.capabilities.getMaxAnisotropy();
@@ -87,12 +88,16 @@ export function CardMesh({ spec, artwork }: { spec: CardSpec; artwork?: CardArtw
   }, [spec.widthIn, spec.heightIn, spec.radiusIn, depth]);
 
   const textures = useMemo(() => {
-    const front = placeholderFront(spec, anisotropy);
+    const front = blank ? blankFace(spec, anisotropy) : placeholderFront(spec, anisotropy);
     const back =
-      spec.backMode === 'blank' ? blankFace(spec, anisotropy) : spec.backMode === 'same_as_front' ? front : placeholderBack(spec, anisotropy);
+      blank || spec.backMode === 'blank'
+        ? blankFace(spec, anisotropy)
+        : spec.backMode === 'same_as_front'
+          ? front
+          : placeholderBack(spec, anisotropy);
     return { front, back, grain: paperGrain(spec) };
     // Textures only depend on dimensions and back mode, not on finish.
-  }, [spec.widthIn, spec.heightIn, spec.backMode, anisotropy]);
+  }, [spec.widthIn, spec.heightIn, spec.backMode, anisotropy, blank]);
 
   useEffect(() => {
     invalidate();

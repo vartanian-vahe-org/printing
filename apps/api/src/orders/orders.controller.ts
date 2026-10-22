@@ -12,6 +12,7 @@ const fileRef = z
   .object({ key: z.string().min(1).max(200), fileName: z.string().trim().min(1).max(255), pageCount: z.number().int().min(1).max(10_000) })
   .strict();
 const replaceFileSchema = z.object({ front: fileRef, back: fileRef.optional() }).strict();
+const changesSchema = z.object({ message: z.string().trim().min(5, 'Tell our designer what to change').max(3000) }).strict();
 
 const lookupSchema = z
   .object({
@@ -64,6 +65,19 @@ export class OrdersController {
   ) {
     await this.proofs.replaceFile(number, item, { kind: 'customer', orderToken: token }, body);
     return { message: 'Thanks! We are checking your new file.' };
+  }
+
+  /** The customer asks our designer for changes ("let us design it" items); staff are emailed. */
+  @Post(':number/items/:item/proof/changes')
+  @HttpCode(202)
+  async requestChanges(
+    @Param('number', ParseIntPipe) number: number,
+    @Param('item', ParseIntPipe) item: number,
+    @Headers('x-order-token') token: string | undefined,
+    @Body(new ZodValidationPipe(changesSchema)) body: z.infer<typeof changesSchema>,
+  ) {
+    await this.proofs.requestChanges(number, item, { kind: 'customer', orderToken: token }, body.message);
+    return { message: 'Thanks! Our designer will send you a new proof.' };
   }
 
   /** "Find my order": emails the order link when the number and email match. */

@@ -186,6 +186,10 @@ export class AdminOrdersService {
         if (design.mode === 'upload') {
           await add('Front PDF', design.front?.key, design.front?.fileName ?? 'front.pdf');
           await add('Back PDF', design.back?.key, design.back?.fileName ?? 'back.pdf');
+        } else if (design.mode === 'service') {
+          for (const [index, file] of (design.brief?.files ?? []).entries()) await add(`Customer file ${index + 1}`, file.key, file.fileName);
+          await add('Designed front PDF', design.artwork?.front?.key, design.artwork?.front?.fileName ?? 'front.pdf');
+          await add('Designed back PDF', design.artwork?.back?.key, design.artwork?.back?.fileName ?? 'back.pdf');
         } else {
           const ext = String(design.logoKey ?? '').split('.').pop() ?? 'png';
           await add('Logo', design.logoKey, `order-${order.number}-logo.${ext}`);

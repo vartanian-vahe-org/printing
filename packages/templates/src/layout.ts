@@ -119,4 +119,6 @@ export interface Template {
   sortOrder: number;
   supportedSizeCodes: string[];
   layout: TemplateLayout;
+  /** Filter values by facet code, e.g. { style: ['modern'] } (see TemplateFacet). */
+  tags?: Record<string, string[]>;
 }

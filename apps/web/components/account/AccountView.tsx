@@ -227,6 +227,7 @@ function Dashboard({ customer, onSignedOut, onChanged }: { customer: Customer; o
                   {STATUS[order.status] ?? order.status}
                   {order.status === 'placed' && order.proofStatus === 'awaiting_customer' && ' · proof waiting for you'}
                   {order.status === 'placed' && order.proofStatus === 'needs_new_file' && ' · new file needed'}
+                  {order.status === 'placed' && order.proofStatus === 'awaiting_design' && ' · design in progress'}
                   {order.deliverFrom && order.deliverTo && (order.status === 'placed' || order.status === 'in_production') && ` · arrives ${formatDateRange(order.deliverFrom, order.deliverTo)}`}
                 </span>
               </div>

@@ -6,7 +6,7 @@ export interface UploadedObject {
 
 export class UploadError extends Error {}
 
-type UploadKind = 'artwork' | 'logo';
+type UploadKind = 'artwork' | 'logo' | 'reference';
 
 async function uploadBlob(kind: UploadKind, blob: Blob, filename: string): Promise<UploadedObject> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
@@ -36,6 +36,17 @@ export function uploadArtwork(file: File): Promise<UploadedObject> {
   // Some browsers report an empty type for PDFs picked from certain folders.
   const pdf = file.type === 'application/pdf' ? file : new Blob([file], { type: 'application/pdf' });
   return uploadBlob('artwork', pdf, file.name);
+}
+
+/** Types accepted as logo or reference files for our designer. */
+export const REFERENCE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml', 'application/pdf'];
+export const REFERENCE_MAX_BYTES = 25 * 1024 * 1024;
+
+/** Uploads a logo or reference file for "let us design it for you". */
+export function uploadReference(file: File): Promise<UploadedObject> {
+  if (!REFERENCE_TYPES.includes(file.type)) return Promise.reject(new UploadError('Use a PNG, JPG, WebP, SVG or PDF file.'));
+  if (file.size > REFERENCE_MAX_BYTES) return Promise.reject(new UploadError('Files can be up to 25 MB.'));
+  return uploadBlob('reference', file, file.name);
 }
 
 /** Uploads a logo held as a data: URL (as used for the live preview). */
