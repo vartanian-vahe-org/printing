@@ -26,8 +26,8 @@ Two layouts, chosen when `.env.demo` is generated:
 ## 2. Prepare (from this repo, on your machine)
 
 ```bash
-deploy/make-env.sh <elastic-ip> <your-email>      # all-in-one: writes deploy/.env.demo + deploy/.demo-credentials
-# split: deploy/make-env.sh <elastic-ip> <your-email> <storefront-url> <admin-url>   (see VERCEL.md)
+deploy/make-env.sh <elastic-ip> <admin-email>      # all-in-one: writes deploy/.env.demo + deploy/.demo-credentials
+# split: deploy/make-env.sh <elastic-ip> <admin-email> <storefront-url> <admin-url>   (see VERCEL.md)
 scp -i ~/.ssh/printing-demo.pem deploy/server-setup.sh ubuntu@<elastic-ip>:~
 ssh -i ~/.ssh/printing-demo.pem ubuntu@<elastic-ip> 'bash server-setup.sh'
 ```

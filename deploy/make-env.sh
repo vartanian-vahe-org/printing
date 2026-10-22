@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Generates deploy/.env.demo for a server IP with random secrets.
 #
-#   deploy/make-env.sh <server-ip> <acme-email>                          all-in-one: everything on EC2
-#   deploy/make-env.sh <server-ip> <acme-email> <web-url> <admin-url>    split: sites on Vercel (deploy/VERCEL.md)
+#   deploy/make-env.sh <server-ip> <admin-email>                         all-in-one: everything on EC2
+#   deploy/make-env.sh <server-ip> <admin-email> <web-url> <admin-url>   split: sites on Vercel (deploy/VERCEL.md)
 #
 # Passwords go to deploy/.demo-credentials and, in the split layout, the values to enter in the two
 # Vercel projects go to deploy/.vercel-env. Both are git-ignored; nothing secret is printed.
 set -euo pipefail
 
-USAGE="usage: make-env.sh <server-ip> <acme-email> [<web-url> <admin-url>]"
+USAGE="usage: make-env.sh <server-ip> <admin-email> [<web-url> <admin-url>]"
 IP="${1:?$USAGE}"
 EMAIL="${2:?$USAGE}"
 WEB_URL="${3:-}"
@@ -56,7 +56,6 @@ umask 077
     echo "CADDYFILE=Caddyfile"
   fi
   echo "DOMAIN=$DOMAIN"
-  echo "ACME_EMAIL=$EMAIL"
   echo "BASIC_AUTH_USER=demo"
   echo "BASIC_AUTH_HASH='$HASH'"
   echo "POSTGRES_USER=printing"

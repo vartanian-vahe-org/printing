@@ -1,7 +1,3 @@
-{
-	email {$ACME_EMAIL}
-}
-
 # Split layout: storefront and admin run on Vercel and call this API through their /api proxy
 # (with API_PROXY_SECRET). This server serves the API, file storage and the demo mailbox only.
 

@@ -59,7 +59,7 @@ Domains).
 ### 3. Server settings with the Vercel URLs
 
 ```bash
-deploy/make-env.sh <elastic-ip> <your-email> https://printing-web.vercel.app https://printing-admin.vercel.app
+deploy/make-env.sh <elastic-ip> <admin-email> https://printing-web.vercel.app https://printing-admin.vercel.app
 ```
 
 This writes three git-ignored files:
@@ -137,7 +137,8 @@ take effect in a new build).
 - **The API is public** at `api.<ip>.sslip.io` (the sites need it). Direct callers get the normal
   per-IP rate limits. Only the Vercel proxies know `API_PROXY_SECRET`. Never put it in a `NEXT_PUBLIC_*`
   or `VITE_*` variable.
-- **Region.** Both `vercel.json` files run functions in `sfo1` (San Francisco), close to EC2 `us-west-1`.
+- **Region.** Both `vercel.json` files run functions in `pdx1` (Portland), next to the EC2 server in
+  `us-west-2` (Oregon). Keep the two together if the server moves.
   Every page load and API call makes one extra hop from Vercel to EC2.
 - **Upload size.** Uploads go straight to storage, not through Vercel, so Vercel's 4.5 MB request
   limit does not apply to PDFs. API calls through `/api` are small JSON.

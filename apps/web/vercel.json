@@ -4,6 +4,6 @@
   "buildCommand": "cd ../.. && pnpm turbo run build --filter=@printing/web",
   "installCommand": "pnpm install --frozen-lockfile",
   "regions": [
-    "sfo1"
+    "pdx1"
   ]
 }

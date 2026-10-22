@@ -1,7 +1,3 @@
-{
-	email {$ACME_EMAIL}
-}
-
 # Storefront demo, password protected. HTTPS certificates are issued automatically.
 {$DOMAIN} {
 	encode zstd gzip
