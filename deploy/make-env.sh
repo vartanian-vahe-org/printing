@@ -74,9 +74,9 @@ umask 077
 
 if [[ -n "$WEB_URL" ]]; then
   cat >"$CREDS_FILE" <<CREDS
-Storefront:  $WEB_URL   (demo username and password below)
+Storefront:  $WEB_URL
 Admin:       $ADMIN_URL
-Demo emails: https://mail.$DOMAIN   (same username and password)
+Demo emails: https://mail.$DOMAIN   (username and password below)
 Username:    demo
 Password:    $DEMO_PASSWORD
 
@@ -91,7 +91,8 @@ NEXT_PUBLIC_API_URL=/api
 API_ORIGIN=https://api.$DOMAIN
 API_INTERNAL_URL=https://api.$DOMAIN
 API_PROXY_SECRET=$PROXY_SECRET
-SITE_BASIC_AUTH=demo:$DEMO_PASSWORD
+# Optional: password-protect the whole storefront with the demo password.
+# SITE_BASIC_AUTH=demo:$DEMO_PASSWORD
 SITE_NOINDEX=true
 
 ## Admin project (Root Directory: apps/admin)

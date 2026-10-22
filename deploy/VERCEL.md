@@ -91,7 +91,7 @@ Storefront (`apps/web`):
 | `API_ORIGIN` | `https://api.<ip-with-dashes>.sslip.io` | Where `/api` forwards to |
 | `API_INTERNAL_URL` | `https://api.<ip-with-dashes>.sslip.io` | Used by pages rendered on the server |
 | `API_PROXY_SECRET` | from `.vercel-env` | Secret. Same value as on the server |
-| `SITE_BASIC_AUTH` | `demo:<password>` | Optional. Password-protects the whole storefront (the demo password) |
+| `SITE_BASIC_AUTH` | `demo:<password>` | Optional, off by default. Password-protects the whole storefront (commented out in `.vercel-env`) |
 | `SITE_NOINDEX` | `true` | Optional. Tells search engines not to index the demo |
 
 Admin (`apps/admin`):
@@ -108,8 +108,8 @@ take effect in a new build).
 
 ### 6. Check
 
-1. Storefront: the browser asks for the demo username and password (`.demo-credentials`), then the
-   configurator shows prices.
+1. Storefront: the configurator shows prices (if `SITE_BASIC_AUTH` is set, the browser first asks for
+   the demo username and password).
 2. Add a card to the cart, reload: the cart is kept (cookie on the Vercel domain).
 3. Upload a PDF in the configurator: it works only if the storefront URL is in `SITE_URLS` (storage CORS).
 4. Admin: sign in with the admin account from `.demo-credentials`.
