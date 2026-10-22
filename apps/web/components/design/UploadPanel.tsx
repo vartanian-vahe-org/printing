@@ -14,14 +14,29 @@ interface Props {
   size: ExpectedSize;
   onAdd: (side: FileSide, file: File) => void;
   onRemove: (side: FileSide) => void;
+  /** The card size chosen in step 1 (e.g. "Slim 3.5" x 1.75""), with a way back to change it. */
+  sizeName?: string;
+  onChangeSize?: () => void;
 }
 
-export function UploadPanel({ files, checks, backMode, size, onAdd, onRemove }: Props) {
+export function UploadPanel({ files, checks, backMode, size, onAdd, onRemove, sizeName, onChangeSize }: Props) {
   const bleedW = formatInches(size.widthIn + 2 * size.bleedIn);
   const bleedH = formatInches(size.heightIn + 2 * size.bleedIn);
 
   return (
     <div className={styles.panel}>
+      {sizeName && (
+        <div className={styles.chosen}>
+          <span>
+            Card size: <strong>{sizeName}</strong>
+          </span>
+          {onChangeSize && (
+            <button type="button" className={styles.linkButton} onClick={onChangeSize}>
+              Change size
+            </button>
+          )}
+        </div>
+      )}
       <div className={styles.guide}>
         <strong>File setup</strong>
         <ul>

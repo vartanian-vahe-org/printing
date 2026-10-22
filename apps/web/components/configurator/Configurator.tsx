@@ -50,6 +50,8 @@ import {
 import { editingItemId, loadItemToEdit } from '../../lib/edit-cart-item';
 import { isEnabled } from '../../lib/features';
 import { loadTemplateFonts } from '../../lib/template-fonts';
+import { formatInches } from '../../lib/format';
+import { worstLevel } from '../../lib/pdf-checks';
 import { useArtworkSources, usePageImage, usePdfFiles } from '../../lib/use-pdf-artwork';
 import { useScenePngs } from '../../lib/use-scene-png';
 import { BriefForm } from '../design/BriefForm';
@@ -267,7 +269,9 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  const uploadReady = pdf.files.front?.status === 'ready';
+  // A file with a blocking problem (wrong size, missing back…) cannot go on to step 3.
+  const uploadReady = pdf.files.front?.status === 'ready' && worstLevel([...pdfSources.checks.front, ...pdfSources.checks.back]) !== 'error';
+  const sizeName = size.code === CUSTOM_SIZE_VALUE ? `Custom ${formatInches(size.widthIn)} × ${formatInches(size.heightIn)}` : valueLabel(catalog, SIZE_GROUP, size.code);
   const reachable: Record<Step, boolean> = {
     options: true,
     design: true,
@@ -398,9 +402,15 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
                 size={expectedSize}
                 onAdd={(side, file) => void pdf.addFile(side, file)}
                 onRemove={pdf.removeFile}
+                sizeName={sizeName}
+                onChangeSize={() => go('options')}
               />
               <div className={styles.uploadNext}>
-                <p className={styles.hint}>We check your files right away and show your card in 3D on the next step.</p>
+                <p className={styles.hint}>
+                  {pdf.files.front && !uploadReady && pdf.files.front.status === 'ready'
+                    ? 'Fix the problems above to continue: upload a corrected file, or change the card size to match your file.'
+                    : 'We check your files right away and show your card in 3D on the next step.'}
+                </p>
                 <button type="button" className={styles.primaryButton} disabled={!uploadReady} onClick={() => go('details')}>
                   Review your card
                 </button>
@@ -461,6 +471,8 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
                   size={expectedSize}
                   onAdd={(side, file) => void pdf.addFile(side, file)}
                   onRemove={pdf.removeFile}
+                  sizeName={sizeName}
+                  onChangeSize={() => go('options')}
                 />
               )}
               {method === 'service' && <BriefForm tier={tier} brief={brief} onChange={setBrief} onChangeTier={() => go('design')} />}
