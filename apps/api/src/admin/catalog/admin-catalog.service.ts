@@ -12,8 +12,8 @@ import {
   templateFacets,
   templates,
 } from '@printing/db';
-import { defaultQuantity, InvalidConfigurationError, quote, resolveSelection, UnsatisfiableSelectionError } from '@printing/pricing';
-import { and, asc, eq, inArray, ne } from 'drizzle-orm';
+import { defaultQuantity, InvalidConfigurationError, quote, resolveSelection, SIZE_GROUP, UnsatisfiableSelectionError } from '@printing/pricing';
+import { and, asc, desc, eq, inArray, ne } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { CatalogService } from '../../catalog/catalog.service.js';
 import { DATABASE } from '../../database/database.tokens.js';
@@ -30,6 +30,25 @@ export interface ValuePatch {
   isActive?: boolean;
   isDefault?: boolean;
   attributes?: Record<string, unknown>;
+}
+
+export interface ValueInput {
+  code?: string;
+  label: string;
+  description?: string | null;
+  attributes: Record<string, unknown>;
+  copyFrom?: string;
+}
+
+/** "Premium – 18pt Cardstock" -> "premium_18pt_cardstock" */
+export function valueCodeFrom(label: string): string {
+  const code = label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 50)
+    .replace(/_+$/, '');
+  return code || 'option';
 }
 
 export interface RuleInput {
@@ -60,6 +79,17 @@ export interface DesignTierPatch {
   designDays?: number;
   revisions?: number | null;
   sortOrder?: number;
+  isActive?: boolean;
+}
+
+export interface DesignTierInput {
+  code?: string;
+  name: string;
+  description: string | null;
+  priceCents: number;
+  features: string[];
+  designDays: number;
+  revisions: number | null;
   isActive?: boolean;
 }
 
@@ -124,8 +154,17 @@ export class AdminCatalogService {
 
   // ---------------------------------------------------------------- read
 
+  async listProducts() {
+    const rows = await this.db
+      .select({ code: products.code, name: products.name, isActive: products.isActive })
+      .from(products)
+      .orderBy(asc(products.name));
+    return { products: rows };
+  }
+
   async getCatalog(productCode: string) {
     const productId = await this.productId(this.db, productCode);
+    const [product] = await this.db.select({ name: products.name }).from(products).where(eq(products.id, productId));
     const whenGroup = alias(optionGroups, 'when_group');
     const targetGroup = alias(optionGroups, 'target_group');
     const allowedValue = alias(optionValues, 'allowed_value');
@@ -175,7 +214,7 @@ export class AdminCatalogService {
     ]);
 
     return {
-      product: { code: productCode },
+      product: { code: productCode, name: product!.name },
       groups: groups.map((g) => ({
         code: g.code,
         label: g.label,
@@ -241,15 +280,7 @@ export class AdminCatalogService {
       const existing = (await this.valueIds(tx, groupId)).get(valueCode);
       if (!existing) throw new NotFoundException(`Value "${valueCode}" not found in "${groupCode}"`);
 
-      if (patch.attributes) {
-        const parsed = attributeSchema(groupCode, valueCode).safeParse(patch.attributes);
-        if (!parsed.success) {
-          throw new BadRequestException({
-            message: 'Invalid attributes',
-            issues: parsed.error.issues.map((i) => `${i.path.join('.') || 'attributes'}: ${i.message}`),
-          });
-        }
-      }
+      if (patch.attributes) this.parseAttributes(groupCode, valueCode, patch.attributes);
       const willBeActive = patch.isActive ?? existing.isActive;
       const willBeDefault = patch.isDefault ?? existing.isDefault;
       if (willBeDefault && !willBeActive) {
@@ -288,6 +319,168 @@ export class AdminCatalogService {
         target: `${productCode} · ${groupCode} / ${valueCode}`,
         summary: `Changed ${changed.join(', ') || 'nothing'} of ${before?.label ?? valueCode}`,
         changes: { before: Object.fromEntries(changed.map((k) => [k, before?.[k as keyof typeof before]])), after: Object.fromEntries(changed.map((k) => [k, patch[k as keyof ValuePatch]])) },
+      });
+    });
+  }
+
+  private parseAttributes(groupCode: string, valueCode: string, attributes: Record<string, unknown>) {
+    const parsed = attributeSchema(groupCode, valueCode).safeParse(attributes);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        message: 'Invalid attributes',
+        issues: parsed.error.issues.map((i) => `${i.path.join('.') || 'attributes'}: ${i.message}`),
+      });
+    }
+  }
+
+  /**
+   * Adds an option at the end of its group, active and not the default. With `copyFrom` it starts with
+   * that option's upcharges and rules (and, for sizes, its templates); otherwise upcharges are $0, rules
+   * that limit its group leave it out, and every template supports a new size (layouts adapt to any size).
+   */
+  async createValue(productCode: string, groupCode: string, input: ValueInput, staffId: string): Promise<{ code: string }> {
+    return this.db.transaction(async (tx) => {
+      const productId = await this.productId(tx, productCode);
+      const groupId = await this.groupId(tx, productId, groupCode);
+      const existing = await this.valueIds(tx, groupId);
+
+      let code = input.code ?? valueCodeFrom(input.label);
+      if (input.code) {
+        if (existing.has(code)) throw new BadRequestException(`An option with the code "${code}" already exists`);
+      } else {
+        const stem = code;
+        for (let n = 2; existing.has(code); n++) code = `${stem}_${n}`;
+      }
+      this.parseAttributes(groupCode, code, input.attributes);
+
+      const source = input.copyFrom ? existing.get(input.copyFrom) : undefined;
+      if (input.copyFrom && !source) throw new BadRequestException(`Option "${input.copyFrom}" not found in "${groupCode}"`);
+
+      const [last] = await tx
+        .select({ sortOrder: optionValues.sortOrder })
+        .from(optionValues)
+        .where(eq(optionValues.groupId, groupId))
+        .orderBy(desc(optionValues.sortOrder))
+        .limit(1);
+      const [created] = await tx
+        .insert(optionValues)
+        .values({
+          groupId,
+          code,
+          label: input.label,
+          description: input.description ?? null,
+          attributes: input.attributes,
+          sortOrder: (last?.sortOrder ?? 0) + 1,
+          createdBy: staffId,
+          updatedBy: staffId,
+        })
+        .returning({ id: optionValues.id });
+      const id = created!.id;
+
+      if (source) {
+        const prices = await tx.select().from(optionValuePrices).where(eq(optionValuePrices.optionValueId, source.id));
+        if (prices.length) {
+          await tx.insert(optionValuePrices).values(
+            prices.map((p) => ({ optionValueId: id, quantityTierId: p.quantityTierId, upchargeCents: p.upchargeCents, createdBy: staffId, updatedBy: staffId })),
+          );
+        }
+        // Its own rules: "when the customer picks <source>, only … in group Y".
+        const ownRules = await tx.select().from(optionValueRules).where(eq(optionValueRules.whenValueId, source.id));
+        for (const rule of ownRules) {
+          const allowed = await tx.select().from(optionValueRuleAllowed).where(eq(optionValueRuleAllowed.ruleId, rule.id));
+          const [copy] = await tx
+            .insert(optionValueRules)
+            .values({ productId, whenValueId: id, targetGroupId: rule.targetGroupId, createdBy: staffId, updatedBy: staffId })
+            .returning({ id: optionValueRules.id });
+          await tx.insert(optionValueRuleAllowed).values(allowed.map((a) => ({ ruleId: copy!.id, valueId: a.valueId })));
+        }
+        // Rules of other options that allow <source> allow the new one too.
+        const allowing = await tx
+          .select({ ruleId: optionValueRuleAllowed.ruleId })
+          .from(optionValueRuleAllowed)
+          .where(eq(optionValueRuleAllowed.valueId, source.id));
+        if (allowing.length) await tx.insert(optionValueRuleAllowed).values(allowing.map((a) => ({ ruleId: a.ruleId, valueId: id })));
+      }
+
+      if (groupCode === SIZE_GROUP) {
+        const rows = await tx.select({ id: templates.id, sizes: templates.supportedSizeCodes }).from(templates).where(eq(templates.productId, productId));
+        for (const row of rows) {
+          if (input.copyFrom && !row.sizes.includes(input.copyFrom)) continue;
+          await tx.update(templates).set({ supportedSizeCodes: [...row.sizes, code], updatedBy: staffId }).where(eq(templates.id, row.id));
+        }
+      }
+
+      await this.assertStorefrontStillWorks(tx, productCode);
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.value.create',
+        target: `${productCode} · ${groupCode} / ${code}`,
+        summary: `Added ${input.label}${input.copyFrom ? ` (prices and rules copied from ${input.copyFrom})` : ''}`,
+        changes: { before: null, after: { code, label: input.label, description: input.description ?? null, attributes: input.attributes, copyFrom: input.copyFrom ?? null } },
+      });
+      return { code };
+    });
+  }
+
+  /**
+   * Deletes an option with its upcharges and rules. Carts holding it ask the customer to choose again;
+   * placed orders keep their own copy of the configuration. Refused for the default, and when a rule
+   * would be left allowing nothing.
+   */
+  async deleteValue(productCode: string, groupCode: string, valueCode: string, staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const productId = await this.productId(tx, productCode);
+      const groupId = await this.groupId(tx, productId, groupCode);
+      const [value] = await tx
+        .select()
+        .from(optionValues)
+        .where(and(eq(optionValues.groupId, groupId), eq(optionValues.code, valueCode)))
+        .for('update');
+      if (!value) throw new NotFoundException(`Value "${valueCode}" not found in "${groupCode}"`);
+      if (value.isDefault) throw new BadRequestException('This is the default option. Make another option the default before deleting it.');
+
+      // Rules whose only allowed option is this one would leave customers nothing to pick.
+      const restricting = await tx
+        .select({ ruleId: optionValueRuleAllowed.ruleId, valueId: optionValueRuleAllowed.valueId })
+        .from(optionValueRuleAllowed)
+        .innerJoin(optionValueRules, eq(optionValueRules.id, optionValueRuleAllowed.ruleId))
+        .where(eq(optionValueRules.targetGroupId, groupId));
+      const onlyHere = [...new Set(restricting.filter((r) => r.valueId === value.id).map((r) => r.ruleId))].filter(
+        (ruleId) => restricting.filter((r) => r.ruleId === ruleId).length === 1,
+      );
+      if (onlyHere.length) {
+        const blockers = await tx
+          .select({ label: optionValues.label })
+          .from(optionValueRules)
+          .innerJoin(optionValues, eq(optionValues.id, optionValueRules.whenValueId))
+          .where(inArray(optionValueRules.id, onlyHere));
+        throw new BadRequestException(
+          `${value.label} is the only option allowed with ${blockers.map((b) => b.label).join(', ')}. Change that rule first.`,
+        );
+      }
+
+      const prices = await tx
+        .select({ quantity: productQuantityTiers.quantity, upchargeCents: optionValuePrices.upchargeCents })
+        .from(optionValuePrices)
+        .innerJoin(productQuantityTiers, eq(productQuantityTiers.id, optionValuePrices.quantityTierId))
+        .where(eq(optionValuePrices.optionValueId, value.id));
+      await tx.delete(optionValues).where(eq(optionValues.id, value.id));
+
+      if (groupCode === SIZE_GROUP) {
+        const rows = await tx.select({ id: templates.id, sizes: templates.supportedSizeCodes }).from(templates).where(eq(templates.productId, productId));
+        for (const row of rows.filter((r) => r.sizes.includes(valueCode))) {
+          await tx.update(templates).set({ supportedSizeCodes: row.sizes.filter((s) => s !== valueCode), updatedBy: staffId }).where(eq(templates.id, row.id));
+        }
+      }
+
+      await this.assertStorefrontStillWorks(tx, productCode);
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.value.delete',
+        target: `${productCode} · ${groupCode} / ${valueCode}`,
+        summary: `Deleted ${value.label}`,
+        changes: {
+          before: { code: value.code, label: value.label, description: value.description, isActive: value.isActive, attributes: value.attributes, upcharges: prices },
+          after: null,
+        },
       });
     });
   }
@@ -496,6 +689,60 @@ export class AdminCatalogService {
         target: `${productCode} · template filters`,
         summary: `Updated template filters: ${facets.map((f) => `${f.name} (${f.values.length})`).join(', ') || 'none'}`,
         changes: { before: before.map((f) => ({ code: f.code, name: f.name, values: f.values })), after: facets },
+      });
+    });
+  }
+
+  /** Adds a "let us design it" package at the end of this product's list. Codes only need to be unique per product. */
+  async createDesignTier(productCode: string, input: DesignTierInput, staffId: string): Promise<{ code: string }> {
+    return this.db.transaction(async (tx) => {
+      const productId = await this.productId(tx, productCode);
+      const rows = await tx
+        .select({ code: designServiceTiers.code, sortOrder: designServiceTiers.sortOrder })
+        .from(designServiceTiers)
+        .where(eq(designServiceTiers.productId, productId));
+      const taken = new Set(rows.map((r) => r.code));
+      let code = input.code ?? valueCodeFrom(input.name);
+      if (input.code) {
+        if (taken.has(code)) throw new BadRequestException(`A package with the code "${code}" already exists`);
+      } else {
+        const stem = code;
+        for (let n = 2; taken.has(code); n++) code = `${stem}_${n}`;
+      }
+      const { code: _code, ...fields } = input;
+      await tx.insert(designServiceTiers).values({
+        productId,
+        code,
+        ...fields,
+        sortOrder: Math.max(0, ...rows.map((r) => r.sortOrder)) + 1,
+        createdBy: staffId,
+        updatedBy: staffId,
+      });
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.design_service.create',
+        target: `${productCode} · design service ${code}`,
+        summary: `Added the ${input.name} design service ($${(input.priceCents / 100).toFixed(2)})`,
+        changes: { before: null, after: { code, ...fields } },
+      });
+      return { code };
+    });
+  }
+
+  /** Deletes a package. Carts holding it ask the customer to choose again; placed orders keep their copy. */
+  async deleteDesignTier(productCode: string, tierCode: string, staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const productId = await this.productId(tx, productCode);
+      const [before] = await tx
+        .delete(designServiceTiers)
+        .where(and(eq(designServiceTiers.productId, productId), eq(designServiceTiers.code, tierCode)))
+        .returning();
+      if (!before) throw new NotFoundException(`Design service "${tierCode}" not found`);
+      const { id: _id, productId: _p, createdAt: _c, updatedAt: _u, createdBy: _cb, updatedBy: _ub, ...kept } = before;
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.design_service.delete',
+        target: `${productCode} · design service ${tierCode}`,
+        summary: `Deleted the ${before.name} design service`,
+        changes: { before: kept, after: null },
       });
     });
   }

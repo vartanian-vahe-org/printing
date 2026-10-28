@@ -74,6 +74,32 @@ select {
   padding: 4px 8px 18px;
 }
 
+.sidebar-product-picker {
+  display: block;
+}
+
+.sidebar-product-picker select {
+  width: 100%;
+  font: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 14px;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .nav-item {
   display: flex;
   flex-direction: column;
@@ -432,6 +458,26 @@ select {
   gap: 6px;
 }
 
+.value-add .value-form-new {
+  margin-left: 0;
+}
+
+.form-actions-spacer {
+  flex: 1;
+}
+
+.confirm-box {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.confirm-box p {
+  margin: 0 0 10px;
+}
+
 .value-form {
   margin: 14px 0 4px 40px;
   padding: 16px;
@@ -525,11 +571,13 @@ select {
 .rule-card-header {
   display: flex;
   align-items: center;
+  gap: 12px;
   justify-content: space-between;
   margin-bottom: 10px;
 }
 
 .rule-card-header h3 {
+  flex: 1;
   margin: 0;
   font-size: 15px;
 }

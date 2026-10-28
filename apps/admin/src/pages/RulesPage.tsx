@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, productPath, type AdminCatalog, type AdminGroup } from '../api';
+import { api, type AdminCatalog, type AdminGroup } from '../api';
 import { useCatalog, useSaver } from '../catalog';
 import { Toast } from '../components/Toast';
 
@@ -13,8 +13,10 @@ export function RulesPage() {
   const [when, setWhen] = useState<{ group: string; value: string }>({ group: 'paper', value: '14pt' });
 
   if (!catalog) return <p className="page-loading">Loading…</p>;
-  const whenGroup = catalog.groups.find((g) => g.code === when.group)!;
-  const whenValue = whenGroup.values.find((v) => v.code === when.value)!;
+  // Falls back to the first option when the picked one no longer exists (deleted on the Options page).
+  const whenGroup = catalog.groups.find((g) => g.code === when.group) ?? catalog.groups[0]!;
+  const whenValue = whenGroup.values.find((v) => v.code === when.value) ?? whenGroup.values[0]!;
+  const current = { group: whenGroup.code, value: whenValue.code };
 
   return (
     <div className="page">
@@ -22,7 +24,7 @@ export function RulesPage() {
         <div>
           <h1>Rules</h1>
           <p className="muted">
-            Choose an option on the left, then tick what customers can combine it with. Unticked options are hidden on the storefront.
+            Choose an option on the left, then tick what customers can combine it with. Unticked options are hidden on the storefront. Add or delete options on the Options page.
           </p>
         </div>
       </header>
@@ -34,7 +36,7 @@ export function RulesPage() {
               <h3>{group.label}</h3>
               {group.values.map((value) => {
                 const count = catalog.rules.filter((r) => r.whenGroup === group.code && r.whenValue === value.code).length;
-                const active = group.code === when.group && value.code === when.value;
+                const active = group.code === current.group && value.code === current.value;
                 return (
                   <button
                     key={value.code}
@@ -56,9 +58,9 @@ export function RulesPage() {
             When the customer picks <em>{whenValue.label}</em>
           </h2>
           {catalog.groups
-            .filter((g) => g.code !== when.group)
+            .filter((g) => g.code !== current.group)
             .map((target) => (
-              <TargetRule key={`${when.group}.${when.value}.${target.code}`} catalog={catalog} when={when} target={target} saver={saver} />
+              <TargetRule key={`${current.group}.${current.value}.${target.code}`} catalog={catalog} when={current} target={target} saver={saver} />
             ))}
         </div>
       </div>
@@ -79,6 +81,7 @@ function TargetRule({
   target: AdminGroup;
   saver: ReturnType<typeof useSaver>;
 }) {
+  const { path: productPath } = useCatalog();
   const rule = catalog.rules.find((r) => r.whenGroup === when.group && r.whenValue === when.value && r.targetGroup === target.code);
   const allCodes = useMemo(() => target.values.map((v) => v.code), [target]);
   const [checked, setChecked] = useState<string[]>(rule?.allowed ?? allCodes);
@@ -87,14 +90,10 @@ function TargetRule({
   const dirty = [...checked].sort().join() !== [...(rule?.allowed ?? allCodes)].sort().join();
   const unrestricted = checked.length === allCodes.length;
 
-  function save() {
+  function save(allowed: string[] | null) {
     void saver.save(
-      () =>
-        api(`${productPath}/rules`, {
-          method: 'PUT',
-          body: { whenGroup: when.group, whenValue: when.value, targetGroup: target.code, allowed: unrestricted ? null : checked },
-        }),
-      unrestricted ? `${target.label}: no restriction` : `${target.label} rule saved`,
+      () => api(`${productPath}/rules`, { method: 'PUT', body: { whenGroup: when.group, whenValue: when.value, targetGroup: target.code, allowed } }),
+      allowed === null ? `${target.label}: no restriction` : `${target.label} rule saved`,
     );
   }
 
@@ -102,6 +101,11 @@ function TargetRule({
     <section className="card rule-card">
       <div className="rule-card-header">
         <h3>{target.label} available</h3>
+        {rule && !dirty && (
+          <button type="button" className="link-btn" disabled={saver.saving} onClick={() => save(null)}>
+            Remove restriction
+          </button>
+        )}
         <span className={`badge ${rule ? 'badge-rule' : ''}`}>{rule ? `${rule.allowed.length} of ${allCodes.length}` : 'No restriction'}</span>
       </div>
       <div className="checks">
@@ -119,7 +123,7 @@ function TargetRule({
       </div>
       {dirty && (
         <div className="form-actions">
-          <button type="button" className="btn btn-primary btn-small" disabled={saver.saving || checked.length === 0} onClick={save}>
+          <button type="button" className="btn btn-primary btn-small" disabled={saver.saving || checked.length === 0} onClick={() => save(unrestricted ? null : checked)}>
             Save
           </button>
           <button type="button" className="btn btn-ghost btn-small" onClick={() => setChecked(rule?.allowed ?? allCodes)}>

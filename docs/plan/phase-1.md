@@ -1,6 +1,6 @@
 # Phase 1: Configurator + Preview 3D
 
-Trạng thái: **Hoàn thành phần code** (2026-10-21). Còn bước 7.5 deploy staging, chờ server EC2.
+Trạng thái: **Hoàn thành** (code xong 2026-10-21; staging chạy từ 2026-10-22: storefront và admin trên Vercel, API trên EC2). Trang sản phẩm sau đó được làm lại thành 3 bước (decision P14).
 Cập nhật: 2026-10-19
 Spec liên quan: [specs/business-card-mvp.md](../specs/business-card-mvp.md), [specs/docker.md](../specs/docker.md)
 

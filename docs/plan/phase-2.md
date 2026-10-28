@@ -1,6 +1,6 @@
 # Phase 2: Bán được hàng
 
-Trạng thái: **Đang làm** (bắt đầu 2026-10-21)
+Trạng thái: **Code xong** 11/11 bước (bắt đầu 2026-10-21). Chờ chốt hãng thanh toán, ship, thuế và giá thật để mở bán ([roadmap.md](roadmap.md))
 Quyết định liên quan: [decisions.md](../decisions.md) T14 (cổng thanh toán / ship / thuế với bản mặc định)
 
 ## 1. Mục tiêu

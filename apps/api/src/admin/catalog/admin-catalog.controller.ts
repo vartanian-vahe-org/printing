@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe.js';
 import { AdminGuard, type AdminRequest } from '../auth/admin.guard.js';
@@ -19,6 +19,22 @@ const valuePatchSchema = z
   })
   .strict()
   .refine((p) => Object.keys(p).length > 0, { message: 'Nothing to update' });
+
+const valueCreateSchema = z
+  .object({
+    /** Optional; made from the label when left out. */
+    code: z
+      .string()
+      .regex(/^[a-z0-9]+(_[a-z0-9]+)*$/, 'Use lowercase letters, numbers and underscores')
+      .max(60)
+      .optional(),
+    label: z.string().trim().min(1).max(120),
+    description: z.string().trim().max(300).nullable().optional(),
+    attributes: z.record(z.string(), z.unknown()),
+    /** Existing value of the same group whose upcharges and rules the new one starts with. */
+    copyFrom: code.optional(),
+  })
+  .strict();
 
 const ruleSchema = z.object({
   whenGroup: code,
@@ -68,6 +84,28 @@ const facetsSchema = z.object({
     .max(10),
 });
 
+const designTierFields = {
+  name: z.string().trim().min(1).max(60),
+  description: z.string().trim().max(300).nullable(),
+  priceCents: z.number().int().min(0).max(1_000_000),
+  features: z.array(z.string().trim().min(1).max(200)).max(12),
+  designDays: z.number().int().min(1).max(60),
+  revisions: z.number().int().min(0).max(100).nullable(),
+  isActive: z.boolean(),
+};
+
+const designTierCreateSchema = z
+  .object({
+    code: z
+      .string()
+      .regex(/^[a-z0-9]+(_[a-z0-9]+)*$/, 'Use lowercase letters, numbers and underscores')
+      .max(60)
+      .optional(),
+    ...designTierFields,
+    isActive: designTierFields.isActive.optional(),
+  })
+  .strict();
+
 const designTierPatchSchema = z
   .object({
     name: z.string().trim().min(1).max(60).optional(),
@@ -105,6 +143,30 @@ export class AdminCatalogController {
     @Req() request: AdminRequest,
   ) {
     await this.catalog.updateValue(productCode, group, value, body, request.staff!.id);
+    await this.storefront.invalidate(productCode);
+  }
+
+  @Post('groups/:group/values')
+  async createValue(
+    @Param('code') productCode: string,
+    @Param('group') group: string,
+    @Body(new ZodValidationPipe(valueCreateSchema)) body: z.infer<typeof valueCreateSchema>,
+    @Req() request: AdminRequest,
+  ) {
+    const created = await this.catalog.createValue(productCode, group, body, request.staff!.id);
+    await this.storefront.invalidate(productCode);
+    return created;
+  }
+
+  @Delete('groups/:group/values/:value')
+  @HttpCode(204)
+  async deleteValue(
+    @Param('code') productCode: string,
+    @Param('group') group: string,
+    @Param('value') value: string,
+    @Req() request: AdminRequest,
+  ) {
+    await this.catalog.deleteValue(productCode, group, value, request.staff!.id);
     await this.storefront.invalidate(productCode);
   }
 
@@ -151,6 +213,21 @@ export class AdminCatalogController {
     await this.catalog.setFacets(productCode, body.facets, request.staff!.id);
   }
 
+  @Post('design-services')
+  async createDesignService(
+    @Param('code') productCode: string,
+    @Body(new ZodValidationPipe(designTierCreateSchema)) body: z.infer<typeof designTierCreateSchema>,
+    @Req() request: AdminRequest,
+  ) {
+    return this.catalog.createDesignTier(productCode, body, request.staff!.id);
+  }
+
+  @Delete('design-services/:tier')
+  @HttpCode(204)
+  async deleteDesignService(@Param('code') productCode: string, @Param('tier') tier: string, @Req() request: AdminRequest) {
+    await this.catalog.deleteDesignTier(productCode, tier, request.staff!.id);
+  }
+
   @Patch('design-services/:tier')
   @HttpCode(204)
   async updateDesignService(
@@ -160,5 +237,17 @@ export class AdminCatalogController {
     @Req() request: AdminRequest,
   ) {
     await this.catalog.updateDesignTier(productCode, tier, body, request.staff!.id);
+  }
+}
+
+/** The products the admin can configure (the product picker in the sidebar). */
+@Controller('admin/products')
+@UseGuards(AdminGuard)
+export class AdminProductsController {
+  constructor(private readonly catalog: AdminCatalogService) {}
+
+  @Get()
+  list() {
+    return this.catalog.listProducts();
   }
 }

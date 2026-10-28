@@ -42,6 +42,11 @@ afterAll(async () => {
   await call('PUT', `${admin}/rules`, { whenGroup: 'paper', whenValue: '14pt', targetGroup: 'turnaround', allowed: null });
   await call('PUT', `${admin}/pricing`, { tiers: [{ quantity: 500, basePriceCents: 2499 }] });
   await call('PATCH', `${admin}/templates/minimal`, { isActive: true });
+  await call('PUT', `${admin}/rules`, { whenGroup: 'paper', whenValue: '16pt', targetGroup: 'turnaround', allowed: null });
+  await call('DELETE', `${admin}/design-services/e2e_pkg`);
+  for (const [group, value] of [['paper', 'e2e_paper'], ['turnaround', 'e2e_rush'], ['size', 'e2e_size']]) {
+    await call('DELETE', `${admin}/groups/${group}/values/${value}`);
+  }
   await call('POST', `${base}/admin/auth/logout`);
 });
 
@@ -138,6 +143,120 @@ describe('admin catalog', () => {
     await call('PATCH', `${admin}/templates/minimal`, { isActive: true });
     codes = (await call('GET', `${base}/products/business-cards/templates`, undefined, false)).body.templates.map((t: any) => t.code);
     expect(codes).toContain('minimal');
+  });
+});
+
+describe('admin catalog: adding and deleting options', () => {
+  const selection = { size: 'std_3_5x2', paper: '16pt', coating: 'matte_both', printed_side: 'front_back', corners: 'square', turnaround: '3d' };
+  const price = async (paper: string) =>
+    (await call('POST', `${base}/quotes`, { productCode: 'business-cards', selection: { ...selection, paper }, quantity: 500 }, false)).body.totalCents;
+
+  it('adds an option that starts with the prices and rules of another, then deletes it', async () => {
+    const created = await call('POST', `${admin}/groups/paper/values`, {
+      code: 'e2e_paper',
+      label: 'E2E Paper',
+      attributes: { thickness_pt: 18, tier: 'premium' },
+      copyFrom: '16pt',
+    });
+    expect(created.status).toBe(201);
+    expect(created.body).toEqual({ code: 'e2e_paper' });
+
+    let catalog = (await storefront()).catalog;
+    const paper = catalog.groups.find((g: any) => g.code === 'paper');
+    expect(paper.values.at(-1)).toMatchObject({ code: 'e2e_paper', label: 'E2E Paper', isDefault: false });
+    expect(await price('e2e_paper')).toBe(await price('16pt'));
+    const rulesOf = (value: string) =>
+      catalog.rules.filter((r: any) => r.whenValue === value).map((r: any) => ({ target: r.targetGroup, allowed: [...r.allowed].sort() }));
+    expect(rulesOf('e2e_paper')).toEqual(rulesOf('16pt'));
+
+    expect((await call('DELETE', `${admin}/groups/paper/values/e2e_paper`)).status).toBe(204);
+    catalog = (await storefront()).catalog;
+    expect(catalog.groups.find((g: any) => g.code === 'paper').values.map((v: any) => v.code)).not.toContain('e2e_paper');
+    expect(catalog.rules.filter((r: any) => r.whenValue === 'e2e_paper')).toEqual([]);
+  });
+
+  it('makes a code from the label and refuses a taken one', async () => {
+    const body = { label: 'Rush 1 Hour!', attributes: { business_days: 1 } };
+    const first = await call('POST', `${admin}/groups/turnaround/values`, { ...body, code: 'e2e_rush' });
+    expect(first.status).toBe(201);
+    const auto = await call('POST', `${admin}/groups/turnaround/values`, body);
+    expect(auto.body).toEqual({ code: 'rush_1_hour' });
+    expect((await call('DELETE', `${admin}/groups/turnaround/values/rush_1_hour`)).status).toBe(204);
+
+    const taken = await call('POST', `${admin}/groups/turnaround/values`, { ...body, code: 'e2e_rush' });
+    expect(taken.status).toBe(400);
+    expect(taken.body.message).toMatch(/already exists/);
+  });
+
+  it('validates the details of a new option', async () => {
+    const res = await call('POST', `${admin}/groups/turnaround/values`, { label: 'Bad', attributes: { business_days: 0 } });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Invalid attributes');
+  });
+
+  it('refuses to delete the default, or the only option a rule allows', async () => {
+    const def = await call('DELETE', `${admin}/groups/paper/values/14pt`);
+    expect(def.status).toBe(400);
+    expect(def.body.message).toMatch(/default option/);
+
+    await call('PUT', `${admin}/rules`, { whenGroup: 'paper', whenValue: '16pt', targetGroup: 'turnaround', allowed: ['e2e_rush'] });
+    const only = await call('DELETE', `${admin}/groups/turnaround/values/e2e_rush`);
+    expect(only.status).toBe(400);
+    expect(only.body.message).toMatch(/only option allowed with Premium/);
+
+    await call('PUT', `${admin}/rules`, { whenGroup: 'paper', whenValue: '16pt', targetGroup: 'turnaround', allowed: null });
+    expect((await call('DELETE', `${admin}/groups/turnaround/values/e2e_rush`)).status).toBe(204);
+    expect((await call('DELETE', `${admin}/groups/turnaround/values/e2e_rush`)).status).toBe(404);
+  });
+
+  it('offers every template in a new size and takes it away on delete', async () => {
+    const templates = async () => (await call('GET', `${base}/products/business-cards/templates`, undefined, false)).body.templates;
+    const attributes = { trim_w_in: 3, trim_h_in: 2, bleed_in: 0.125, safe_in: 0.125, price_multiplier: 1 };
+    expect((await call('POST', `${admin}/groups/size/values`, { code: 'e2e_size', label: 'E2E 3" x 2"', attributes })).status).toBe(201);
+    expect((await templates()).every((t: any) => t.supportedSizeCodes.includes('e2e_size'))).toBe(true);
+
+    expect((await call('DELETE', `${admin}/groups/size/values/e2e_size`)).status).toBe(204);
+    expect((await templates()).some((t: any) => t.supportedSizeCodes.includes('e2e_size'))).toBe(false);
+  });
+
+  it('records additions and deletions in the activity log', async () => {
+    const actions = (await call('GET', `${base}/admin/audit`)).body.entries.map((e: any) => e.action);
+    expect(actions).toContain('catalog.value.create');
+    expect(actions).toContain('catalog.value.delete');
+  });
+});
+
+describe('admin products and design packages', () => {
+  const offered = async () => (await call('GET', `${base}/products/business-cards/design-services`, undefined, false)).body.tiers;
+
+  it('lists the products to configure', async () => {
+    const res = await call('GET', `${base}/admin/products`);
+    expect(res.status).toBe(200);
+    expect(res.body.products).toContainEqual({ code: 'business-cards', name: expect.any(String), isActive: true });
+    expect((await call('GET', `${base}/admin/products`, undefined, false)).status).toBe(401);
+    expect((await call('GET', `${admin}/catalog`)).body.product).toEqual({ code: 'business-cards', name: expect.any(String) });
+  });
+
+  it('adds a package to one product, then deletes it', async () => {
+    const body = { code: 'e2e_pkg', name: 'E2E Rush', description: null, priceCents: 1500, features: ['1 concept'], designDays: 1, revisions: 0 };
+    const created = await call('POST', `${admin}/design-services`, body);
+    expect(created.status).toBe(201);
+    expect(created.body).toEqual({ code: 'e2e_pkg' });
+    const tiers = await offered();
+    expect(tiers.at(-1)).toMatchObject({ code: 'e2e_pkg', name: 'E2E Rush', priceCents: 1500, revisions: 0 });
+
+    const taken = await call('POST', `${admin}/design-services`, body);
+    expect(taken.status).toBe(400);
+    expect(taken.body.message).toMatch(/already exists/);
+
+    expect((await call('DELETE', `${admin}/design-services/e2e_pkg`)).status).toBe(204);
+    expect((await offered()).map((t: any) => t.code)).not.toContain('e2e_pkg');
+    expect((await call('DELETE', `${admin}/design-services/e2e_pkg`)).status).toBe(404);
+  });
+
+  it('validates a new package', async () => {
+    const res = await call('POST', `${admin}/design-services`, { name: 'Bad', description: null, priceCents: -1, features: [], designDays: 0, revisions: null });
+    expect(res.status).toBe(400);
   });
 });
 

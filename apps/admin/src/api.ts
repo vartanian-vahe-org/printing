@@ -119,8 +119,14 @@ export interface AdminDesignService {
   isActive: boolean;
 }
 
+export interface AdminProduct {
+  code: string;
+  name: string;
+  isActive: boolean;
+}
+
 export interface AdminCatalog {
-  product: { code: string };
+  product: { code: string; name: string };
   groups: AdminGroup[];
   rules: AdminRule[];
   quantityTiers: AdminTier[];
@@ -129,6 +135,3 @@ export interface AdminCatalog {
   templateFacets: AdminFacet[];
   designServices: AdminDesignService[];
 }
-
-export const PRODUCT = 'business-cards';
-export const productPath = `/admin/products/${PRODUCT}`;

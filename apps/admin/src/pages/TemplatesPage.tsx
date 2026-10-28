@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, productPath, type AdminFacet, type AdminTemplate } from '../api';
+import { api, type AdminFacet, type AdminTemplate } from '../api';
 import { useCatalog, useSaver } from '../catalog';
 import { Toast } from '../components/Toast';
 
@@ -21,7 +21,7 @@ export function slugify(name: string): string {
 }
 
 export function TemplatesPage() {
-  const { catalog } = useCatalog();
+  const { catalog, path: productPath } = useCatalog();
   const saver = useSaver();
   const [editing, setEditing] = useState<string | null>(null);
   if (!catalog) return <p className="page-loading">Loading…</p>;

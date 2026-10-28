@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, productPath, type AdminCatalog } from '../api';
+import { api, type AdminCatalog } from '../api';
 import { dollars, parseDollars, useCatalog, useSaver } from '../catalog';
 import { Toast } from '../components/Toast';
 
@@ -23,7 +23,7 @@ function initialGrid(catalog: AdminCatalog): { base: Grid; upcharge: Grid } {
 }
 
 export function PricingPage() {
-  const { catalog } = useCatalog();
+  const { catalog, path: productPath } = useCatalog();
   const saver = useSaver();
   const initial = useMemo(() => (catalog ? initialGrid(catalog) : null), [catalog]);
   const [base, setBase] = useState<Grid>({});
@@ -209,7 +209,7 @@ function MoneyInput({ value, changed, onChange }: { value: string; changed: bool
 
 /** Size uses a multiplier on the whole price instead of upcharges (spec §4.3). */
 function SizeMultipliers() {
-  const { catalog } = useCatalog();
+  const { catalog, path: productPath } = useCatalog();
   const saver = useSaver();
   const size = catalog!.groups.find((g) => g.code === 'size');
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>({});

@@ -13,7 +13,7 @@ Web in ấn online cho thị trường Mỹ, in tại xưởng riêng. Sản ph�
 | [specs/templates.md](specs/templates.md) | Định dạng layout JSON của template, bộ render, 5 template đã seed |
 | [specs/docker.md](specs/docker.md) | Docker: môi trường dev bằng Compose, image deploy cho từng app |
 | [plan/roadmap.md](plan/roadmap.md) | **Lộ trình**: Phase 1–4 và việc chuẩn bị launch |
-| [plan/phase-2.md](plan/phase-2.md) | **Phase 2 (đang làm)**: giỏ hàng, checkout, đơn hàng, email, file in, proof |
-| [plan/phase-1.md](plan/phase-1.md) | **Phase 1 (code xong, chờ deploy staging)**: configurator + giá, template/upload PDF, preview 3D, admin cơ bản |
+| [plan/phase-2.md](plan/phase-2.md) | **Phase 2 (code xong, chờ chốt hãng và giá)**: giỏ hàng, checkout, đơn hàng, email, file in, proof |
+| [plan/phase-1.md](plan/phase-1.md) | **Phase 1 (xong, đang chạy trên staging)**: configurator + giá, template/upload PDF, preview 3D, admin cơ bản |
 
 Research thực hiện ngày **2026-10-19**. Giá và option của đối thủ thay đổi theo thời gian, nên kiểm tra lại trước khi dùng làm mốc so sánh.

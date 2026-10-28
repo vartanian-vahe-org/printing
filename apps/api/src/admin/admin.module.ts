@@ -10,7 +10,7 @@ import { MailModule } from '../mail/mail.module.js';
 import { AuthController } from './auth/auth.controller.js';
 import { LoginLimiter } from './auth/login-limiter.js';
 import { SessionService } from './auth/session.service.js';
-import { AdminCatalogController } from './catalog/admin-catalog.controller.js';
+import { AdminCatalogController, AdminProductsController } from './catalog/admin-catalog.controller.js';
 import { AdminCatalogService } from './catalog/admin-catalog.service.js';
 import { AdminOrdersController } from './orders/admin-orders.controller.js';
 import { AdminOrdersService } from './orders/admin-orders.service.js';
@@ -21,7 +21,7 @@ import { StaffService } from './staff/staff.service.js';
 
 @Module({
   imports: [CatalogModule, MailModule, OrdersModule, PrintModule],
-  controllers: [AuthController, AdminCatalogController, AdminOrdersController, StaffController, SettingsController],
+  controllers: [AuthController, AdminProductsController, AdminCatalogController, AdminOrdersController, StaffController, SettingsController],
   providers: [SessionService, LoginLimiter, AdminGuard, AdminCatalogService, AdminOrdersService, AuditService, StaffService, SettingsService, StaffResetService, TwoFactorService],
 })
 export class AdminModule {}

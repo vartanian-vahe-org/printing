@@ -101,6 +101,7 @@ Admin (`apps/admin`):
 |---|---|---|
 | `VITE_API_URL` | `/api` | Baked in at build time |
 | `VITE_STOREFRONT_URL` | `https://printing-web.vercel.app/business-cards` | "Open storefront" link. Baked in at build time |
+| `VITE_HIDDEN_FEATURES` | e.g. `orders,settings,staff,activity` | Optional; `apps/admin/.env.production` already sets it. Hides admin pages not ready to show (`apps/admin/src/features.ts`): `orders` = Orders and order detail, `settings`, `staff`, `activity` = the Shop section. Remove a name and redeploy to show it |
 | `API_ORIGIN` | `https://api.<ip-with-dashes>.sslip.io` | |
 | `API_PROXY_SECRET` | from `.vercel-env` | Secret |
 

@@ -1,33 +1,80 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import { api, errorText, productPath, type AdminCatalog } from './api';
+import { api, errorText, type AdminCatalog, type AdminProduct } from './api';
 
 interface CatalogState {
+  /** Every product the admin can configure (Business Cards, Postcards…). */
+  products: AdminProduct[];
+  /** The product the configuration pages show, picked in the sidebar. */
+  product: AdminProduct | null;
+  selectProduct: (code: string) => void;
+  /** API path of the picked product, e.g. /admin/products/business-cards. */
+  path: string;
   catalog: AdminCatalog | null;
   error: string | null;
   reload: () => Promise<void>;
 }
 
 const CatalogContext = createContext<CatalogState | null>(null);
+const STORAGE_KEY = 'admin.product';
 
-/** Loads the product configuration once for all admin pages; pages call reload() after saving. */
+function rememberedProduct(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Loads the product list and the picked product's configuration once for all admin pages; pages call
+ * reload() after saving. The picked product is remembered in this browser only.
+ */
 export function CatalogProvider({ children }: { children: ReactNode }) {
+  const [products, setProducts] = useState<AdminProduct[]>([]);
+  const [productCode, setProductCode] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<AdminCatalog | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const path = productCode ? `/admin/products/${productCode}` : '';
+
+  useEffect(() => {
+    api<{ products: AdminProduct[] }>('/admin/products')
+      .then(({ products: list }) => {
+        setProducts(list);
+        const remembered = rememberedProduct();
+        setProductCode(list.find((p) => p.code === remembered)?.code ?? list[0]?.code ?? null);
+        if (list.length === 0) setError('No products yet.');
+      })
+      .catch((err: unknown) => setError(errorText(err)));
+  }, []);
 
   const reload = useCallback(async () => {
+    if (!path) return;
     try {
-      setCatalog(await api<AdminCatalog>(`${productPath}/catalog`));
+      setCatalog(await api<AdminCatalog>(`${path}/catalog`));
       setError(null);
     } catch (err) {
       setError(errorText(err));
     }
-  }, []);
+  }, [path]);
 
   useEffect(() => {
+    setCatalog(null);
     void reload();
   }, [reload]);
 
-  return <CatalogContext.Provider value={{ catalog, error, reload }}>{children}</CatalogContext.Provider>;
+  const selectProduct = useCallback((code: string) => {
+    setProductCode(code);
+    try {
+      localStorage.setItem(STORAGE_KEY, code);
+    } catch {
+      // Private window: the pick just is not remembered.
+    }
+  }, []);
+
+  const product = products.find((p) => p.code === productCode) ?? null;
+  return (
+    <CatalogContext.Provider value={{ products, product, selectProduct, path, catalog, error, reload }}>{children}</CatalogContext.Provider>
+  );
 }
 
 export function useCatalog(): CatalogState {

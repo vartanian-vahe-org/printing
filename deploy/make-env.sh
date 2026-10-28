@@ -100,6 +100,8 @@ SITE_NOINDEX=true
 ## Admin project (Root Directory: apps/admin)
 VITE_API_URL=/api
 VITE_STOREFRONT_URL=$WEB_URL/business-cards
+# Optional: hide admin pages not ready to show (apps/admin/.env.production sets it); see deploy/VERCEL.md.
+# VITE_HIDDEN_FEATURES=orders,settings,staff,activity
 API_ORIGIN=https://api.$DOMAIN
 API_PROXY_SECRET=$PROXY_SECRET
 VERCEL

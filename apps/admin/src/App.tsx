@@ -14,8 +14,26 @@ import { SettingsPage } from './pages/SettingsPage';
 import { StaffPage } from './pages/StaffPage';
 import { TemplatesPage } from './pages/TemplatesPage';
 import { DesignServicesPage } from './pages/DesignServicesPage';
+import { isHiddenPath } from './features';
 
 const STOREFRONT_URL = import.meta.env.VITE_STOREFRONT_URL ?? 'http://localhost:3000/business-cards';
+
+const ROUTES = [
+  { path: '/orders', element: <OrdersPage /> },
+  { path: '/orders/:number', element: <OrderDetailPage /> },
+  { path: '/options', element: <OptionsPage /> },
+  { path: '/rules', element: <RulesPage /> },
+  { path: '/pricing', element: <PricingPage /> },
+  { path: '/templates', element: <TemplatesPage /> },
+  { path: '/design-services', element: <DesignServicesPage /> },
+  { path: '/settings', element: <SettingsPage /> },
+  { path: '/staff', element: <StaffPage /> },
+  { path: '/activity', element: <ActivityPage /> },
+  { path: '/account', element: <AccountPage /> },
+];
+
+/** Landing page after sign-in: Orders, or Options while orders are hidden (features.ts). */
+const HOME = isHiddenPath('/orders') ? '/options' : '/orders';
 
 export function App() {
   return (
@@ -25,18 +43,10 @@ export function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/reset" element={<ResetPasswordPage />} />
           <Route element={<RequireAuth />}>
-            <Route index element={<Navigate to="/orders" replace />} />
-            <Route path="/orders" element={<OrdersPage />} />
-            <Route path="/orders/:number" element={<OrderDetailPage />} />
-            <Route path="/options" element={<OptionsPage />} />
-            <Route path="/rules" element={<RulesPage />} />
-            <Route path="/pricing" element={<PricingPage />} />
-            <Route path="/templates" element={<TemplatesPage />} />
-            <Route path="/design-services" element={<DesignServicesPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/staff" element={<StaffPage />} />
-            <Route path="/activity" element={<ActivityPage />} />
-            <Route path="/account" element={<AccountPage />} />
+            <Route index element={<Navigate to={HOME} replace />} />
+            {ROUTES.filter((route) => !isHiddenPath(route.path)).map((route) => (
+              <Route key={route.path} path={route.path} element={route.element} />
+            ))}
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -59,11 +69,12 @@ function RequireAuth() {
 
 type Role = 'owner' | 'admin' | 'staff';
 
-/** Sidebar, grouped; `roles` hides links a role cannot use (the API enforces it too). */
-const NAV: { section?: string; items: { to: string; label: string; hint: string; roles?: Role[] }[] }[] = [
+/** Sidebar, grouped; `roles` hides links a role cannot use (the API enforces it too), features.ts hides unreleased pages. */
+const NAV: { section?: string; product?: true; items: { to: string; label: string; hint: string; roles?: Role[] }[] }[] = [
   { items: [{ to: '/orders', label: 'Orders', hint: 'Payments, printing, shipping' }] },
   {
-    section: 'Business Cards',
+    // Configuration of the product picked in the sidebar (Business Cards, Postcards…).
+    product: true,
     items: [
       { to: '/options', label: 'Options', hint: 'Sizes, papers, coatings…' },
       { to: '/rules', label: 'Rules', hint: 'Which options go together' },
@@ -84,18 +95,24 @@ const NAV: { section?: string; items: { to: string; label: string; hint: string;
 
 function Layout() {
   const { user, logout } = useAuth();
-  const { error } = useCatalog();
+  const { error, products, product, selectProduct } = useCatalog();
   return (
     <div className="shell">
       <aside className="sidebar">
         <div className="sidebar-brand">Print Studio Admin</div>
         <nav>
           {NAV.map((group, i) => {
-            const items = group.items.filter((item) => !item.roles || (user && item.roles.includes(user.role)));
+            const items = group.items.filter(
+              (item) => !isHiddenPath(item.to) && (!item.roles || (user && item.roles.includes(user.role))),
+            );
             if (items.length === 0) return null;
             return (
               <div key={group.section ?? i}>
-                {group.section && <div className="sidebar-product">{group.section}</div>}
+                {group.product ? (
+                  <ProductPicker products={products} current={product?.code ?? ''} onChange={selectProduct} />
+                ) : (
+                  group.section && <div className="sidebar-product">{group.section}</div>
+                )}
                 {items.map((item) => (
                   <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-item ${isActive ? 'nav-active' : ''}`}>
                     <span>{item.label}</span>
@@ -123,8 +140,26 @@ function Layout() {
       </aside>
       <main className="content">
         {error && <div className="banner banner-error">Could not load settings: {error}</div>}
-        <Outlet />
+        <Outlet key={product?.code} />
       </main>
     </div>
+  );
+}
+
+/** Section title of the product pages; a picker once there is more than one product. */
+function ProductPicker({ products, current, onChange }: { products: { code: string; name: string }[]; current: string; onChange: (code: string) => void }) {
+  const name = products.find((p) => p.code === current)?.name ?? 'Product';
+  if (products.length <= 1) return <div className="sidebar-product">{name}</div>;
+  return (
+    <label className="sidebar-product sidebar-product-picker">
+      <span className="visually-hidden">Product</span>
+      <select value={current} onChange={(e) => onChange(e.target.value)}>
+        {products.map((p) => (
+          <option key={p.code} value={p.code}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
