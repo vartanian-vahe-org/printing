@@ -110,7 +110,7 @@ export function priceOf(catalog: Catalog, state: ConfiguratorState): Quote {
 
 /**
  * Price difference of picking each allowed value instead of the current one, for the
- * "+$1.75" hints. Works for upcharges and size multipliers alike. null = cannot be priced.
+ * "$1.75" / "Save $2.50" hints. Works for upcharges and size multipliers alike. null = cannot be priced.
  */
 export function optionDeltas(
   catalog: Catalog,

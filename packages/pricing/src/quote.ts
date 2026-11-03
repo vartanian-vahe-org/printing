@@ -118,7 +118,7 @@ export function quote(catalog: Catalog, config: Configuration): Quote {
   };
 }
 
-/** Upcharge shown next to each option value ("+$1.00") for the current quantity. */
+/** Upcharge shown next to each option value ("$1.00") for the current quantity. */
 export function upchargeFor(catalog: Catalog, group: string, value: string, quantity: number): number {
   return (
     catalog.upcharges.find((u) => u.group === group && u.value === value && u.quantity === quantity)?.upchargeCents ?? 0

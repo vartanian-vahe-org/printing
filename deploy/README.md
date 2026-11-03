@@ -38,6 +38,9 @@ ssh -i ~/.ssh/printing-demo.pem ubuntu@<elastic-ip> 'bash server-setup.sh'
 DEPLOY_HOST=<elastic-ip> DEPLOY_KEY=~/.ssh/printing-demo.pem deploy/deploy.sh
 ```
 
+In the split layout use `deploy/release.sh` instead: it runs this, deploys both Vercel projects and
+then pushes ([VERCEL.md](VERCEL.md#day-to-day)).
+
 The first build takes several minutes. Then open `https://<ip-with-dashes>.sslip.io`; the
 username and password are in `deploy/.demo-credentials` (git-ignored, share it privately).
 In the split layout the storefront and admin are the Vercel URLs instead, and the server only

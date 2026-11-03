@@ -1,0 +1,22 @@
+# What `vercel deploy` (deploy/release.sh) leaves out when it uploads this repo from your machine.
+# Vercel builds apps/web and apps/admin from the uploaded files, so the workspace manifests, the
+# lockfile, packages/* and the committed apps/*/.env.production files must stay in.
+
+# Secrets and server-only files
+/.env
+deploy/
+*.pem
+
+# Installed and built files (Vercel installs and builds itself)
+node_modules
+.git
+.turbo
+**/.next
+**/dist
+**/__pycache__
+**/*.tsbuildinfo
+
+# Not needed by the storefront or admin build
+docs/
+docker/
+apps/worker-prepress/

@@ -4,10 +4,14 @@ export function formatCents(cents: number): string {
   return usd.format(cents / 100);
 }
 
-/** "+$1.75", "−$2.50" (true minus sign), or "" for zero. */
+/**
+ * A price difference without a plus or minus sign: "$1.75" for an extra cost, "Save $2.50" for a
+ * discount (so it is never read as a charge), or "" for zero.
+ */
 export function formatDelta(cents: number): string {
   if (cents === 0) return '';
-  return `${cents > 0 ? '+' : '−'}${usd.format(Math.abs(cents) / 100)}`;
+  const amount = usd.format(Math.abs(cents) / 100);
+  return cents > 0 ? amount : `Save ${amount}`;
 }
 
 /** 2.5 -> 2.5", 3 -> 3" */

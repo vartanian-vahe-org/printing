@@ -5,5 +5,8 @@
   "installCommand": "pnpm install --frozen-lockfile",
   "regions": [
     "pdx1"
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": false
+  }
 }

@@ -119,13 +119,30 @@ take effect in a new build).
 
 ## Day to day
 
+Everything is deployed from your machine, then pushed. Pushing alone deploys nothing: both
+`vercel.json` files set `"git": { "deploymentEnabled": false }`.
+
+One-time setup: `npx vercel@64.7.0 login` with an account in the team. The team and project IDs
+are in `deploy/release.sh` (override with `VERCEL_TEAM_ID`, `VERCEL_WEB_PROJECT_ID`,
+`VERCEL_ADMIN_PROJECT_ID` if the projects are recreated; `vercel project inspect <name>` shows an ID).
+
+Then, after committing on `main`:
+
+```bash
+DEPLOY_HOST=<elastic-ip> DEPLOY_KEY=<path-to-pem> deploy/release.sh
+```
+
+It refuses to run with uncommitted changes, runs typecheck and unit tests, runs `deploy.sh` (EC2),
+deploys `apps/web` and `apps/admin` to Vercel production (the code is uploaded from your machine,
+minus `.vercelignore`, and built by Vercel), then `git push`. A failing step stops it before the push.
+
 | Change | What to do |
 |---|---|
-| Code in `apps/web` or `apps/admin` | Push. Vercel builds each project. Both projects build on every push unless you set "Ignored Build Step" (e.g. `npx turbo-ignore`) |
-| Code in `apps/api`, `apps/worker-prepress`, `packages/db` (migrations) | `deploy/deploy.sh` (EC2) |
-| Code in `packages/pricing` or `packages/templates` | Both: push for Vercel **and** `deploy.sh` for the API, so prices and print files match the storefront |
-| A Vercel environment variable | Redeploy that project |
-| `API_PROXY_SECRET` | Change it in `.env.demo` and both Vercel projects, then `deploy.sh` and redeploy both |
+| Only `apps/web` or `apps/admin` | `deploy/release.sh --skip-api` |
+| Anything in `apps/api`, `apps/worker-prepress`, `packages/*` (migrations, prices, print files) | `deploy/release.sh` (both, so prices and print files match the storefront) |
+| Trying something on staging without pushing | add `--skip-push` |
+| A Vercel environment variable | Redeploy that project (Deployments → ⋯ → Redeploy) |
+| `API_PROXY_SECRET` | Change it in `.env.demo` and both Vercel projects, then `deploy/release.sh` |
 
 ## Good to know
 

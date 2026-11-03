@@ -68,8 +68,9 @@ import type { UploadProof } from '../../lib/cart';
 import styles from './configurator.module.css';
 import { CustomSizeInputs } from './CustomSizeInputs';
 import { OptionSelect } from './OptionSelect';
+import { OptionTiles } from './OptionTiles';
 import { PriceSummary } from './PriceSummary';
-import { QuantitySelect } from './QuantitySelect';
+import { QuantityPicker } from './QuantityPicker';
 import { ShipEstimate } from './ShipEstimate';
 
 /** 300 pixels per inch for the 3D card textures; template list thumbnails need far less. */
@@ -313,7 +314,7 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
       </nav>
 
       {step === 'options' && (
-        <div className={styles.studio}>
+        <div className={`${styles.studio} ${styles.studioFit}`}>
           {preview}
 
           <section className={`${styles.column} ${styles.mainColumn}`} aria-label="Card options">
@@ -350,11 +351,11 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
           <section className={`${styles.column} ${styles.orderColumn}`} aria-label="Quantity and turnaround">
             <div className={styles.columnBody}>
               <div className={styles.field}>
-                <QuantitySelect tiers={tiers} value={state.quantity} onChange={(quantity) => apply(changeQuantity(state, quantity), [])} />
+                <QuantityPicker tiers={tiers} value={state.quantity} onChange={(quantity) => apply(changeQuantity(state, quantity), [])} />
               </div>
               {turnaroundGroup && (
                 <div className={styles.field}>
-                  <OptionSelect
+                  <OptionTiles
                     group={turnaroundGroup}
                     allowed={allowed[TURNAROUND_GROUP] ?? []}
                     value={state.selection[TURNAROUND_GROUP] ?? ''}
