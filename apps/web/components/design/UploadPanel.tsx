@@ -82,7 +82,6 @@ export function UploadPanel({ files, checks, backMode, size, onAdd, onRemove, on
         <FileDrop
           side="back"
           label="Back"
-          optionalHint="Optional if your front PDF has 2 pages"
           file={files.back}
           checks={checks.back}
           roles={['Back']}
@@ -100,7 +99,6 @@ const LEVEL_ICON: Record<CheckResult['level'], string> = { ok: '✓', info: 'i',
 function FileDrop({
   side,
   label,
-  optionalHint,
   file,
   checks,
   roles,
@@ -110,7 +108,6 @@ function FileDrop({
 }: {
   side: FileSide;
   label: string;
-  optionalHint?: string;
   file: PdfFileState | undefined;
   checks: CheckResult[];
   /** What the pages of this file are printed as, in order. */
@@ -137,7 +134,6 @@ function FileDrop({
     <div className={styles.fileBlock}>
       <div className={styles.fileHeader}>
         <span className={styles.label}>{label}</span>
-        {optionalHint && !file && <span className={styles.hint}>{optionalHint}</span>}
       </div>
 
       <input
