@@ -9,6 +9,7 @@ import { OptionsPage } from './pages/OptionsPage';
 import { OrderDetailPage } from './pages/OrderDetailPage';
 import { OrdersPage } from './pages/OrdersPage';
 import { PricingPage } from './pages/PricingPage';
+import { TurnaroundPage } from './pages/TurnaroundPage';
 import { RulesPage } from './pages/RulesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { StaffPage } from './pages/StaffPage';
@@ -24,6 +25,7 @@ const ROUTES = [
   { path: '/options', element: <OptionsPage /> },
   { path: '/rules', element: <RulesPage /> },
   { path: '/pricing', element: <PricingPage /> },
+  { path: '/turnaround', element: <TurnaroundPage /> },
   { path: '/templates', element: <TemplatesPage /> },
   { path: '/design-services', element: <DesignServicesPage /> },
   { path: '/settings', element: <SettingsPage /> },
@@ -79,6 +81,7 @@ const NAV: { section?: string; product?: true; items: { to: string; label: strin
       { to: '/options', label: 'Options', hint: 'Sizes, papers, coatings…' },
       { to: '/rules', label: 'Rules', hint: 'Which options go together' },
       { to: '/pricing', label: 'Pricing', hint: 'Base prices and upcharges' },
+      { to: '/turnaround', label: 'Turnaround', hint: 'Days and % per quantity' },
       { to: '/templates', label: 'Templates', hint: 'Designs and their filters' },
       { to: '/design-services', label: 'Design services', hint: 'Packages we design for you' },
     ],

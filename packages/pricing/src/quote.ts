@@ -1,5 +1,5 @@
-import { SIZE_GROUP } from './constants.js';
-import { getAllowedValues, resolveSelection, sortedGroups } from './rules.js';
+import { SIZE_GROUP, TURNAROUND_GROUP } from './constants.js';
+import { getAllowedValues, resolveSelection, sortedGroups, turnaroundAt } from './rules.js';
 import { resolveSize, type ResolvedSize } from './size.js';
 import type { Catalog, Configuration, QuantityTier, Selection } from './types.js';
 
@@ -8,7 +8,10 @@ export interface QuoteLine {
   groupLabel: string;
   value: string;
   valueLabel: string;
+  /** Turnaround: its percent of the printing price, already applied (size included). */
   upchargeCents: number;
+  /** Turnaround only: the percent behind upchargeCents. */
+  percent?: number;
 }
 
 export interface Quote {
@@ -17,8 +20,10 @@ export interface Quote {
   size: ResolvedSize;
   basePriceCents: number;
   lines: QuoteLine[];
-  /** base + upcharges, before the size multiplier */
+  /** base + upcharges, before the size multiplier and turnaround */
   subtotalCents: number;
+  /** Production days of the selected turnaround at this quantity. */
+  businessDays: number | null;
   totalCents: number;
   /** total / quantity, rounded to the nearest cent (display only) */
   unitPriceCents: number;
@@ -48,18 +53,21 @@ export function defaultQuantity(catalog: Catalog): number {
  */
 export function validateConfiguration(catalog: Catalog, config: Configuration): string[] {
   const issues: string[] = [];
-  const allowed = getAllowedValues(catalog, config.selection);
+  const allowed = getAllowedValues(catalog, config.selection, config.quantity);
+  const knownQuantity = catalog.quantityTiers.some((t) => t.quantity === config.quantity);
 
   for (const group of sortedGroups(catalog)) {
     const value = config.selection[group.code];
     if (!value) issues.push(`Missing value for "${group.code}"`);
     else if (!group.values.some((v) => v.code === value)) issues.push(`Unknown value "${value}" for "${group.code}"`);
+    // An unknown quantity offers no speed; that is reported once, below.
+    else if (group.code === TURNAROUND_GROUP && !knownQuantity) continue;
     else if (!allowed[group.code]?.includes(value)) issues.push(`"${value}" is not available for "${group.code}" with the other options selected`);
   }
   for (const key of Object.keys(config.selection)) {
     if (!catalog.groups.some((g) => g.code === key)) issues.push(`Unknown option group "${key}"`);
   }
-  if (!catalog.quantityTiers.some((t) => t.quantity === config.quantity)) {
+  if (!knownQuantity) {
     issues.push(`Quantity ${config.quantity} is not available`);
   }
   const sizeCode = config.selection[SIZE_GROUP];
@@ -75,7 +83,8 @@ export function validateConfiguration(catalog: Catalog, config: Configuration): 
 
 /**
  * Prices a configuration (Vistaprint-style, spec §4):
- *   total = (base_price[qty] + sum of upcharges[value][qty]) x size multiplier
+ *   printing = (base_price[qty] + sum of upcharges[value][qty]) x size multiplier
+ *   total    = printing + printing x turnaround percent[speed][qty]
  * Throws InvalidConfigurationError if the configuration is not valid.
  */
 export function quote(catalog: Catalog, config: Configuration): Quote {
@@ -91,20 +100,25 @@ export function quote(catalog: Catalog, config: Configuration): Quote {
     .map((group) => {
       const valueCode = selection[group.code]!;
       const value = group.values.find((v) => v.code === valueCode)!;
-      const upcharge = catalog.upcharges.find(
-        (u) => u.group === group.code && u.value === valueCode && u.quantity === tier.quantity,
-      );
       return {
         group: group.code,
         groupLabel: group.label,
         value: valueCode,
         valueLabel: value.label,
-        upchargeCents: upcharge?.upchargeCents ?? 0,
+        upchargeCents: group.code === TURNAROUND_GROUP ? 0 : upchargeFor(catalog, group.code, valueCode, tier.quantity),
       };
     });
 
   const subtotalCents = tier.basePriceCents + lines.reduce((sum, line) => sum + line.upchargeCents, 0);
-  const totalCents = Math.round(subtotalCents * size.priceMultiplier);
+  const printingCents = Math.round(subtotalCents * size.priceMultiplier);
+  const turnaround = turnaroundAt(catalog, selection[TURNAROUND_GROUP] ?? '', tier.quantity);
+  const turnaroundLine = lines.find((line) => line.group === TURNAROUND_GROUP);
+  let totalCents = printingCents;
+  if (turnaround && turnaroundLine) {
+    turnaroundLine.percent = turnaround.percent;
+    turnaroundLine.upchargeCents = Math.round((printingCents * turnaround.percent) / 100);
+    totalCents += turnaroundLine.upchargeCents;
+  }
 
   return {
     selection,
@@ -113,12 +127,13 @@ export function quote(catalog: Catalog, config: Configuration): Quote {
     basePriceCents: tier.basePriceCents,
     lines,
     subtotalCents,
+    businessDays: turnaround?.businessDays ?? null,
     totalCents,
     unitPriceCents: Math.round(totalCents / tier.quantity),
   };
 }
 
-/** Upcharge shown next to each option value ("$1.00") for the current quantity. */
+/** Upcharge of an option value at a quantity (0 when none is set). Turnaround uses percents instead. */
 export function upchargeFor(catalog: Catalog, group: string, value: string, quantity: number): number {
   return (
     catalog.upcharges.find((u) => u.group === group && u.value === value && u.quantity === quantity)?.upchargeCents ?? 0
@@ -127,5 +142,5 @@ export function upchargeFor(catalog: Catalog, group: string, value: string, quan
 
 /** Convenience for UIs: resolve a stale/partial selection, then price it. */
 export function resolveAndQuote(catalog: Catalog, config: Configuration): Quote {
-  return quote(catalog, { ...config, selection: resolveSelection(catalog, config.selection) });
+  return quote(catalog, { ...config, selection: resolveSelection(catalog, config.selection, config.quantity) });
 }

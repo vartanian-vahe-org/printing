@@ -4,6 +4,7 @@ import {
   check,
   integer,
   jsonb,
+  numeric,
   pgTable,
   primaryKey,
   text,
@@ -50,7 +51,7 @@ export const optionGroups = pgTable(
  *   size custom: { min_in, max_in, step_in, bleed_in, safe_in, fit_box: { w_in, h_in }, fit_multiplier, area_multiplier }
  *   paper:       { thickness_pt, tier }
  *   coating:     { front, back, laminated }
- *   turnaround:  { business_days }
+ *   turnaround:  {} (days and price per quantity live in turnaround_options)
  */
 export const optionValues = pgTable(
   'option_values',
@@ -146,4 +147,29 @@ export const optionValuePrices = pgTable(
     ...timestamps,
   },
   (t) => [primaryKey({ columns: [t.optionValueId, t.quantityTierId] })],
+);
+
+/**
+ * Quantity × speed table of a product's turnaround group: production days and a percent added to the
+ * printing price (negative for a discount). No row = that speed is not offered at that quantity.
+ */
+export const turnaroundOptions = pgTable(
+  'turnaround_options',
+  {
+    optionValueId: uuid('option_value_id')
+      .notNull()
+      .references(() => optionValues.id, { onDelete: 'cascade' }),
+    quantityTierId: uuid('quantity_tier_id')
+      .notNull()
+      .references(() => productQuantityTiers.id, { onDelete: 'cascade' }),
+    businessDays: integer('business_days').notNull(),
+    pricePercent: numeric('price_percent', { precision: 6, scale: 2, mode: 'number' }).notNull(),
+    ...auditColumns,
+    ...timestamps,
+  },
+  (t) => [
+    primaryKey({ columns: [t.optionValueId, t.quantityTierId] }),
+    check('turnaround_options_days_check', sql`${t.businessDays} between 1 and 60`),
+    check('turnaround_options_percent_check', sql`${t.pricePercent} between -90 and 500`),
+  ],
 );

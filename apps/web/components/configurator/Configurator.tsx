@@ -3,11 +3,11 @@
 import {
   CUSTOM_SIZE_VALUE,
   getAllowedValues,
+  productionSchedule,
   resolveSelection,
   SIZE_GROUP,
   sortedGroups,
   TURNAROUND_GROUP,
-  turnaroundDays,
   type Catalog,
   type ProductionCalendar,
   type Selection,
@@ -33,6 +33,7 @@ import {
   initialState,
   optionDeltas,
   priceOf,
+  speedChoices,
   tierPrices,
   valueLabel,
   type AutoChange,
@@ -51,6 +52,8 @@ import { editingItemId, loadItemToEdit } from '../../lib/edit-cart-item';
 import { isEnabled } from '../../lib/features';
 import { loadTemplateFonts } from '../../lib/template-fonts';
 import { formatInches } from '../../lib/format';
+import { formatShopDate } from '../../lib/schedule-text';
+import { useNow } from '../../lib/use-now';
 import { worstLevel } from '../../lib/pdf-checks';
 import { useArtworkSources, usePageImage, usePdfFiles } from '../../lib/use-pdf-artwork';
 import { useScenePngs } from '../../lib/use-scene-png';
@@ -126,7 +129,7 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
     if (editingItemId()) return;
     const draft = loadDraft();
     if (draft && (!draft.design.templateCode || templates.some((t) => t.code === draft.design.templateCode))) {
-      setState({ ...draft.state, selection: resolveSelection(catalog, draft.state.selection) });
+      setState({ ...draft.state, selection: resolveSelection(catalog, draft.state.selection, draft.state.quantity) });
       setDesign(draft.design);
       const draftMethod = draft.step ? draft.mode : null;
       setMethod(draftMethod);
@@ -155,7 +158,7 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
         const { item, logoDataUrl, files } = loaded;
         setEditingId(item.id);
         setState((s) => ({
-          selection: resolveSelection(catalog, item.configuration.selection),
+          selection: resolveSelection(catalog, item.configuration.selection, item.quantity),
           quantity: item.quantity,
           customSize: item.configuration.customSize ?? s.customSize,
         }));
@@ -199,11 +202,20 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
   const groups = useMemo(() => sortedGroups(catalog), [catalog]);
   const optionGroups = groups.filter((g) => g.code !== TURNAROUND_GROUP);
   const turnaroundGroup = groups.find((g) => g.code === TURNAROUND_GROUP) ?? null;
-  const allowed = useMemo(() => getAllowedValues(catalog, state.selection), [catalog, state.selection]);
+  const allowed = useMemo(() => getAllowedValues(catalog, state.selection, state.quantity), [catalog, state.selection, state.quantity]);
   const currentQuote = useMemo(() => priceOf(catalog, state), [catalog, state]);
   const deltas = useMemo(() => optionDeltas(catalog, state, allowed), [catalog, state, allowed]);
   const tiers = useMemo(() => tierPrices(catalog, state), [catalog, state]);
   const customAttrs = useMemo(() => customSizeAttributes(catalog), [catalog]);
+  const speeds = useMemo(() => speedChoices(catalog, state), [catalog, state]);
+  const now = useNow();
+  // "Ships Thu, Nov 6" under each speed (production days until mounted, see useNow).
+  const speedNotes = Object.fromEntries(
+    speeds.flatMap(({ code, businessDays: days }) =>
+      days ? [[code, now ? `Ships ${formatShopDate(productionSchedule(now, days, calendar).shipDate)}` : `${days} business day${days === 1 ? '' : 's'}`]] : [],
+    ),
+  );
+  const speedUnavailable = Object.fromEntries(speeds.flatMap(({ code, unavailable }) => (unavailable ? [[code, unavailable]] : [])));
 
   const size = currentQuote.size;
   const backMode = useMemo(() => cardSpec(catalog, state.selection, size).backMode, [catalog, state.selection, size]);
@@ -211,7 +223,7 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
   const template = availableTemplates.find((t) => t.code === design.templateCode) ?? null;
   const tier = designServices.find((t) => t.code === tierCode) ?? null;
   const designFee = method === 'service' && tier ? { name: tier.name, priceCents: tier.priceCents } : null;
-  const printDays = turnaroundDays(catalog, currentQuote.selection);
+  const printDays = currentQuote.businessDays;
   const shipDays = printDays === null ? null : printDays + (designFee && tier ? tier.designDays : 0);
 
   // Typing stays responsive; the artwork re-renders right after.
@@ -351,7 +363,11 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
           <section className={`${styles.column} ${styles.orderColumn}`} aria-label="Quantity and turnaround">
             <div className={styles.columnBody}>
               <div className={styles.field}>
-                <QuantityPicker tiers={tiers} value={state.quantity} onChange={(quantity) => apply(changeQuantity(state, quantity), [])} />
+                <QuantityPicker tiers={tiers} value={state.quantity} onChange={(quantity) => {
+                    const result = changeQuantity(catalog, state, quantity);
+                    apply(result.state, result.autoChanges);
+                  }}
+                />
               </div>
               {turnaroundGroup && (
                 <div className={styles.field}>
@@ -360,6 +376,8 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
                     allowed={allowed[TURNAROUND_GROUP] ?? []}
                     value={state.selection[TURNAROUND_GROUP] ?? ''}
                     deltas={deltas[TURNAROUND_GROUP] ?? {}}
+                    notes={speedNotes}
+                    unavailable={speedUnavailable}
                     onChange={(value) => {
                       const result = changeOption(catalog, state, TURNAROUND_GROUP, value);
                       apply(result.state, result.autoChanges);

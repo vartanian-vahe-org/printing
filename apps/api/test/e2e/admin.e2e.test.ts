@@ -44,7 +44,7 @@ afterAll(async () => {
   await call('PATCH', `${admin}/templates/minimal`, { isActive: true });
   await call('PUT', `${admin}/rules`, { whenGroup: 'paper', whenValue: '16pt', targetGroup: 'turnaround', allowed: null });
   await call('DELETE', `${admin}/design-services/e2e_pkg`);
-  for (const [group, value] of [['paper', 'e2e_paper'], ['turnaround', 'e2e_rush'], ['size', 'e2e_size']]) {
+  for (const [group, value] of [['paper', 'e2e_paper'], ['turnaround', 'e2e_rush'], ['turnaround', 'e2e_speed'], ['size', 'e2e_size']]) {
     await call('DELETE', `${admin}/groups/${group}/values/${value}`);
   }
   await call('POST', `${base}/admin/auth/logout`);
@@ -81,7 +81,8 @@ describe('admin catalog', () => {
     expect(res.status).toBe(200);
     expect(res.body.groups.map((g: any) => g.code)).toEqual(['size', 'paper', 'coating', 'printed_side', 'corners', 'turnaround']);
     expect(res.body.rules).toHaveLength(7);
-    expect(res.body.upcharges).toHaveLength(120);
+    expect(res.body.upcharges).toHaveLength(96);
+    expect(res.body.turnarounds).toHaveLength(31);
     expect(res.body.templates).toHaveLength(5);
   });
 
@@ -106,9 +107,9 @@ describe('admin catalog', () => {
 
   it('adds and removes a rule; the storefront follows', async () => {
     const rule = { whenGroup: 'paper', whenValue: '14pt', targetGroup: 'turnaround' };
-    expect((await call('PUT', `${admin}/rules`, { ...rule, allowed: ['5d', '3d', '2d'] })).status).toBe(204);
+    expect((await call('PUT', `${admin}/rules`, { ...rule, allowed: ['economy', 'standard', 'express'] })).status).toBe(204);
     let rules = (await storefront()).catalog.rules;
-    expect(rules.find((r: any) => r.whenValue === '14pt' && r.targetGroup === 'turnaround').allowed).toEqual(['5d', '3d', '2d']);
+    expect(rules.find((r: any) => r.whenValue === '14pt' && r.targetGroup === 'turnaround').allowed).toEqual(['economy', 'standard', 'express']);
 
     expect((await call('PUT', `${admin}/rules`, { ...rule, allowed: null })).status).toBe(204);
     rules = (await storefront()).catalog.rules;
@@ -125,7 +126,7 @@ describe('admin catalog', () => {
 
   it('updates a base price; quotes follow', async () => {
     expect((await call('PUT', `${admin}/pricing`, { tiers: [{ quantity: 500, basePriceCents: 2999 }] })).status).toBe(204);
-    const selection = { size: 'std_3_5x2', paper: '14pt', coating: 'matte_both', printed_side: 'front_back', corners: 'square', turnaround: '3d' };
+    const selection = { size: 'std_3_5x2', paper: '14pt', coating: 'matte_both', printed_side: 'front_back', corners: 'square', turnaround: 'standard' };
     const quote = await call('POST', `${base}/quotes`, { productCode: 'business-cards', selection, quantity: 500 }, false);
     expect(quote.body.totalCents).toBe(2999 + 1449);
     await call('PUT', `${admin}/pricing`, { tiers: [{ quantity: 500, basePriceCents: 2499 }] });
@@ -146,8 +147,67 @@ describe('admin catalog', () => {
   });
 });
 
+describe('admin catalog: turnaround table', () => {
+  const selection = { size: 'std_3_5x2', paper: '14pt', coating: 'matte_both', printed_side: 'front_back', corners: 'square' };
+  const quote = (turnaround: string, quantity: number) =>
+    call('POST', `${base}/quotes`, { productCode: 'business-cards', selection: { ...selection, turnaround }, quantity }, false);
+  let original: { value: string; quantity: number; businessDays: number; percent: number }[] = [];
+
+  beforeAll(async () => {
+    original = (await call('GET', `${admin}/catalog`)).body.turnarounds;
+  });
+  afterAll(async () => {
+    await call('PUT', `${admin}/turnarounds`, { cells: original });
+  });
+
+  it('prices turnaround as a percent of the printing price, with days per quantity', async () => {
+    const standard = (await quote('standard', 500)).body;
+    const rush = (await quote('rush', 500)).body;
+    expect(rush.totalCents).toBe(standard.totalCents + Math.round(standard.totalCents * 0.8));
+    expect(rush.businessDays).toBe(1);
+    expect((await quote('standard', 10000)).body.businessDays).toBe(5);
+    expect((await quote('rush', 10000)).status).toBe(400);
+  });
+
+  it('replaces the table; the storefront follows', async () => {
+    const cells = original
+      .filter((c) => !(c.value === 'rush' && c.quantity === 500))
+      .map((c) => (c.value === 'express' && c.quantity === 500 ? { ...c, businessDays: 3, percent: 12.5 } : c));
+    expect((await call('PUT', `${admin}/turnarounds`, { cells })).status).toBe(204);
+    expect((await quote('rush', 500)).status).toBe(400);
+    const standard = (await quote('standard', 500)).body;
+    const express = (await quote('express', 500)).body;
+    expect(express.businessDays).toBe(3);
+    expect(express.totalCents).toBe(standard.totalCents + Math.round(standard.totalCents * 0.125));
+    await call('PUT', `${admin}/turnarounds`, { cells: original });
+  });
+
+  it('refuses to leave a quantity with no speed, and unknown speeds', async () => {
+    const none = await call('PUT', `${admin}/turnarounds`, { cells: original.filter((c) => c.quantity !== 50) });
+    expect(none.status).toBe(400);
+    expect(none.body.message).toMatch(/No turnaround would be offered for 50 cards/);
+    expect((await call('GET', `${admin}/catalog`)).body.turnarounds).toHaveLength(original.length);
+
+    const unknown = await call('PUT', `${admin}/turnarounds`, { cells: [...original, { value: 'warp', quantity: 50, businessDays: 1, percent: 0 }] });
+    expect(unknown.status).toBe(400);
+  });
+
+  it('refuses turnaround upcharges in the pricing table', async () => {
+    const res = await call('PUT', `${admin}/pricing`, { upcharges: [{ group: 'turnaround', value: 'rush', quantity: 500, upchargeCents: 100 }] });
+    expect(res.status).toBe(400);
+  });
+
+  it('a speed copied from another starts with its days and percents', async () => {
+    expect((await call('POST', `${admin}/groups/turnaround/values`, { code: 'e2e_speed', label: 'E2E Speed', attributes: {}, copyFrom: 'rush' })).status).toBe(201);
+    const cells = (await call('GET', `${admin}/catalog`)).body.turnarounds;
+    const of = (value: string) => cells.filter((c: any) => c.value === value).map(({ value: _v, ...rest }: any) => rest);
+    expect(of('e2e_speed')).toEqual(of('rush'));
+    expect((await call('DELETE', `${admin}/groups/turnaround/values/e2e_speed`)).status).toBe(204);
+  });
+});
+
 describe('admin catalog: adding and deleting options', () => {
-  const selection = { size: 'std_3_5x2', paper: '16pt', coating: 'matte_both', printed_side: 'front_back', corners: 'square', turnaround: '3d' };
+  const selection = { size: 'std_3_5x2', paper: '16pt', coating: 'matte_both', printed_side: 'front_back', corners: 'square', turnaround: 'standard' };
   const price = async (paper: string) =>
     (await call('POST', `${base}/quotes`, { productCode: 'business-cards', selection: { ...selection, paper }, quantity: 500 }, false)).body.totalCents;
 
@@ -176,7 +236,7 @@ describe('admin catalog: adding and deleting options', () => {
   });
 
   it('makes a code from the label and refuses a taken one', async () => {
-    const body = { label: 'Rush 1 Hour!', attributes: { business_days: 1 } };
+    const body = { label: 'Rush 1 Hour!', attributes: {} };
     const first = await call('POST', `${admin}/groups/turnaround/values`, { ...body, code: 'e2e_rush' });
     expect(first.status).toBe(201);
     const auto = await call('POST', `${admin}/groups/turnaround/values`, body);
@@ -189,7 +249,7 @@ describe('admin catalog: adding and deleting options', () => {
   });
 
   it('validates the details of a new option', async () => {
-    const res = await call('POST', `${admin}/groups/turnaround/values`, { label: 'Bad', attributes: { business_days: 0 } });
+    const res = await call('POST', `${admin}/groups/turnaround/values`, { label: 'Bad', attributes: { business_days: 1 } });
     expect(res.status).toBe(400);
     expect(res.body.message).toBe('Invalid attributes');
   });

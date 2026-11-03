@@ -63,6 +63,21 @@ const pricingSchema = z.object({
     .optional(),
 });
 
+const turnaroundSchema = z.object({
+  cells: z
+    .array(
+      z
+        .object({
+          value: code,
+          quantity: z.number().int().positive(),
+          businessDays: z.number().int().min(1).max(60),
+          percent: z.number().min(-90).max(500).multipleOf(0.01),
+        })
+        .strict(),
+    )
+    .max(2000),
+});
+
 const slug = z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, 'Use lowercase letters, numbers and dashes').max(60);
 
 const templatePatchSchema = z
@@ -189,6 +204,17 @@ export class AdminCatalogController {
     @Req() request: AdminRequest,
   ) {
     await this.catalog.updatePricing(productCode, body, request.staff!.id);
+    await this.storefront.invalidate(productCode);
+  }
+
+  @Put('turnarounds')
+  @HttpCode(204)
+  async setTurnarounds(
+    @Param('code') productCode: string,
+    @Body(new ZodValidationPipe(turnaroundSchema)) body: z.infer<typeof turnaroundSchema>,
+    @Req() request: AdminRequest,
+  ) {
+    await this.catalog.setTurnarounds(productCode, body.cells, request.staff!.id);
     await this.storefront.invalidate(productCode);
   }
 

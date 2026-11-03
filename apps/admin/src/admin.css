@@ -686,6 +686,47 @@ select {
   background: #fdecec;
 }
 
+/* ---------- Turnaround table ---------- */
+
+.turnaround-table td {
+  text-align: left;
+}
+
+.turnaround-same {
+  display: block;
+  margin: 4px 0 0 auto;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.turnaround-table thead th:not(:first-child) {
+  text-align: left;
+}
+
+.turnaround-table thead th:not(:first-child) .turnaround-same {
+  margin-left: 0;
+}
+
+.turnaround-cell {
+  display: table-cell;
+}
+
+.turnaround-cell > * + * {
+  margin-left: 4px;
+}
+
+.turnaround-cell .turnaround-days {
+  width: 40px;
+}
+
+.turnaround-cell .turnaround-percent {
+  width: 56px;
+}
+
+.turnaround-off {
+  background: var(--bg);
+}
+
 .size-card {
   padding: 16px 18px;
 }

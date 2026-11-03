@@ -7,8 +7,10 @@ export interface Catalog {
   groups: OptionGroup[];
   rules: OptionRule[];
   quantityTiers: QuantityTier[];
-  /** Upcharge per option value per quantity. Missing entries mean 0. */
+  /** Upcharge per option value per quantity. Missing entries mean 0. Not used for turnaround. */
   upcharges: Upcharge[];
+  /** Quantity × speed table of the turnaround group. A missing pair means that speed is not offered at that quantity. */
+  turnarounds: TurnaroundOption[];
 }
 
 export interface OptionGroup {
@@ -48,6 +50,16 @@ export interface Upcharge {
   value: string;
   quantity: number;
   upchargeCents: number;
+}
+
+export interface TurnaroundOption {
+  /** Turnaround value code, e.g. 'rush'. */
+  value: string;
+  quantity: number;
+  /** Production days at this quantity. */
+  businessDays: number;
+  /** Added to the printing price (base, upcharges and size) in percent; negative for a discount. */
+  percent: number;
 }
 
 /** Selected value code per group code, e.g. { paper: '14pt', coating: 'matte_both' }. */

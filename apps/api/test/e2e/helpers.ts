@@ -11,7 +11,7 @@ export const selection = {
   coating: 'matte_both',
   printed_side: 'front_back',
   corners: 'square',
-  turnaround: '3d',
+  turnaround: 'standard',
 };
 
 export const address = { name: 'Jamie Rivera', line1: '100 Main St', city: 'Los Angeles', state: 'CA', zip: '90012', phone: '(213) 555-0100' };

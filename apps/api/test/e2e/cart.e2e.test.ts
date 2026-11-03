@@ -13,7 +13,7 @@ const selection = {
   coating: 'matte_both',
   printed_side: 'front_back',
   corners: 'square',
-  turnaround: '3d',
+  turnaround: 'standard',
 };
 
 const templateDesign = { mode: 'template', templateCode: 'classic', values: { name: 'Jamie Rivera' } };

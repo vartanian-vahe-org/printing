@@ -32,6 +32,7 @@ Cập nhật: 2026-10-20. Khi giải quyết xong một mục: ghi quyết đị
 | P4 | Trộn hai kiểu tính giá: phụ phí cộng thêm (Vistaprint) cho option, hệ số nhân (UPrinting) cho size | Theo spec mục 4 | Giữ hay thống nhất một kiểu khi thiết kế lại bảng giá | Thấp |
 | P5 | Giá hiển thị mặc định là **$39.48** cho 500 card vì mặc định in 2 mặt. Vistaprint quảng cáo $24.99 vì mặc định in 1 mặt. | Mặc định `front_back` | Đổi mặc định sang in 1 mặt để giá "từ" thấp hơn không | Cao |
 | P6 | **Giá và quyền lợi các gói thiết kế là tạm**: Standard $29 (2 lần sửa, 2 ngày), Premium $59 (4 lần sửa), Elite $99 (sửa không giới hạn, 1 ngày) | Seed trong `0023_seed_design_choices`, admin sửa được ở Design services | Giá thật, số lần sửa, ai là designer và năng lực làm bao nhiêu đơn mỗi ngày | Cao |
+| P7 | **Bảng turnaround Số lượng × Tốc độ là số tạm.** Economy 5 ngày −10%, Standard 3 ngày, Express 2 ngày +30%, Rush 1 ngày +80% (đến 1,000 card); 2,500–5,000 thêm 1 ngày; 10,000 thêm 2 ngày và không có Rush. % tính trên giá in (đã gồm option và size), không tính trên phí gói thiết kế | Seed trong `0025_seed_turnaround_options`, admin sửa ở trang Turnaround. Mức không bán ở một số lượng: storefront làm mờ ô kèm lý do, và tự chuyển mức nếu khách đổi số lượng | Số ngày và % thật theo năng lực xưởng; tên các mức; % tính trên giá in hay chỉ trên giá gốc; trên mức số lượng cao nhất (vd 50,000) có cần nút "Request a quote" không | Cao |
 
 ## Sản phẩm & option
 

@@ -14,9 +14,6 @@ describe('upcharges match the seeded values in packages/db (checked in psql)', (
     ['paper', '16pt', 500, 625],
     ['printed_side', 'front_back', 500, 1449],
     ['corners', 'rounded_quarter', 500, 1175],
-    ['turnaround', '5d', 500, -250],
-    ['turnaround', '1d', 500, 1999],
-    ['turnaround', '1d', 10000, 17839],
     ['printed_side', 'front_back', 50, 580],
   ])('%s.%s @ %i = %i cents', (group, value, quantity, cents) => {
     expect(upchargeFor(businessCards, group, value, quantity)).toBe(cents);
@@ -49,21 +46,42 @@ describe('quote', () => {
     expect(q.lines.map((l) => l.group)).toEqual(['paper', 'coating', 'printed_side', 'corners', 'turnaround']);
   });
 
-  it('adds every upcharge: 16pt gloss, front & back, rounded, 1 day', () => {
+  it('adds every upcharge, then the rush percent on the printing price', () => {
     const q = quote(businessCards, {
-      selection: { ...defaultSelection, paper: '16pt', coating: 'gloss_both', corners: 'rounded_quarter', turnaround: '1d' },
+      selection: { ...defaultSelection, paper: '16pt', coating: 'gloss_both', corners: 'rounded_quarter', turnaround: 'rush' },
       quantity: 500,
     });
-    // 2499 + 625 + 175 + 1449 + 1175 + 1999
-    expect(q.totalCents).toBe(7922);
+    // printing 2499 + 625 + 175 + 1449 + 1175 = 5923; rush +80% = 4738
+    expect(q.subtotalCents).toBe(5923);
+    expect(q.lines.find((l) => l.group === 'turnaround')).toMatchObject({ upchargeCents: 4738, percent: 80 });
+    expect(q.totalCents).toBe(5923 + 4738);
+    expect(q.businessDays).toBe(1);
   });
 
-  it('applies the preset size multiplier to the whole subtotal', () => {
+  it('applies the size multiplier before the turnaround percent', () => {
     const q = quote(businessCards, {
-      selection: { ...defaultSelection, size: 'square_2_5', paper: '16pt', coating: 'gloss_both', corners: 'rounded_quarter', turnaround: '1d' },
+      selection: { ...defaultSelection, size: 'square_2_5', paper: '16pt', coating: 'gloss_both', corners: 'rounded_quarter', turnaround: 'rush' },
       quantity: 500,
     });
-    expect(q.totalCents).toBe(Math.round(7922 * 1.96)); // 15527
+    const printing = Math.round(5923 * 1.96); // 11609
+    expect(q.totalCents).toBe(printing + Math.round(printing * 0.8)); // 20896
+  });
+
+  it('takes a negative percent off for the slowest speed', () => {
+    const q = quote(businessCards, { selection: { ...defaultSelection, turnaround: 'economy' }, quantity: 500 });
+    expect(q.totalCents).toBe(3948 - Math.round(3948 * 0.1));
+    expect(q.businessDays).toBe(5);
+  });
+
+  it('uses the days of the quantity band', () => {
+    expect(quote(businessCards, { selection: { ...defaultSelection, turnaround: 'express' }, quantity: 2500 }).businessDays).toBe(3);
+    expect(quote(businessCards, { selection: defaultSelection, quantity: 10000 }).businessDays).toBe(5);
+  });
+
+  it('rejects a speed not offered at the quantity', () => {
+    expect(() => quote(businessCards, { selection: { ...defaultSelection, turnaround: 'rush' }, quantity: 10000 })).toThrow(
+      '"rush" is not available for "turnaround"',
+    );
   });
 
   it('applies the custom size formula', () => {
@@ -125,10 +143,10 @@ describe('validateConfiguration', () => {
 describe('resolveAndQuote', () => {
   it('fixes a stale selection before pricing', () => {
     const q = resolveAndQuote(businessCards, {
-      selection: { paper: '17pt_uncoated', turnaround: '1d' },
+      selection: { paper: '17pt_uncoated', turnaround: 'rush' },
       quantity: 1000,
     });
-    expect(q.selection).toMatchObject({ coating: 'uncoated_both', turnaround: '3d' });
+    expect(q.selection).toMatchObject({ coating: 'uncoated_both', turnaround: 'standard' });
     // 3799 + 17pt 6306 + uncoated 266 + front & back 2203
     expect(q.totalCents).toBe(3799 + 6306 + 266 + 2203);
   });

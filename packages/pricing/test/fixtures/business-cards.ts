@@ -38,10 +38,19 @@ const UPCHARGE_PERCENT: [string, string, number][] = [
   ['printed_side', 'front_back', 58],
   ['printed_side', 'same_both', 58],
   ['corners', 'rounded_quarter', 47],
-  ['turnaround', '5d', -10],
-  ['turnaround', '2d', 30],
-  ['turnaround', '1d', 80],
 ];
+
+/** Quantity × speed table seeded by migration 0025: [speed, percent, days per quantity band]. */
+const SPEEDS: [string, number, number][] = [
+  ['economy', -10, 5],
+  ['standard', 0, 3],
+  ['express', 30, 2],
+  ['rush', 80, 1],
+];
+/** Extra days by quantity band: up to 1,000 / 2,500–5,000 / 10,000. Rush is not offered at 10,000. */
+function extraDays(quantity: number): number {
+  return quantity <= 1000 ? 0 : quantity <= 5000 ? 1 : 2;
+}
 
 /** Same rounding as the SQL generator: half away from zero, to the cent. */
 function percentOf(base: number, percent: number): number {
@@ -50,7 +59,7 @@ function percentOf(base: number, percent: number): number {
 }
 
 const COATING_14 = ['matte_both', 'gloss_both', 'uncoated_both', 'uv_both', 'uv_front_uncoated_back', 'uv_front_gloss_back'];
-const NO_1D = ['5d', '3d', '2d'];
+const NO_RUSH = ['economy', 'standard', 'express'];
 
 export const businessCards: Catalog = {
   product: { code: 'business-cards', name: 'Business Cards' },
@@ -92,19 +101,19 @@ export const businessCards: Catalog = {
     ]),
     g('corners', 5, [v('square', 1, { radius_in: 0 }, true), v('rounded_quarter', 2, { radius_in: 0.25 })]),
     g('turnaround', 6, [
-      v('5d', 1, { business_days: 5 }),
-      v('3d', 2, { business_days: 3 }, true),
-      v('2d', 3, { business_days: 2 }),
-      v('1d', 4, { business_days: 1 }),
+      v('economy', 1),
+      v('standard', 2, {}, true),
+      v('express', 3),
+      v('rush', 4),
     ]),
   ],
   rules: [
     { whenGroup: 'paper', whenValue: '14pt', targetGroup: 'coating', allowed: COATING_14 },
     { whenGroup: 'paper', whenValue: '16pt', targetGroup: 'coating', allowed: ['matte_both', 'gloss_both', 'soft_touch_both', 'silk_both'] },
     { whenGroup: 'paper', whenValue: '17pt_uncoated', targetGroup: 'coating', allowed: ['uncoated_both'] },
-    { whenGroup: 'paper', whenValue: '17pt_uncoated', targetGroup: 'turnaround', allowed: NO_1D },
-    { whenGroup: 'coating', whenValue: 'uv_front_uncoated_back', targetGroup: 'turnaround', allowed: NO_1D },
-    { whenGroup: 'coating', whenValue: 'uncoated_both', targetGroup: 'turnaround', allowed: NO_1D },
+    { whenGroup: 'paper', whenValue: '17pt_uncoated', targetGroup: 'turnaround', allowed: NO_RUSH },
+    { whenGroup: 'coating', whenValue: 'uv_front_uncoated_back', targetGroup: 'turnaround', allowed: NO_RUSH },
+    { whenGroup: 'coating', whenValue: 'uncoated_both', targetGroup: 'turnaround', allowed: NO_RUSH },
     {
       whenGroup: 'printed_side',
       whenValue: 'front_only',
@@ -121,6 +130,14 @@ export const businessCards: Catalog = {
   upcharges: UPCHARGE_PERCENT.flatMap(([group, value, percent]) =>
     TIERS.map(([quantity, base]) => ({ group, value, quantity, upchargeCents: percentOf(base, percent) })),
   ),
+  turnarounds: SPEEDS.flatMap(([value, percent, days]) =>
+    TIERS.filter(([quantity]) => !(value === 'rush' && quantity > 5000)).map(([quantity]) => ({
+      value,
+      quantity,
+      businessDays: days + extraDays(quantity),
+      percent,
+    })),
+  ),
 };
 
 export const defaultSelection = {
@@ -129,5 +146,5 @@ export const defaultSelection = {
   coating: 'matte_both',
   printed_side: 'front_back',
   corners: 'square',
-  turnaround: '3d',
+  turnaround: 'standard',
 };

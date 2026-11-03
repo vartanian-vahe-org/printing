@@ -92,12 +92,14 @@ Lấy từ bảng giá thật của Vistaprint (bỏ bớt mức 1,500 và 2,000
 
 ### 2.7 Turnaround
 
-| code | Label | Số ngày làm việc |
-|---|---|---|
-| `5d` | 5 Business Days | 5 |
-| `3d` (mặc định) | 3 Business Days | 3 |
-| `2d` | 2 Business Days | 2 |
-| `1d` | 1 Business Day | 1 |
+Mỗi sản phẩm có các mức tốc độ và một bảng **Số lượng × Tốc độ** (`turnaround_options`). Mỗi ô gồm số ngày sản xuất và % cộng vào giá in (giá gốc + option, đã nhân hệ số size); % âm là giảm giá. Ô trống nghĩa là không bán mức đó ở số lượng đó. Admin sửa ở trang Turnaround. Số liệu dưới đây là số tạm (open issue P7):
+
+| code | Label | Đến 1,000 | 2,500–5,000 | 10,000 | % |
+|---|---|---|---|---|---|
+| `economy` | Economy | 5 ngày | 6 ngày | 7 ngày | −10% |
+| `standard` (mặc định) | Standard | 3 ngày | 4 ngày | 5 ngày | 0% |
+| `express` | Express | 2 ngày | 3 ngày | 4 ngày | +30% |
+| `rush` | Rush | 1 ngày | 2 ngày | không bán | +80% |
 
 Turnaround là thời gian **sản xuất**, chưa tính thời gian ship. Cách tính ngày ở mục 5.
 
@@ -312,7 +314,7 @@ option_values
     -- coating:     {front, back, laminated}
     -- printed_side:{back: 'separate' | 'blank' | 'same_as_front'}
     -- corners:     {radius_in}
-    -- turnaround:  {business_days}
+    -- turnaround:  {} (ngày và % nằm trong turnaround_options)
   created_at, updated_at
   UNIQUE (group_id, code)
   -- mỗi group có đúng 1 value is_default = true (partial unique index)

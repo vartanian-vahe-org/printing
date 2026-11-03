@@ -87,6 +87,15 @@ export interface AdminUpcharge {
   upchargeCents: number;
 }
 
+/** One offered cell of the quantity × speed turnaround table. */
+export interface AdminTurnaround {
+  value: string;
+  quantity: number;
+  businessDays: number;
+  /** Added to the printing price, in percent; negative for a discount. */
+  percent: number;
+}
+
 export interface AdminTemplate {
   code: string;
   name: string;
@@ -131,6 +140,7 @@ export interface AdminCatalog {
   rules: AdminRule[];
   quantityTiers: AdminTier[];
   upcharges: AdminUpcharge[];
+  turnarounds: AdminTurnaround[];
   templates: AdminTemplate[];
   templateFacets: AdminFacet[];
   designServices: AdminDesignService[];

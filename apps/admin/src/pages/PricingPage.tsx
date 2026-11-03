@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router';
 import { api, type AdminCatalog } from '../api';
 import { dollars, parseDollars, useCatalog, useSaver } from '../catalog';
 import { Toast } from '../components/Toast';
 
 type Grid = Record<string, string>;
+/** Size uses multipliers (below) and turnaround a percent table (Turnaround page) instead of upcharges. */
+const hasUpcharges = (group: string) => group !== 'size' && group !== 'turnaround';
 const cell = (group: string, value: string, quantity: number) => `${group}.${value}.${quantity}`;
 
 function initialGrid(catalog: AdminCatalog): { base: Grid; upcharge: Grid } {
@@ -11,7 +14,7 @@ function initialGrid(catalog: AdminCatalog): { base: Grid; upcharge: Grid } {
   for (const tier of catalog.quantityTiers) base[tier.quantity] = dollars(tier.basePriceCents);
   const upcharge: Grid = {};
   for (const group of catalog.groups) {
-    if (group.code === 'size') continue;
+    if (!hasUpcharges(group.code)) continue;
     for (const value of group.values) {
       for (const tier of catalog.quantityTiers) {
         const found = catalog.upcharges.find((u) => u.group === group.code && u.value === value.code && u.quantity === tier.quantity);
@@ -71,8 +74,8 @@ export function PricingPage() {
         <div>
           <h1>Pricing</h1>
           <p className="muted">
-            Price = base price for the quantity + upcharge of each chosen option, then × size multiplier. Amounts in US dollars;
-            upcharges can be negative.
+            Price = base price for the quantity + upcharge of each chosen option, then × size multiplier, then the turnaround
+            percent (set on the <Link to="/turnaround">Turnaround</Link> page). Amounts in US dollars; upcharges can be negative.
           </p>
         </div>
         <div className="header-actions">
@@ -142,7 +145,7 @@ export function PricingPage() {
               ))}
             </tr>
             {catalog.groups
-              .filter((g) => g.code !== 'size')
+              .filter((g) => hasUpcharges(g.code))
               .map((group) => (
                 <GroupRows key={group.code} group={group} tiers={tiers} upcharge={upcharge} initial={initial.upcharge} setUpcharge={setUpcharge} />
               ))}

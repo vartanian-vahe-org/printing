@@ -15,7 +15,7 @@ const STANDARD_CARD = { widthIn: 3.5, heightIn: 2, bleedIn: 0.125, safeIn: 0.125
 function startingPrice(catalog: Catalog): { cents: number; quantity: number } | null {
   const tier = sortedTiers(catalog)[0];
   if (!tier) return null;
-  const q = quote(catalog, { selection: resolveSelection(catalog, {}), quantity: tier.quantity });
+  const q = quote(catalog, { selection: resolveSelection(catalog, {}, tier.quantity), quantity: tier.quantity });
   return { cents: q.totalCents, quantity: tier.quantity };
 }
 

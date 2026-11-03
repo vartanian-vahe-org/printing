@@ -11,8 +11,17 @@ import {
   products,
   templateFacets,
   templates,
+  turnaroundOptions,
 } from '@printing/db';
-import { defaultQuantity, InvalidConfigurationError, quote, resolveSelection, SIZE_GROUP, UnsatisfiableSelectionError } from '@printing/pricing';
+import {
+  InvalidConfigurationError,
+  quote,
+  resolveSelection,
+  SIZE_GROUP,
+  sortedTiers,
+  TURNAROUND_GROUP,
+  UnsatisfiableSelectionError,
+} from '@printing/pricing';
 import { and, asc, desc, eq, inArray, ne } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { CatalogService } from '../../catalog/catalog.service.js';
@@ -93,6 +102,14 @@ export interface DesignTierInput {
   isActive?: boolean;
 }
 
+/** One offered cell of the quantity × speed table; cells left out are not offered. */
+export interface TurnaroundCell {
+  value: string;
+  quantity: number;
+  businessDays: number;
+  percent: number;
+}
+
 export interface PricingInput {
   tiers?: { quantity: number; basePriceCents?: number; isActive?: boolean; isDefault?: boolean }[];
   upcharges?: { group: string; value: string; quantity: number; upchargeCents: number }[];
@@ -133,20 +150,29 @@ export class AdminCatalogService {
     return new Map(rows.map((r) => [r.code, r]));
   }
 
-  /** Fails the transaction if the storefront could no longer show a priced default configuration. */
+  /**
+   * Fails the transaction if the storefront could no longer show a priced default configuration at
+   * every quantity (each quantity needs at least one turnaround speed).
+   */
   private async assertStorefrontStillWorks(tx: Tx, productCode: string) {
+    let quantity: number | null = null;
     try {
       const catalog = await new CatalogService(tx as unknown as Database).loadCatalog(productCode);
-      quote(catalog, { selection: resolveSelection(catalog, {}), quantity: defaultQuantity(catalog) });
+      const tiers = sortedTiers(catalog);
+      if (tiers.length === 0) throw new BadRequestException('At least one quantity tier must stay active.');
+      for (const tier of tiers) {
+        quantity = tier.quantity;
+        quote(catalog, { selection: resolveSelection(catalog, {}, tier.quantity), quantity: tier.quantity });
+      }
     } catch (err) {
       if (err instanceof UnsatisfiableSelectionError) {
+        if (err.groupCode === TURNAROUND_GROUP && quantity !== null) {
+          throw new BadRequestException(`No turnaround would be offered for ${quantity.toLocaleString('en-US')} cards. Offer at least one speed at every quantity.`);
+        }
         throw new BadRequestException(`This change leaves "${err.groupCode}" with no available option. Allow at least one.`);
       }
       if (err instanceof InvalidConfigurationError) {
         throw new BadRequestException(`This change breaks the default configuration: ${err.issues.join('; ')}`);
-      }
-      if (err instanceof Error && err.message.includes('quantity tiers')) {
-        throw new BadRequestException('At least one quantity tier must stay active.');
       }
       throw err;
     }
@@ -169,7 +195,7 @@ export class AdminCatalogService {
     const targetGroup = alias(optionGroups, 'target_group');
     const allowedValue = alias(optionValues, 'allowed_value');
 
-    const [groups, values, rules, allowed, tiers, prices, templateRows, facetRows, designRows] = await Promise.all([
+    const [groups, values, rules, allowed, tiers, prices, turnaroundRows, templateRows, facetRows, designRows] = await Promise.all([
       this.db.select().from(optionGroups).where(eq(optionGroups.productId, productId)).orderBy(asc(optionGroups.sortOrder)),
       this.db
         .select({ value: optionValues, groupCode: optionGroups.code })
@@ -208,6 +234,17 @@ export class AdminCatalogService {
         .innerJoin(optionGroups, eq(optionGroups.id, optionValues.groupId))
         .innerJoin(productQuantityTiers, eq(productQuantityTiers.id, optionValuePrices.quantityTierId))
         .where(eq(optionGroups.productId, productId)),
+      this.db
+        .select({
+          value: optionValues.code,
+          quantity: productQuantityTiers.quantity,
+          businessDays: turnaroundOptions.businessDays,
+          percent: turnaroundOptions.pricePercent,
+        })
+        .from(turnaroundOptions)
+        .innerJoin(optionValues, eq(optionValues.id, turnaroundOptions.optionValueId))
+        .innerJoin(productQuantityTiers, eq(productQuantityTiers.id, turnaroundOptions.quantityTierId))
+        .where(eq(productQuantityTiers.productId, productId)),
       this.db.select().from(templates).where(eq(templates.productId, productId)).orderBy(asc(templates.sortOrder)),
       this.db.select().from(templateFacets).where(eq(templateFacets.productId, productId)).orderBy(asc(templateFacets.sortOrder)),
       this.db.select().from(designServiceTiers).where(eq(designServiceTiers.productId, productId)).orderBy(asc(designServiceTiers.sortOrder)),
@@ -247,6 +284,7 @@ export class AdminCatalogService {
         isDefault: t.isDefault,
       })),
       upcharges: prices,
+      turnarounds: turnaroundRows,
       templates: templateRows.map((t) => ({
         code: t.code,
         name: t.name,
@@ -335,8 +373,9 @@ export class AdminCatalogService {
 
   /**
    * Adds an option at the end of its group, active and not the default. With `copyFrom` it starts with
-   * that option's upcharges and rules (and, for sizes, its templates); otherwise upcharges are $0, rules
-   * that limit its group leave it out, and every template supports a new size (layouts adapt to any size).
+   * that option's upcharges, turnaround days and rules (and, for sizes, its templates); otherwise upcharges
+   * are $0, a new turnaround speed is offered at no quantity until set in the table, rules that limit its
+   * group leave it out, and every template supports a new size (layouts adapt to any size).
    */
   async createValue(productCode: string, groupCode: string, input: ValueInput, staffId: string): Promise<{ code: string }> {
     return this.db.transaction(async (tx) => {
@@ -382,6 +421,12 @@ export class AdminCatalogService {
         if (prices.length) {
           await tx.insert(optionValuePrices).values(
             prices.map((p) => ({ optionValueId: id, quantityTierId: p.quantityTierId, upchargeCents: p.upchargeCents, createdBy: staffId, updatedBy: staffId })),
+          );
+        }
+        const cells = await tx.select().from(turnaroundOptions).where(eq(turnaroundOptions.optionValueId, source.id));
+        if (cells.length) {
+          await tx.insert(turnaroundOptions).values(
+            cells.map((c) => ({ optionValueId: id, quantityTierId: c.quantityTierId, businessDays: c.businessDays, pricePercent: c.pricePercent, createdBy: staffId, updatedBy: staffId })),
           );
         }
         // Its own rules: "when the customer picks <source>, only … in group Y".
@@ -565,6 +610,9 @@ export class AdminCatalogService {
           .innerJoin(optionGroups, eq(optionGroups.id, optionValues.groupId))
           .where(and(eq(optionGroups.productId, productId), inArray(optionGroups.code, groupCodes)));
         const valueId = new Map(valueRows.map((v) => [`${v.group}.${v.code}`, v.id]));
+        if (groupCodes.includes(TURNAROUND_GROUP)) {
+          throw new BadRequestException('Turnaround is priced by percent in the turnaround table, not with upcharges.');
+        }
 
         for (const u of input.upcharges) {
           const optionValueId = valueId.get(`${u.group}.${u.value}`);
@@ -604,6 +652,67 @@ export class AdminCatalogService {
         target: `${productCode} · pricing`,
         summary: `Updated ${tierChanges.length} quantity tier(s) and ${upchargeChanges.length} upcharge(s)`,
         changes: { tiers: tierChanges, upcharges: upchargeChanges },
+      });
+    });
+  }
+
+  /**
+   * Replaces the quantity × speed table of the product's turnaround group. Every cell sent is offered
+   * with its days and percent; cells left out are not offered. Each active quantity must keep at least
+   * one speed for the default options.
+   */
+  async setTurnarounds(productCode: string, cells: TurnaroundCell[], staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const productId = await this.productId(tx, productCode);
+      const groupId = await this.groupId(tx, productId, TURNAROUND_GROUP);
+      const values = await this.valueIds(tx, groupId);
+      const tiers = await tx
+        .select({ id: productQuantityTiers.id, quantity: productQuantityTiers.quantity })
+        .from(productQuantityTiers)
+        .where(eq(productQuantityTiers.productId, productId));
+      const tierByQty = new Map(tiers.map((t) => [t.quantity, t.id]));
+
+      const keys = cells.map((c) => `${c.value}@${c.quantity}`);
+      if (new Set(keys).size !== keys.length) throw new BadRequestException('A speed is listed twice for the same quantity');
+      for (const cell of cells) {
+        if (!values.has(cell.value)) throw new BadRequestException(`Turnaround "${cell.value}" does not exist`);
+        if (!tierByQty.has(cell.quantity)) throw new BadRequestException(`Quantity tier ${cell.quantity} does not exist`);
+      }
+
+      const valueIds = [...values.values()].map((v) => v.id);
+      const codeById = new Map([...values].map(([code, v]) => [v.id, code]));
+      const qtyById = new Map(tiers.map((t) => [t.id, t.quantity]));
+      const beforeRows = valueIds.length
+        ? await tx.select().from(turnaroundOptions).where(inArray(turnaroundOptions.optionValueId, valueIds))
+        : [];
+      const before = new Map(
+        beforeRows.map((r) => [`${codeById.get(r.optionValueId)}@${qtyById.get(r.quantityTierId)}`, { businessDays: r.businessDays, percent: r.pricePercent }]),
+      );
+
+      if (valueIds.length) await tx.delete(turnaroundOptions).where(inArray(turnaroundOptions.optionValueId, valueIds));
+      if (cells.length) {
+        await tx.insert(turnaroundOptions).values(
+          cells.map((c) => ({
+            optionValueId: values.get(c.value)!.id,
+            quantityTierId: tierByQty.get(c.quantity)!,
+            businessDays: c.businessDays,
+            pricePercent: c.percent,
+            createdBy: staffId,
+            updatedBy: staffId,
+          })),
+        );
+      }
+
+      await this.assertStorefrontStillWorks(tx, productCode);
+      const after = new Map(cells.map((c) => [`${c.value}@${c.quantity}`, { businessDays: c.businessDays, percent: c.percent }]));
+      const changes = [...new Set([...before.keys(), ...after.keys()])]
+        .map((key) => ({ key, before: before.get(key) ?? null, after: after.get(key) ?? null }))
+        .filter((c) => JSON.stringify(c.before) !== JSON.stringify(c.after));
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.turnaround.update',
+        target: `${productCode} · turnaround`,
+        summary: `Updated ${changes.length} turnaround cell(s)`,
+        changes: { cells: changes },
       });
     });
   }

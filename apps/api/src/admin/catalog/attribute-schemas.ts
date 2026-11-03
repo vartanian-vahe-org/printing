@@ -37,7 +37,8 @@ const schemas: Record<string, (valueCode: string) => z.ZodType> = {
   coating: () => z.object({ front: finish, back: finish, laminated: z.boolean() }).strict(),
   printed_side: () => z.object({ back: z.enum(['separate', 'blank', 'same_as_front']) }).strict(),
   corners: () => z.object({ radius_in: inches(1) }).strict(),
-  turnaround: () => z.object({ business_days: z.number().int().min(1).max(60) }).strict(),
+  // Days and price per quantity live in the turnaround table (turnaround_options).
+  turnaround: () => z.object({}).strict(),
 };
 
 export function attributeSchema(groupCode: string, valueCode: string): z.ZodType {

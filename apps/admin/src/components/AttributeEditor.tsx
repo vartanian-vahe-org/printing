@@ -29,7 +29,6 @@ const LABELS: Record<string, string> = {
   back: 'Back',
   laminated: 'Laminated',
   radius_in: 'Corner radius (in)',
-  business_days: 'Business days',
 };
 
 interface Props {

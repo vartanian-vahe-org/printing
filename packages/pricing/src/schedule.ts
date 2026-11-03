@@ -8,9 +8,9 @@
  *
  * Dates are calendar dates in the shop's time zone, as 'YYYY-MM-DD' strings.
  */
-import type { Catalog } from './types.js';
-
-export const TURNAROUND_GROUP = 'turnaround';
+import { TURNAROUND_GROUP } from './constants.js';
+import { turnaroundAt } from './rules.js';
+import type { Catalog, Selection } from './types.js';
 
 /** Shop calendar, from production_settings + holidays. */
 export interface ProductionCalendar {
@@ -128,13 +128,9 @@ export function deliveryWindow(shipDate: string, transitDaysMin: number, transit
   };
 }
 
-/** Production days of the selected turnaround (its `business_days` attribute), or null if unknown. */
-export function turnaroundDays(catalog: Catalog, selection: Record<string, string>): number | null {
-  const value = catalog.groups
-    .find((g) => g.code === TURNAROUND_GROUP)
-    ?.values.find((v) => v.code === selection[TURNAROUND_GROUP]);
-  const days = value?.attributes.business_days;
-  return typeof days === 'number' && days > 0 ? days : null;
+/** Production days of the selected turnaround at this quantity, or null if it is not offered. */
+export function turnaroundDays(catalog: Catalog, selection: Selection, quantity: number): number | null {
+  return turnaroundAt(catalog, selection[TURNAROUND_GROUP] ?? '', quantity)?.businessDays ?? null;
 }
 
 /** Latest ship date of several items: the order ships when everything is printed. */

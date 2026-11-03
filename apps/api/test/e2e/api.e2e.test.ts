@@ -13,7 +13,7 @@ const defaultSelection = {
   coating: 'matte_both',
   printed_side: 'front_back',
   corners: 'square',
-  turnaround: '3d',
+  turnaround: 'standard',
 };
 
 async function post(path: string, body: unknown) {
@@ -88,13 +88,13 @@ describe('POST /quotes', () => {
   it('400 with issues for a configuration hidden by rules', async () => {
     const res = await post('/quotes', {
       productCode: 'business-cards',
-      selection: { ...defaultSelection, paper: '17pt_uncoated', turnaround: '1d' },
+      selection: { ...defaultSelection, paper: '17pt_uncoated', turnaround: 'rush' },
       quantity: 500,
     });
     expect(res.status).toBe(400);
     expect(res.body.issues).toEqual([
       '"matte_both" is not available for "coating" with the other options selected',
-      '"1d" is not available for "turnaround" with the other options selected',
+      '"rush" is not available for "turnaround" with the other options selected',
     ]);
   });
 

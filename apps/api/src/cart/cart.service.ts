@@ -8,7 +8,6 @@ import {
   productionSchedule,
   quote,
   SIZE_GROUP,
-  turnaroundDays,
   type Catalog,
   type Quote,
 } from '@printing/pricing';
@@ -217,7 +216,7 @@ export class CartService {
       }
       try {
         const q = quote(catalog, configuration);
-        const days = turnaroundDays(catalog, q.selection);
+        const days = q.businessDays;
         const totalCents = q.totalCents + (tier?.priceCents ?? 0);
         items.push({
           ...base,
@@ -264,7 +263,7 @@ export class CartService {
         const q = this.priced(catalog, configuration);
         const design = await this.validateDesign(catalog, q, row.design as Design);
         const tier = await this.serviceTier(catalog.product.code, design);
-        const days = turnaroundDays(catalog, q.selection);
+        const days = q.businessDays;
         if (!days) throw new ConflictException('The turnaround of this item is not available');
         const template =
           design.mode === 'template'

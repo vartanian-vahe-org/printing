@@ -448,6 +448,21 @@
   font-weight: 600;
 }
 
+.tileNote {
+  font-size: 12px;
+  color: var(--color-text);
+}
+
+.tile[data-unavailable] {
+  cursor: default;
+  opacity: 0.5;
+  border-style: dashed;
+}
+
+.tile[data-unavailable]:hover {
+  border-color: var(--color-border);
+}
+
 .tileHint {
   min-height: 16px;
   font-size: 12px;

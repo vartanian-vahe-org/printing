@@ -41,8 +41,8 @@ describe('estimated dates', () => {
   it('ships the cart when its slowest item is printed, and dates each shipping option', async () => {
     const cal = await calendar();
     const call = guest();
-    await call('/cart/items', item('2d'));
-    const cart = await call('/cart/items', item('5d'));
+    await call('/cart/items', item('express'));
+    const cart = await call('/cart/items', item('economy'));
 
     const now = new Date();
     const fast = productionSchedule(now, 2, cal).shipDate;

@@ -36,6 +36,9 @@ function pricingShape(catalog: Catalog) {
         `${b.group}.${b.value}.${String(b.quantity).padStart(6, '0')}`,
       ),
     ),
+    turnarounds: [...catalog.turnarounds].sort((a, b) =>
+      `${a.value}.${String(a.quantity).padStart(6, '0')}`.localeCompare(`${b.value}.${String(b.quantity).padStart(6, '0')}`),
+    ),
   };
 }
 
@@ -44,7 +47,7 @@ function attributesOf(catalog: Catalog, group: string) {
 }
 
 describe('CatalogService.loadCatalog (real DB)', () => {
-  it('matches the pricing fixture: groups, defaults, rules, tiers, upcharges', async () => {
+  it('matches the pricing fixture: groups, defaults, rules, tiers, upcharges, turnarounds', async () => {
     const catalog = await service.loadCatalog('business-cards');
     expect(pricingShape(catalog)).toEqual(pricingShape(businessCards));
   });

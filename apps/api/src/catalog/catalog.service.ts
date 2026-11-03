@@ -8,6 +8,7 @@ import {
   optionValues,
   productQuantityTiers,
   products,
+  turnaroundOptions,
 } from '@printing/db';
 import type { Catalog, OptionGroup } from '@printing/pricing';
 import { and, asc, eq, inArray } from 'drizzle-orm';
@@ -18,7 +19,7 @@ import { REDIS } from '../redis/redis.tokens.js';
 
 /** Catalog cache lifetime; admin edits clear it at once, so this only bounds a missed clear. */
 const CACHE_SECONDS = 300;
-const cacheKey = (productCode: string) => `catalog:v1:${productCode}`;
+const cacheKey = (productCode: string) => `catalog:v2:${productCode}`;
 
 /**
  * Reads a product's configurator data from the DB in the shape @printing/pricing expects.
@@ -67,7 +68,7 @@ export class CatalogService implements OnModuleInit {
       .limit(1);
     if (!product) throw new NotFoundException(`Product "${productCode}" not found`);
 
-    const [groupRows, valueRows, ruleRows, allowedRows, tierRows, priceRows] = await Promise.all([
+    const [groupRows, valueRows, ruleRows, allowedRows, tierRows, priceRows, turnaroundRows] = await Promise.all([
       this.db
         .select()
         .from(optionGroups)
@@ -100,6 +101,23 @@ export class CatalogService implements OnModuleInit {
         .where(
           and(
             eq(optionGroups.productId, product.id),
+            eq(optionValues.isActive, true),
+            eq(productQuantityTiers.isActive, true),
+          ),
+        ),
+      this.db
+        .select({
+          value: optionValues.code,
+          quantity: productQuantityTiers.quantity,
+          businessDays: turnaroundOptions.businessDays,
+          percent: turnaroundOptions.pricePercent,
+        })
+        .from(turnaroundOptions)
+        .innerJoin(optionValues, eq(optionValues.id, turnaroundOptions.optionValueId))
+        .innerJoin(productQuantityTiers, eq(productQuantityTiers.id, turnaroundOptions.quantityTierId))
+        .where(
+          and(
+            eq(productQuantityTiers.productId, product.id),
             eq(optionValues.isActive, true),
             eq(productQuantityTiers.isActive, true),
           ),
@@ -141,6 +159,7 @@ export class CatalogService implements OnModuleInit {
         isDefault: t.isDefault,
       })),
       upcharges: priceRows,
+      turnarounds: turnaroundRows,
     };
   }
 

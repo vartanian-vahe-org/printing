@@ -1,4 +1,5 @@
-import type { Catalog, OptionGroup, Selection } from './types.js';
+import { TURNAROUND_GROUP } from './constants.js';
+import type { Catalog, OptionGroup, Selection, TurnaroundOption } from './types.js';
 
 export function sortedGroups(catalog: Catalog): OptionGroup[] {
   return [...catalog.groups].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -8,12 +9,17 @@ function sortedValueCodes(group: OptionGroup): string[] {
   return [...group.values].sort((a, b) => a.sortOrder - b.sortOrder).map((v) => v.code);
 }
 
+/** Days and price of a turnaround speed at a quantity; undefined when that speed is not offered there. */
+export function turnaroundAt(catalog: Catalog, value: string, quantity: number): TurnaroundOption | undefined {
+  return catalog.turnarounds.find((t) => t.value === value && t.quantity === quantity);
+}
+
 /**
- * Values each group may use given the current selection of the OTHER groups.
- * Rules triggered by the current selection restrict their target group; several
- * rules on the same group intersect. Result keeps the group's sort order.
+ * Values each group may use given the current selection of the OTHER groups, by the rules alone.
+ * Rules triggered by the current selection restrict their target group; several rules on the same
+ * group intersect. Result keeps the group's sort order.
  */
-export function getAllowedValues(catalog: Catalog, selection: Selection): Record<string, string[]> {
+export function ruleAllowedValues(catalog: Catalog, selection: Selection): Record<string, string[]> {
   const allowed: Record<string, string[]> = {};
   for (const group of sortedGroups(catalog)) {
     let codes = sortedValueCodes(group);
@@ -25,6 +31,14 @@ export function getAllowedValues(catalog: Catalog, selection: Selection): Record
     }
     allowed[group.code] = codes;
   }
+  return allowed;
+}
+
+/** What the customer can pick: the rules, plus turnaround keeps only the speeds offered at `quantity`. */
+export function getAllowedValues(catalog: Catalog, selection: Selection, quantity: number): Record<string, string[]> {
+  const allowed = ruleAllowedValues(catalog, selection);
+  const speeds = allowed[TURNAROUND_GROUP];
+  if (speeds) allowed[TURNAROUND_GROUP] = speeds.filter((code) => turnaroundAt(catalog, code, quantity));
   return allowed;
 }
 
@@ -42,11 +56,11 @@ export class UnsatisfiableSelectionError extends Error {
 /**
  * Turns any (partial or stale) selection into a valid one:
  *  - missing or unknown values get the group default;
- *  - values hidden by rules are replaced by the group default if allowed,
- *    otherwise by the first allowed value in sort order.
+ *  - values hidden by rules (or a turnaround not offered at `quantity`) are replaced by the group
+ *    default if allowed, otherwise by the first allowed value in sort order.
  * Changes can cascade (paper -> coating -> turnaround), so it repeats until stable.
  */
-export function resolveSelection(catalog: Catalog, input: Selection): Selection {
+export function resolveSelection(catalog: Catalog, input: Selection, quantity: number): Selection {
   const groups = sortedGroups(catalog);
   const selection: Selection = {};
   for (const group of groups) {
@@ -61,7 +75,7 @@ export function resolveSelection(catalog: Catalog, input: Selection): Selection 
   for (let pass = 0; pass < maxPasses; pass++) {
     let changed = false;
     for (const group of groups) {
-      const allowed = getAllowedValues(catalog, selection)[group.code] ?? [];
+      const allowed = getAllowedValues(catalog, selection, quantity)[group.code] ?? [];
       if (allowed.length === 0) throw new UnsatisfiableSelectionError(group.code);
       const current = selection[group.code];
       if (current && allowed.includes(current)) continue;

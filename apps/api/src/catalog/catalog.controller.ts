@@ -19,7 +19,7 @@ export class CatalogController {
       /** For live "Order by 2 PM PT to ship by …" estimates in the browser. */
       calendar,
       defaults: {
-        selection: resolveSelection(catalog, {}),
+        selection: resolveSelection(catalog, {}, defaultQuantity(catalog)),
         quantity: defaultQuantity(catalog),
       },
     };

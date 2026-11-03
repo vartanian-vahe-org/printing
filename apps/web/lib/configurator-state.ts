@@ -6,8 +6,11 @@ import {
   quote,
   resolveSelection,
   resolveSize,
+  ruleAllowedValues,
   SIZE_GROUP,
   sortedTiers,
+  TURNAROUND_GROUP,
+  turnaroundAt,
   type Catalog,
   type CustomSize,
   type CustomSizeAttributes,
@@ -49,7 +52,7 @@ export function customSizeSteps(attrs: CustomSizeAttributes): number[] {
 
 export function initialState(catalog: Catalog, defaults: { selection: Selection; quantity: number }): ConfiguratorState {
   return {
-    selection: resolveSelection(catalog, defaults.selection),
+    selection: resolveSelection(catalog, defaults.selection, defaults.quantity),
     quantity: defaults.quantity,
     customSize: { ...INITIAL_CUSTOM_SIZE },
   };
@@ -68,12 +71,18 @@ export function changeOption(
   group: string,
   value: string,
 ): { state: ConfiguratorState; autoChanges: AutoChange[] } {
-  const selection = resolveSelection(catalog, { ...state.selection, [group]: value });
+  const selection = resolveSelection(catalog, { ...state.selection, [group]: value }, state.quantity);
   return { state: { ...state, selection }, autoChanges: diff(state.selection, selection, group) };
 }
 
-export function changeQuantity(state: ConfiguratorState, quantity: number): ConfiguratorState {
-  return { ...state, quantity };
+/** Customer picked a quantity; a turnaround speed not offered there is switched (reported as an auto change). */
+export function changeQuantity(
+  catalog: Catalog,
+  state: ConfiguratorState,
+  quantity: number,
+): { state: ConfiguratorState; autoChanges: AutoChange[] } {
+  const selection = resolveSelection(catalog, state.selection, quantity);
+  return { state: { ...state, quantity, selection }, autoChanges: diff(state.selection, selection, '') };
 }
 
 /**
@@ -123,7 +132,7 @@ export function optionDeltas(
     result[group] = {};
     for (const value of values) {
       try {
-        const selection = resolveSelection(catalog, { ...state.selection, [group]: value });
+        const selection = resolveSelection(catalog, { ...state.selection, [group]: value }, state.quantity);
         result[group][value] = quote(catalog, configurationOf(state, selection)).totalCents - current;
       } catch {
         result[group][value] = null;
@@ -133,11 +142,44 @@ export function optionDeltas(
   return result;
 }
 
-/** Total and per-card price at every quantity tier for the current options. */
+/**
+ * Total and per-card price at every quantity tier for the current options. Where the current speed is
+ * not offered, the price is that of the speed the customer would be switched to.
+ */
 export function tierPrices(catalog: Catalog, state: ConfiguratorState) {
   return sortedTiers(catalog).map((tier) => {
-    const q = quote(catalog, configurationOf(state, state.selection, tier.quantity));
+    const selection = resolveSelection(catalog, state.selection, tier.quantity);
+    const q = quote(catalog, configurationOf(state, selection, tier.quantity));
     return { quantity: tier.quantity, isDefault: tier.isDefault, totalCents: q.totalCents, unitPriceCents: q.unitPriceCents };
+  });
+}
+
+/** A turnaround speed as the tiles show it: production days at this quantity, or why it cannot be picked. */
+export interface SpeedChoice {
+  code: string;
+  businessDays: number | null;
+  /** Set when the speed is not offered at the current quantity, e.g. "Up to 5,000 cards". */
+  unavailable: string | null;
+}
+
+const count = new Intl.NumberFormat('en-US');
+
+/**
+ * Every speed the rules allow with the current options, including those not offered at the current
+ * quantity (shown dimmed with the quantities that do have it). Speeds hidden by rules are left out.
+ */
+export function speedChoices(catalog: Catalog, state: ConfiguratorState): SpeedChoice[] {
+  const quantities = sortedTiers(catalog).map((t) => t.quantity);
+  return (ruleAllowedValues(catalog, state.selection)[TURNAROUND_GROUP] ?? []).flatMap((code): SpeedChoice[] => {
+    const here = turnaroundAt(catalog, code, state.quantity);
+    if (here) return [{ code, businessDays: here.businessDays, unavailable: null }];
+    const offered = quantities.filter((q) => turnaroundAt(catalog, code, q));
+    if (offered.length === 0) return [];
+    const below = offered.filter((q) => q < state.quantity);
+    const unavailable = below.length
+      ? `Up to ${count.format(below.at(-1)!)} cards`
+      : `From ${count.format(offered[0]!)} cards`;
+    return [{ code, businessDays: null, unavailable }];
   });
 }
 
