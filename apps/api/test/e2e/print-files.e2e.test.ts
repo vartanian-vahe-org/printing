@@ -5,7 +5,7 @@
 import { PDFDocument, PDFName, type PDFDict } from 'pdf-lib';
 import sharp from 'sharp';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { address, base, selection, testHeaders, uniqueEmail } from './helpers.js';
+import { address, base, checkedArtwork, selection, testHeaders, uniqueEmail } from './helpers.js';
 
 const email = process.env.ADMIN_EMAIL;
 const password = process.env.ADMIN_PASSWORD;
@@ -108,8 +108,7 @@ describe('print files', () => {
     const source = await PDFDocument.create();
     source.addPage([270, 162]);
     source.addPage([270, 162]);
-    const key = await upload('artwork', await source.save(), 'application/pdf', 'card.pdf');
-    const number = await order({ mode: 'upload', front: { key, fileName: 'card.pdf', pageCount: 2 } });
+    const number = await order({ mode: 'upload', front: await checkedArtwork(await source.save(), 'card.pdf') });
 
     const { res, pdf } = await printFile(number);
     expect(res.status).toBe(200);

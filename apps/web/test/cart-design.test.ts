@@ -12,7 +12,7 @@ const file = (patch: Partial<PdfFileState> = {}): PdfFileState => ({
   fileName: 'card.pdf',
   sizeBytes: 1000,
   status: 'ready',
-  upload: 'done',
+  issues: [],
   key: 'artwork/2026/10/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.pdf',
   pdf: { pageCount: 2, pages: [], doc: {} as never },
   ...patch,
@@ -43,11 +43,12 @@ describe('template design', () => {
 });
 
 describe('upload design', () => {
-  it('requires a front file that is checked and uploaded', () => {
-    expect(prepareUploadDesign({}, ok)).toMatchObject({ ok: false, message: 'Upload your front PDF first.' });
-    expect(prepareUploadDesign({ front: file({ status: 'reading' }) }, ok)).toMatchObject({ ok: false });
-    expect(prepareUploadDesign({ front: file({ upload: 'uploading' }) }, ok)).toMatchObject({ message: 'Still uploading your file…' });
-    expect(prepareUploadDesign({ front: file({ upload: 'failed', key: undefined }) }, ok)).toMatchObject({ ok: false });
+  it('requires a front file that is uploaded and checked', () => {
+    expect(prepareUploadDesign({}, ok)).toMatchObject({ ok: false, message: 'Upload your front file first.' });
+    expect(prepareUploadDesign({ front: file({ status: 'uploading' }) }, ok)).toMatchObject({ message: 'Still uploading your file…' });
+    expect(prepareUploadDesign({ front: file({ status: 'checking' }) }, ok)).toMatchObject({ message: 'Still checking your file…' });
+    expect(prepareUploadDesign({ front: file({ status: 'error', key: undefined }) }, ok)).toMatchObject({ ok: false });
+    expect(prepareUploadDesign({ front: file(), back: file({ status: 'checking' }) }, ok)).toMatchObject({ message: 'Still checking your file…' });
   });
 
   it('blocks when a check failed', () => {

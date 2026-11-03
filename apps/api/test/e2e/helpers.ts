@@ -104,3 +104,54 @@ export function waitForProofs(number: number, token: string) {
     return order.items.every((i: any) => i.proof.status !== 'pending') ? order : undefined;
   });
 }
+
+/** The standard 3.5" x 2" card the e2e selection uses. */
+export const standardCard = { widthIn: 3.5, heightIn: 2, bleedIn: 0.125, safeIn: 0.125 };
+
+/** Uploads a file as "Upload your design" artwork; returns its storage key (not checked yet). */
+export async function uploadArtwork(bytes: Uint8Array, fileName: string, contentType = 'application/pdf'): Promise<string> {
+  const presign = await fetch(`${base}/uploads/presign`, {
+    method: 'POST',
+    headers: { ...testHeaders, 'content-type': 'application/json' },
+    body: JSON.stringify({ kind: 'artwork', filename: fileName, contentType, sizeBytes: bytes.byteLength }),
+  });
+  expect(presign.status).toBe(201);
+  const { key, uploadUrl, headers } = (await presign.json()) as { key: string; uploadUrl: string; headers: Record<string, string> };
+  expect((await fetch(uploadUrl, { method: 'PUT', headers, body: bytes })).status).toBe(200);
+  return key;
+}
+
+export interface ArtworkCheck {
+  status: 'done';
+  format: string;
+  issues: { code: string; level: 'error' | 'warning'; message: string; page?: number }[];
+  pageCount: number;
+  outputKey: string | null;
+  url?: string;
+}
+
+/** Runs the upload file check (Python worker) and waits for its result. */
+export async function checkArtwork(
+  key: string,
+  options: { side?: 'front' | 'back'; maxPages?: 1 | 2; geometry?: typeof standardCard } = {},
+): Promise<ArtworkCheck> {
+  const start = await fetch(`${base}/uploads/checks`, {
+    method: 'POST',
+    headers: { ...testHeaders, 'content-type': 'application/json' },
+    body: JSON.stringify({ key, geometry: options.geometry ?? standardCard, side: options.side ?? 'front', maxPages: options.maxPages ?? 2 }),
+  });
+  expect(start.status).toBe(202);
+  const { id } = (await start.json()) as { id: string };
+  return waitFor(async () => {
+    const view = (await (await fetch(`${base}/uploads/checks/${id}`)).json()) as { status: string };
+    if (view.status === 'failed') throw new Error('The file check failed to run');
+    return view.status === 'done' ? (view as ArtworkCheck) : undefined;
+  });
+}
+
+/** Uploads and checks a file that must pass; returns the file reference for a cart's upload design. */
+export async function checkedArtwork(bytes: Uint8Array, fileName: string, contentType = 'application/pdf') {
+  const result = await checkArtwork(await uploadArtwork(bytes, fileName, contentType));
+  expect(result.issues.filter((i) => i.level === 'error')).toEqual([]);
+  return { key: result.outputKey!, fileName, pageCount: result.pageCount };
+}

@@ -1,17 +1,21 @@
 /** Daily cleanup (S11, X2): unused uploads go, files on orders stay. Run on demand by the owner. */
 import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
-import { address, base, selection, testHeaders, uniqueEmail } from './helpers.js';
+import { address, base, checkedArtwork, selection, testHeaders, uniqueEmail } from './helpers.js';
 
 const ownerEmail = process.env.ADMIN_EMAIL;
 const ownerPassword = process.env.ADMIN_PASSWORD;
 if (!ownerEmail || !ownerPassword) throw new Error('ADMIN_EMAIL and ADMIN_PASSWORD are required for admin e2e tests');
 
-async function uploadPdf(): Promise<string> {
+async function cardPdf(): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   doc.addPage([270, 162]);
   doc.addPage([270, 162]);
-  const bytes = await doc.save();
+  return doc.save();
+}
+
+async function uploadPdf(): Promise<string> {
+  const bytes = await cardPdf();
   const presign = await fetch(`${base}/uploads/presign`, {
     method: 'POST',
     headers: { ...testHeaders, 'content-type': 'application/json' },
@@ -36,7 +40,7 @@ describe('cleanup', () => {
     const owner = login.headers.get('set-cookie')!.split(';')[0]!;
 
     const orphan = await uploadPdf();
-    const kept = await uploadPdf();
+    const kept = (await checkedArtwork(await cardPdf(), 'card.pdf')).key;
     // Put `kept` on an order.
     let cookie = '';
     const call = async (path: string, body: unknown) => {
@@ -59,6 +63,7 @@ describe('cleanup', () => {
     const result = (await run.json()) as { uploads: number; carts: number };
     expect(result.uploads).toBeGreaterThanOrEqual(1);
 
+    // Never checked, then deleted: refused either way; the checked file on the order stays.
     expect(await addToCart(orphan)).toBe(400);
     expect(await addToCart(kept)).toBe(201);
   });

@@ -55,7 +55,7 @@ import { formatInches } from '../../lib/format';
 import { formatShopDate } from '../../lib/schedule-text';
 import { useNow } from '../../lib/use-now';
 import { worstLevel } from '../../lib/pdf-checks';
-import { useArtworkSources, usePageImage, usePdfFiles } from '../../lib/use-pdf-artwork';
+import { useArtworkChecks, useArtworkSources, usePageImage, usePdfFiles } from '../../lib/use-pdf-artwork';
 import { useScenePngs } from '../../lib/use-scene-png';
 import { BriefForm } from '../design/BriefForm';
 import { DesignPanel } from '../design/DesignPanel';
@@ -246,6 +246,11 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
     () => ({ widthIn: size.widthIn, heightIn: size.heightIn, bleedIn: size.bleedIn }),
     [size.widthIn, size.heightIn, size.bleedIn],
   );
+  const checkGeometry = useMemo(
+    () => ({ widthIn: size.widthIn, heightIn: size.heightIn, bleedIn: size.bleedIn, safeIn: size.safeIn }),
+    [size.widthIn, size.heightIn, size.bleedIn, size.safeIn],
+  );
+  useArtworkChecks(pdf, checkGeometry, backMode);
   const pdfSources = useArtworkSources(pdf.files, expectedSize, backMode);
   const pdfFront = usePageImage(method === 'upload' ? pdfSources.front : null);
   const pdfBack = usePageImage(method === 'upload' ? pdfSources.back : null);
@@ -283,7 +288,9 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
   }
 
   // A file with a blocking problem (wrong size, missing back…) cannot go on to step 3.
-  const uploadReady = pdf.files.front?.status === 'ready' && worstLevel([...pdfSources.checks.front, ...pdfSources.checks.back]) !== 'error';
+  const backFileReady = backMode !== 'separate' || !pdf.files.back || pdf.files.back.status === 'ready';
+  const uploadReady =
+    pdf.files.front?.status === 'ready' && backFileReady && worstLevel([...pdfSources.checks.front, ...pdfSources.checks.back]) !== 'error';
   const sizeName = size.code === CUSTOM_SIZE_VALUE ? `Custom ${formatInches(size.widthIn)} × ${formatInches(size.heightIn)}` : valueLabel(catalog, SIZE_GROUP, size.code);
   const reachable: Record<Step, boolean> = {
     options: true,
@@ -426,9 +433,9 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
               />
               <div className={styles.uploadNext}>
                 <p className={styles.hint}>
-                  {pdf.files.front && !uploadReady && pdf.files.front.status === 'ready'
+                  {pdf.files.front && !uploadReady && (pdf.files.front.status === 'ready' || pdf.files.front.status === 'error')
                     ? 'Fix the problems above to continue: upload a corrected file, or change the card size to match your file.'
-                    : 'We check your files right away and show your card in 3D on the next step.'}
+                    : 'We check your files right away (size, 300 DPI, CMYK colors, fonts) and show your card in 3D on the next step.'}
                 </p>
                 <button type="button" className={styles.primaryButton} disabled={!uploadReady} onClick={() => go('details')}>
                   Review your card

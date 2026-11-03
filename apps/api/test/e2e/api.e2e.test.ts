@@ -3,7 +3,8 @@
  * Run from the host so presigned upload URLs (http://localhost:9000) are reachable.
  */
 import { describe, expect, it } from 'vitest';
-import { testHeaders } from './helpers.js';
+import sharp from 'sharp';
+import { checkArtwork, standardCard, testHeaders, uploadArtwork } from './helpers.js';
 
 const base = process.env.API_BASE_URL ?? 'http://localhost:4000';
 
@@ -128,10 +129,54 @@ describe('POST /uploads/presign', () => {
     expect(tampered.status).toBe(403);
   });
 
-  it('rejects non-PDF and oversized files', async () => {
+  it('accepts AI, TIFF, JPG and PSD artwork; rejects PNG and oversized files', async () => {
+    for (const [filename, contentType, extension] of [
+      ['a.ai', 'application/illustrator', 'ai'],
+      ['a.tif', 'image/tiff', 'tif'],
+      ['a.jpg', 'image/jpeg', 'jpg'],
+      ['a.psd', 'image/vnd.adobe.photoshop', 'psd'],
+    ]) {
+      const res = await post('/uploads/presign', { filename, contentType, sizeBytes: 10 });
+      expect(res.status).toBe(201);
+      expect(res.body.key).toMatch(new RegExp(`\\.${extension}$`));
+    }
     expect((await post('/uploads/presign', { filename: 'a.png', contentType: 'image/png', sizeBytes: 10 })).status).toBe(400);
+    expect((await post('/uploads/presign', { filename: 'a.tif', contentType: 'image/tiff', sizeBytes: 199 * 1024 * 1024 })).status).toBe(201);
     expect(
       (await post('/uploads/presign', { filename: 'a.pdf', contentType: 'application/pdf', sizeBytes: 999_999_999 })).status,
     ).toBe(400);
   });
 });
+
+describe('upload file check (POST /uploads/checks)', () => {
+  /** A solid image of the card plus bleed at `dpi`, as a JPEG in CMYK or RGB. */
+  const jpeg = (space: 'cmyk' | 'srgb', dpi = 300) =>
+    sharp({ create: { width: Math.round(3.75 * dpi), height: Math.round(2.25 * dpi), channels: 3, background: { r: 20, g: 60, b: 140 } } })
+      .toColourspace(space)
+      .jpeg()
+      .toBuffer()
+      .then((b) => new Uint8Array(b));
+
+  it('turns a CMYK JPG of the card size at 300 DPI into a checked print PDF', async () => {
+    const result = await checkArtwork(await uploadArtwork(await jpeg('cmyk'), 'card.jpg', 'image/jpeg'), { maxPages: 1 });
+    expect(result).toMatchObject({ status: 'done', format: 'jpeg', issues: [], pageCount: 1 });
+    expect(result.outputKey).toMatch(/^artwork\/\d{4}\/\d{2}\/[0-9a-f-]{36}\.pdf$/);
+    const pdf = new Uint8Array(await (await fetch(result.url!)).arrayBuffer());
+    expect(new TextDecoder().decode(pdf.subarray(0, 5))).toBe('%PDF-');
+  });
+
+  it('refuses RGB and low-resolution images', async () => {
+    const rgb = await checkArtwork(await uploadArtwork(await jpeg('srgb'), 'card.jpg', 'image/jpeg'), { maxPages: 1 });
+    expect(rgb.issues.map((i) => `${i.code}/${i.level}`)).toEqual(['rgb/error']);
+    expect(rgb.outputKey).toBeNull();
+    const low = await checkArtwork(await uploadArtwork(await jpeg('cmyk', 150), 'card.jpg', 'image/jpeg'), { maxPages: 1 });
+    expect(low.issues.map((i) => `${i.code}/${i.level}`)).toEqual(['low-resolution/error']);
+  });
+
+  it('needs an uploaded artwork file and a known check id', async () => {
+    const missing = await post('/uploads/checks', { key: 'artwork/2026/10/00000000-0000-0000-0000-000000000000.pdf', geometry: standardCard, side: 'front', maxPages: 2 });
+    expect(missing.status).toBe(400);
+    expect((await fetch(`${base}/uploads/checks/00000000-0000-4000-8000-000000000000`)).status).toBe(404);
+  });
+});
+

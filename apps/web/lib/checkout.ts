@@ -84,6 +84,8 @@ export interface OrderView {
     proof: ItemProof;
     /** "Let us design it" package bought with the item, or null. */
     designService: { name: string; designDays: number; revisions: number | null } | null;
+    /** Card size and printed back, for checking a replacement file. */
+    card: { geometry: { widthIn: number; heightIn: number; bleedIn: number; safeIn: number }; backMode: 'separate' | 'blank' | 'same_as_front' } | null;
   }[];
   shipments: { carrier: string; service: string | null; trackingNumber: string; trackingUrl: string | null; shippedAt: string }[];
   subtotalCents: number;

@@ -52,16 +52,15 @@ export function prepareUploadDesign(
   proof: UploadProof = 'send',
 ): PreparedDesign {
   const front = files.front;
-  if (!front) return { ok: false, message: 'Upload your front PDF first.' };
-  if (front.status === 'reading') return { ok: false, message: 'Still checking your file…' };
-  if (front.status === 'error') return { ok: false, message: front.error ?? 'Your front PDF cannot be used.' };
-  if (worstLevel([...checks.front, ...checks.back]) === 'error') {
-    return { ok: false, message: 'Fix the problems with your file before adding it to the cart.' };
-  }
+  if (!front) return { ok: false, message: 'Upload your front file first.' };
   for (const file of [front, files.back]) {
     if (!file) continue;
-    if (file.upload === 'uploading') return { ok: false, message: 'Still uploading your file…' };
-    if (file.upload !== 'done' || !file.key) return { ok: false, message: `"${file.fileName}" was not uploaded. Replace it to try again.` };
+    if (file.status === 'uploading') return { ok: false, message: 'Still uploading your file…' };
+    if (file.status === 'checking') return { ok: false, message: 'Still checking your file…' };
+    if (file.status === 'error' || !file.key) return { ok: false, message: `"${file.fileName}" cannot be printed. Replace it with a corrected file.` };
+  }
+  if (worstLevel([...checks.front, ...checks.back]) === 'error') {
+    return { ok: false, message: 'Fix the problems with your file before adding it to the cart.' };
   }
 
   const ref = (file: PdfFileState) => ({ key: file.key!, fileName: file.fileName, pageCount: file.pdf?.pageCount ?? 1 });

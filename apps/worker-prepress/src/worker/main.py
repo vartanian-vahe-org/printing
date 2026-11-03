@@ -1,20 +1,27 @@
 """Prepress worker (Phase 2 step 8).
 
-Consumes the BullMQ queue "prepress" filled by the API: one job per order item with its print file.
-Checks the file (preflight.py), renders proof images (proof.py) to storage, and reports back on the
-"prepress-results" queue, which the API consumes. The worker has no database access.
+Consumes two BullMQ queues filled by the API; the worker has no database access.
+
+- "prepress": one job per order item with its print file. Checks the file (preflight.py), renders
+  proof images (proof.py) to storage, and reports back on the "prepress-results" queue.
+- "upload-checks": a customer's file right after upload, before it goes in the cart. Turns it into
+  a print PDF (formats.py), checks it, stores the PDF marked as passed or failed for the API, and
+  returns the issues as the job's result (the storefront polls for it).
 """
 
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import os
 import signal
 import time
 
+import pikepdf
 from bullmq import Queue, Worker
 
+from .formats import normalize
 from .preflight import Geometry, Issue, check_pdf
 from .proof import render_proofs
 from .storage import Storage
@@ -24,6 +31,12 @@ log = logging.getLogger("worker-prepress")
 
 JOBS_QUEUE = "prepress"
 RESULTS_QUEUE = "prepress-results"
+CHECKS_QUEUE = "upload-checks"
+
+
+def geometry_tag(geometry: Geometry) -> str:
+    """'3.5x2+0.125': the card a file was checked for, compared by the API (same number format as JavaScript)."""
+    return f"{geometry.width_in:g}x{geometry.height_in:g}+{geometry.bleed_in:g}"
 
 
 def process_item(storage: Storage, data: dict) -> dict:
@@ -34,8 +47,8 @@ def process_item(storage: Storage, data: dict) -> dict:
         pdf,
         geometry,
         expected_pages=data["expectedPages"],
-        # Template files are drawn by us in RGB on purpose; only customer files get the RGB warning.
-        check_rgb=data["mode"] == "upload",
+        # Template files are drawn by us in CMYK; customer and designer files are checked strictly.
+        strict=data["mode"] == "upload",
     )
     proofs = []
     for page, png in enumerate(render_proofs(pdf, geometry, data["expectedPages"]), start=1):
@@ -43,6 +56,30 @@ def process_item(storage: Storage, data: dict) -> dict:
         storage.write_png(key, png)
         proofs.append({"page": page, "key": key})
     return {"issues": [i.to_dict() for i in issues], "proofs": proofs}
+
+
+def check_upload(storage: Storage, data: dict) -> dict:
+    """One uploaded file (front, or a separate back) for a card size: print PDF, issues, page count."""
+    geometry = Geometry.from_job(data["geometry"])
+    normalized = normalize(storage.read(data["sourceKey"]), geometry)
+    issues = list(normalized.issues)
+    page_count = 0
+    if normalized.pdf is not None:
+        names = {1: "Back"} if data["side"] == "back" else {1: "Front", 2: "Back"}
+        issues += check_pdf(normalized.pdf, geometry, expected_pages=None, max_pages=data["maxPages"], side_names=names)
+        try:
+            with pikepdf.open(io.BytesIO(normalized.pdf)) as doc:
+                page_count = len(doc.pages)
+        except pikepdf.PdfError:
+            pass  # unreadable or password-protected: preflight reported it
+        passed = not any(i.level == "error" for i in issues)
+        storage.write_pdf(data["outputKey"], normalized.pdf, {"check": "passed" if passed else "failed", "geometry": geometry_tag(geometry)})
+    return {
+        "format": normalized.format,
+        "issues": [i.to_dict() for i in issues],
+        "pageCount": page_count,
+        "outputKey": data["outputKey"] if normalized.pdf is not None else None,
+    }
 
 
 async def main() -> None:
@@ -64,8 +101,15 @@ async def main() -> None:
         log.info("checked %s in %.1fs: %s", data["orderItemId"], time.monotonic() - started, payload.get("issues", payload.get("error")))
         return "done"
 
+    async def handle_check(job, _token):
+        started = time.monotonic()
+        result = await asyncio.to_thread(check_upload, storage, job.data)
+        log.info("checked upload %s in %.1fs: %s", job.data["sourceKey"], time.monotonic() - started, [i["code"] for i in result["issues"]])
+        return result
+
     worker = Worker(JOBS_QUEUE, handle, {"connection": redis_url, "concurrency": 2})
-    log.info("Waiting for prepress jobs")
+    checks = Worker(CHECKS_QUEUE, handle_check, {"connection": redis_url, "concurrency": 2})
+    log.info("Waiting for prepress jobs and upload checks")
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -74,6 +118,7 @@ async def main() -> None:
     await stop.wait()
     log.info("Shutting down")
     await worker.close()
+    await checks.close()
     await results.close()
 
 

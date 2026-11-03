@@ -43,7 +43,9 @@ Cập nhật: 2026-10-20. Khi giải quyết xong một mục: ghi quyết đị
 | O3 | Rule R7 (in một mặt thì ẩn 2 lựa chọn "UV Front, ... Back") là suy ra từ GotPrint, GotPrint không công bố trực tiếp | Đã seed | Xác nhận với xưởng | Thấp |
 | O4 | Ngày lễ: đang seed đủ 11 ngày lễ liên bang, gồm cả Columbus Day và Veterans Day | Seed 2026–2027 | Xưởng có nghỉ những ngày này không; ngày lễ 2028 trở đi admin tự thêm ở trang Settings | Cao |
 | O5 | Template tự thiết kế (bước 7) | Chưa làm | Ai duyệt nội dung và mẫu mã template | Thấp |
-| O6 | File in đang dùng **màu RGB**, chưa đổi sang CMYK hay gắn color profile (GRACoL/SWOP) | RGB; phần mềm RIP của máy in tự đổi. Cảnh báo RGB ở proof đang nói với khách "chúng tôi đổi sang CMYK" | Hỏi xưởng: máy in/RIP nhận RGB được không, hay cần PDF/X với CMYK? Có cần crop marks không? | Trung bình (trước khi in thật) |
+| O6 | File khách upload **bắt buộc CMYK**. File template vẽ CMYK bằng công thức đơn giản (đen/xám chỉ dùng mực K), logo đổi bằng profile CMYK mặc định của sharp; chưa gắn color profile chuẩn (GRACoL/SWOP), chưa xuất PDF/X | Chặn RGB/Pantone ở bước upload; template tự đổi | Hỏi xưởng: profile màu nào (GRACoL 2013, SWOP…), có cần PDF/X, có cần crop marks trong file in không, có in được màu pha không | Trung bình (trước khi in thật) |
+| O7 | **Chưa nhận EPS** (và AI lưu không bật PDF Compatible): đọc EPS cần Ghostscript, từng có lỗi chạy mã độc từ file EPS | Báo lỗi, hướng dẫn xuất PDF | Có cần nhận EPS không; nếu có thì chạy Ghostscript `-dSAFER` trong container riêng, cập nhật thường xuyên | Thấp |
+| O8 | Chặn chặt: dưới 300 DPI, RGB, Pantone đều là **lỗi**. File từ Canva bản free, Word, điện thoại gần như luôn là RGB nên sẽ bị chặn | Hướng dẫn xuất CMYK ngay ở bước upload, gợi ý dùng template hoặc gói thiết kế | Theo dõi tỉ lệ khách bỏ ở bước upload sau khi chạy thật; cân nhắc tự đổi RGB sang CMYK thay vì chặn | Trung bình |
 | O7 | Kiểm tra file chưa có: chữ quá nhỏ (dưới 6pt), màu đen 4 lớp (rich black) cho chữ nhỏ, tổng mực quá cao | Chỉ các mục trong spec 6.3 | Hỏi xưởng các ngưỡng thường dùng rồi thêm vào `preflight.py` | Thấp |
 
 ## Giao diện (storefront)
@@ -70,7 +72,7 @@ Cập nhật: 2026-10-20. Khi giải quyết xong một mục: ghi quyết đị
 | S1 | **Hãng ship** và giá ship thật | Bảng phí cố định (Standard $6.99 / Expedited $14.99 / Overnight $29.99, free từ $100) + nhập mã tracking tay | EasyPost hay Shippo (hay gọi thẳng UPS/USPS); tài khoản hãng | Cao |
 | S7 | **Dịch vụ tính sales tax** | Bảng thuế suất theo bang, seed California 7.25% (mức tối thiểu của bang, **chưa gồm thuế quận/thành phố**, tổng thực tế có thể >10%) | Stripe Tax, TaxJar hay Avalara. **Không nên bán thật với bảng tạm** | **Cao, chặn bán thật** |
 | S8 | Phí ship có chịu sales tax không (California: thường không, nếu ghi tách riêng và giao bằng hãng vận chuyển) | Bản mặc định: chỉ tính thuế trên tiền hàng | Xác nhận với kế toán, hoặc để dịch vụ tính thuế xử lý | Thấp |
-| S2 | Giới hạn dung lượng file PDF upload | Tạm đặt 50 MB | Con số chính thức | Thấp |
+| S2 | Giới hạn dung lượng file upload | 200 MB (`UPLOAD_MAX_MB`), để nhận PSD/TIFF | Con số chính thức; worker đọc cả file vào RAM nên cần theo dõi bộ nhớ EC2 | Thấp |
 | S3 | Giờ chốt đơn tính từ lúc **đã thanh toán và đã duyệt proof** | Ghi trong spec mục 5 | Xác nhận | Cao |
 | S4 | Sales tax các bang ngoài California | Chỉ CA | Theo dõi ngưỡng nexus | Thấp |
 | S5 | **Seller's permit California (CDTFA)** | Chưa có | Việc pháp lý, bạn tự làm trước khi bán thật | **Chặn bán hàng thật** |

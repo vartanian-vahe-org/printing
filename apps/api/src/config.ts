@@ -64,7 +64,7 @@ export const config = {
   },
   uploads: {
     /** Placeholder limit, see docs/open-issues.md S2. */
-    maxBytes: Number(process.env.UPLOAD_MAX_MB ?? 50) * MB,
+    maxBytes: Number(process.env.UPLOAD_MAX_MB ?? 200) * MB,
     presignExpiresSeconds: 15 * 60,
   },
 };

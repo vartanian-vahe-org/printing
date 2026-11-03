@@ -3,6 +3,7 @@ import { orderItems, orders, payments, shipments, type Database } from '@printin
 import { and, asc, desc, eq, sql, type SQL } from 'drizzle-orm';
 import { PAYMENT_PROVIDER, type PaymentProvider, type ShippingAddress } from '../commerce/ports.js';
 import { DATABASE } from '../database/database.tokens.js';
+import type { PrintSpec } from '../print/print-spec.js';
 import { StorageService } from '../storage/storage.service.js';
 import type { PreflightRecord, ProofIssue } from './prepress.service.js';
 import { hashOrderToken } from './order-link.js';
@@ -39,6 +40,8 @@ export interface OrderView {
     proof: ItemProof;
     /** "Let us design it" package bought with the item, or null. */
     designService: { name: string; designDays: number; revisions: number | null } | null;
+    /** Card size and printed back, for checking a replacement file; null for items ordered before print specs. */
+    card: { geometry: PrintSpec['geometry']; backMode: PrintSpec['backMode'] } | null;
   }[];
   shipments: { carrier: string; service: string | null; trackingNumber: string; trackingUrl: string | null; shippedAt: string }[];
   subtotalCents: number;
@@ -181,6 +184,7 @@ export class OrdersService {
           totalCents: item.totalCents,
           proof: await this.proofOf(item, order.number),
           designService: designServiceOf(item.quote),
+          card: item.printSpec ? { geometry: (item.printSpec as unknown as PrintSpec).geometry, backMode: (item.printSpec as unknown as PrintSpec).backMode } : null,
         })),
       ),
       shipments: shipped.map((s) => ({

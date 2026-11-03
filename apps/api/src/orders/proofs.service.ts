@@ -5,6 +5,7 @@ import { PDFDocument } from 'pdf-lib';
 import { DATABASE } from '../database/database.tokens.js';
 import type { PrintSpec } from '../print/print-spec.js';
 import { StorageService } from '../storage/storage.service.js';
+import { artworkProblem } from '../uploads/artwork-checks.js';
 import { isUploadKey } from '../uploads/upload-kinds.js';
 import { OrderEmailQueue } from './order-email.queue.js';
 import { hashOrderToken } from './order-link.js';
@@ -104,12 +105,16 @@ export class ProofsService {
       if (mode !== 'upload') throw new ConflictException('This item uses a template; reply to your order email to change it.');
       if (item.proofStatus === 'pending') throw new ConflictException('We are still checking the current file. Try again in a minute.');
 
+      const spec = item.printSpec as unknown as PrintSpec | null;
       for (const [label, file] of [['front', files.front], ['back', files.back]] as const) {
         if (file && (!isUploadKey('artwork', file.key) || !(await this.storage.describe(file.key)))) {
-          throw new BadRequestException(`The ${label} PDF was not found. Please upload it again.`);
+          throw new BadRequestException(`The ${label} file was not found. Please upload it again.`);
         }
+        // Like the cart: only files that passed the upload check for this card.
+        const problem = file && spec ? await artworkProblem(this.storage, file.key, spec.geometry, `The ${label} file`) : null;
+        if (problem) throw new BadRequestException(problem);
       }
-      const backMode = ((item.printSpec as unknown as PrintSpec | null)?.backMode ?? 'separate');
+      const backMode = spec?.backMode ?? 'separate';
       if (backMode === 'separate' && !files.back && files.front.pageCount < 2) {
         throw new BadRequestException('Add your back design: upload a back file or a 2-page PDF.');
       }

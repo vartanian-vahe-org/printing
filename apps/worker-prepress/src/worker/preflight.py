@@ -1,12 +1,18 @@
 """Automatic file checks for print files (docs/specs/business-card-mvp.md section 6.3).
 
-Pure functions: PDF bytes in, a list of issues out. "error" blocks the proof (the customer
-uploads a new file); "warning" must be acknowledged by the customer before approving.
+Pure functions: PDF bytes in, a list of issues out. "error" blocks the file (the customer uploads a
+new one); "warning" must be acknowledged by the customer before approving.
+
+Customer and designer files are checked strictly: images of at least 300 DPI, CMYK or grayscale
+colors only (no RGB, no spot colors) and embedded fonts. Template files are drawn by us in CMYK, so
+only the checks that can still go wrong there run on them (size, fonts, a low-resolution logo).
 """
 
 from __future__ import annotations
 
+import ctypes
 import io
+import math
 from dataclasses import asdict, dataclass
 
 import pikepdf
@@ -17,9 +23,14 @@ PT_PER_IN = 72.0
 #: Page size tolerance: about 1/72 in, absorbs rounding in design tools.
 SIZE_TOLERANCE_PT = 1.0
 MIN_DPI = 300
+#: Design tools round sizes, so an image placed at "300 DPI" can measure 299.x.
+DPI_TOLERANCE = 0.99
 HAIRLINE_PT = 0.25
+MIN_TEXT_PT = 6.0
 STROKE_OPS = {"S", "s", "B", "B*", "b", "b*"}
 SIDE_NAMES = {1: "Front", 2: "Back"}
+#: Separation / DeviceN colorant names that are process inks (or all of them), not spot colors.
+PROCESS_COLORANTS = {"/Cyan", "/Magenta", "/Yellow", "/Black", "/All", "/None"}
 
 
 @dataclass(frozen=True)
@@ -71,8 +82,7 @@ def _page_size(page: pikepdf.Page) -> tuple[float, float]:
     return (height, width) if rotate == 90 else (width, height)
 
 
-def check_size(page_no: int, size: tuple[float, float], geometry: Geometry) -> list[Issue]:
-    side = SIDE_NAMES.get(page_no, f"Page {page_no}")
+def check_size(page_no: int, side: str, size: tuple[float, float], geometry: Geometry) -> list[Issue]:
     bleed, trim = geometry.bleed_size_pt, geometry.trim_size_pt
     if _close(size, bleed):
         return []
@@ -99,20 +109,23 @@ def check_size(page_no: int, size: tuple[float, float], geometry: Geometry) -> l
 
 
 def _resources_tree(resources: pikepdf.Dictionary | None, seen: set[tuple[int, int]] | None = None):
-    """Yields a page's resource dictionaries, including those of nested form XObjects."""
+    """Yields a page's resource dictionaries, including those of nested form XObjects and patterns."""
     if resources is None:
         return
     seen = seen if seen is not None else set()
     yield resources
-    xobjects = resources.get("/XObject")
-    if xobjects is None:
-        return
-    for _, xobject in xobjects.items():
-        key = xobject.objgen
-        if key in seen or xobject.get("/Subtype") != "/Form":
+    for group in ("/XObject", "/Pattern"):
+        children = resources.get(group)
+        if children is None:
             continue
-        seen.add(key)
-        yield from _resources_tree(xobject.get("/Resources"), seen)
+        for _, child in children.items():
+            key = child.objgen
+            is_form = group == "/XObject" and child.get("/Subtype") == "/Form"
+            is_tiling = group == "/Pattern" and child.get("/PatternType") == 1
+            if key in seen or not (is_form or is_tiling):
+                continue
+            seen.add(key)
+            yield from _resources_tree(child.get("/Resources"), seen)
 
 
 def _font_embedded(font: pikepdf.Dictionary) -> bool:
@@ -126,7 +139,7 @@ def _font_embedded(font: pikepdf.Dictionary) -> bool:
     return descriptor is not None and any(k in descriptor for k in ("/FontFile", "/FontFile2", "/FontFile3"))
 
 
-def check_fonts(page_no: int, page: pikepdf.Page) -> list[Issue]:
+def check_fonts(page_no: int, side: str, page: pikepdf.Page) -> list[Issue]:
     missing: set[str] = set()
     for resources in _resources_tree(page.obj.get("/Resources")):
         fonts = resources.get("/Font")
@@ -137,7 +150,6 @@ def check_fonts(page_no: int, page: pikepdf.Page) -> list[Issue]:
                 missing.add(str(font.get("/BaseFont", "unknown")).lstrip("/"))
     if not missing:
         return []
-    side = SIDE_NAMES.get(page_no, f"Page {page_no}")
     names = ", ".join(sorted(missing))
     return [
         Issue(
@@ -161,12 +173,60 @@ def _content_ops(page: pikepdf.Page):
                 yield from pikepdf.parse_content_stream(xobject)
 
 
-def check_strokes_and_color(page_no: int, page: pikepdf.Page, check_rgb: bool) -> list[Issue]:
-    side = SIDE_NAMES.get(page_no, f"Page {page_no}")
+def color_kind(space) -> str:
+    """'cmyk', 'gray', 'rgb' (RGB or Lab: screen colors), 'spot' or 'other' (patterns, unknown)."""
+    if isinstance(space, pikepdf.Name):
+        return {
+            "/DeviceCMYK": "cmyk",
+            "/DeviceGray": "gray",
+            "/CalGray": "gray",
+            "/DeviceRGB": "rgb",
+            "/CalRGB": "rgb",
+            "/Lab": "rgb",
+        }.get(str(space), "other")
+    if isinstance(space, pikepdf.Array) and len(space) > 0:
+        family = str(space[0])
+        if family == "/ICCBased":
+            return {1: "gray", 3: "rgb", 4: "cmyk"}.get(int(space[1].get("/N", 0)), "other")
+        if family in ("/CalRGB", "/Lab"):
+            return "rgb"
+        if family == "/CalGray":
+            return "gray"
+        if family == "/Indexed" or (family == "/Pattern" and len(space) > 1):
+            return color_kind(space[1])
+        if family == "/Separation":
+            return "cmyk" if str(space[1]) in PROCESS_COLORANTS else "spot"
+        if family == "/DeviceN":
+            return "cmyk" if all(str(name) in PROCESS_COLORANTS for name in space[1]) else "spot"
+    return "other"
+
+
+def _color_spaces(page: pikepdf.Page):
+    """Every color space the page defines or uses: named spaces, images, shadings and shading patterns."""
+    for resources in _resources_tree(page.obj.get("/Resources")):
+        spaces = resources.get("/ColorSpace")
+        for _, space in spaces.items() if spaces is not None else []:
+            yield space
+        xobjects = resources.get("/XObject")
+        for _, xobject in xobjects.items() if xobjects is not None else []:
+            if xobject.get("/Subtype") == "/Image" and not xobject.get("/ImageMask", False) and "/ColorSpace" in xobject:
+                yield xobject.get("/ColorSpace")
+        shadings = resources.get("/Shading")
+        for _, shading in shadings.items() if shadings is not None else []:
+            if "/ColorSpace" in shading:
+                yield shading.get("/ColorSpace")
+        patterns = resources.get("/Pattern")
+        for _, pattern in patterns.items() if patterns is not None else []:
+            shading = pattern.get("/Shading")
+            if shading is not None and "/ColorSpace" in shading:
+                yield shading.get("/ColorSpace")
+
+
+def check_strokes_and_color(page_no: int, side: str, page: pikepdf.Page, strict: bool) -> list[Issue]:
     issues: list[Issue] = []
     widths = [1.0]  # graphics state stack, PDF default line width is 1
     hairline = False
-    rgb = False
+    kinds: set[str] = set()
     for operands, operator in _content_ops(page):
         op = str(operator)
         if op == "q":
@@ -178,60 +238,85 @@ def check_strokes_and_color(page_no: int, page: pikepdf.Page, check_rgb: bool) -
         elif op in STROKE_OPS and widths[-1] < HAIRLINE_PT:
             hairline = True
         elif op in ("rg", "RG"):
-            rgb = True
+            kinds.add("rgb")
     if hairline:
         issues.append(
             Issue("hairline", "warning", f"{side}: some lines are thinner than 0.25 pt and may not print or may print unevenly.", page_no)
         )
-    if check_rgb:
-        for resources in _resources_tree(page.obj.get("/Resources")):
-            xobjects = resources.get("/XObject")
-            for _, xobject in (xobjects.items() if xobjects is not None else []):
-                if xobject.get("/Subtype") != "/Image":
-                    continue
-                space = xobject.get("/ColorSpace")
-                if space == "/DeviceRGB" or (isinstance(space, pikepdf.Array) and space[0] == "/ICCBased" and int(space[1].get("/N", 0)) == 3):
-                    rgb = True
-        if rgb:
-            issues.append(
-                Issue(
-                    "rgb",
-                    "warning",
-                    f"{side}: the file uses RGB colors. We convert them to print colors (CMYK); bright greens and blues may look slightly duller on paper.",
-                    page_no,
-                )
+    if not strict:
+        return issues
+    kinds.update(color_kind(space) for space in _color_spaces(page))
+    if "rgb" in kinds:
+        issues.append(
+            Issue(
+                "rgb",
+                "error",
+                f"{side}: the file uses RGB colors. We print in CMYK only: convert the design to CMYK and export it again.",
+                page_no,
             )
+        )
+    if "spot" in kinds:
+        issues.append(
+            Issue(
+                "spot-color",
+                "error",
+                f"{side}: the file uses spot (Pantone) colors. Convert them to CMYK process colors and export it again.",
+                page_no,
+            )
+        )
     return issues
 
 
-def check_images_and_text(page_no: int, page: pdfium.PdfPage, geometry: Geometry, size_ok: bool) -> list[Issue]:
-    side = SIDE_NAMES.get(page_no, f"Page {page_no}")
+def _font_size(obj: pdfium.PdfObject) -> float | None:
+    """Rendered size of a text object in points (font size × the object's scale)."""
+    size = ctypes.c_float()
+    if not pdfium_c.FPDFTextObj_GetFontSize(obj.raw, ctypes.byref(size)):
+        return None
+    m = obj.get_matrix()
+    return size.value * math.sqrt(abs(m.a * m.d - m.b * m.c))
+
+
+def check_images_and_text(page_no: int, side: str, page: pdfium.PdfPage, geometry: Geometry, size_ok: bool, strict: bool) -> list[Issue]:
     issues: list[Issue] = []
     lowest_dpi: float | None = None
     for obj in page.get_objects(filter=(pdfium_c.FPDF_PAGEOBJ_IMAGE,), max_depth=15):
         left, bottom, right, top = obj.get_bounds()
         width_in, height_in = (right - left) / PT_PER_IN, (top - bottom) / PT_PER_IN
         if width_in < 0.1 or height_in < 0.1:
-            continue  # tiny marks, not worth a warning
+            continue  # tiny marks, not worth checking
         px_w, px_h = obj.get_px_size()
         dpi = min(px_w / width_in, px_h / height_in)
         lowest_dpi = dpi if lowest_dpi is None else min(lowest_dpi, dpi)
-    if lowest_dpi is not None and lowest_dpi < MIN_DPI - 1:
+    if lowest_dpi is not None and lowest_dpi < MIN_DPI * DPI_TOLERANCE:
         issues.append(
             Issue(
                 "low-resolution",
-                "warning",
-                f"{side}: an image is {round(lowest_dpi)} DPI; at least {MIN_DPI} DPI prints sharp. It may look blurry.",
+                "error" if strict else "warning",
+                f"{side}: an image is {round(lowest_dpi)} DPI; it must be at least {MIN_DPI} DPI to print sharp."
+                + (" Use a higher-resolution image and export again." if strict else " It may look blurry."),
                 page_no,
             )
         )
+
+    texts = list(page.get_objects(filter=(pdfium_c.FPDF_PAGEOBJ_TEXT,), max_depth=15))
+    if strict:
+        sizes = [s for s in (_font_size(obj) for obj in texts) if s is not None and s > 0]
+        if sizes and min(sizes) < MIN_TEXT_PT - 0.05:
+            issues.append(
+                Issue(
+                    "small-text",
+                    "warning",
+                    f"{side}: some text is {min(sizes):.1f} pt; text smaller than {MIN_TEXT_PT:g} pt is hard to read on a printed card.",
+                    page_no,
+                )
+            )
 
     if size_ok:
         # Safe zone in page coordinates (origin bottom-left, page = card + bleed).
         inset = (geometry.bleed_in + geometry.safe_in) * PT_PER_IN
         width, height = page.get_size()
         safe = (inset, inset, width - inset, height - inset)
-        for obj in page.get_objects(filter=(pdfium_c.FPDF_PAGEOBJ_TEXT,), max_depth=15):
+        for obj in texts:
             left, bottom, right, top = obj.get_bounds()
             if left < safe[0] - 0.5 or bottom < safe[1] - 0.5 or right > safe[2] + 0.5 or top > safe[3] + 0.5:
                 issues.append(
@@ -243,31 +328,50 @@ def check_images_and_text(page_no: int, page: pdfium.PdfPage, geometry: Geometry
                     )
                 )
                 break
+
+    if strict:
+        # A page with nothing on it is usually the wrong file or an empty back.
+        thumbnail = page.render(scale=0.25).to_pil().convert("L")
+        if thumbnail.getextrema()[0] >= 250:
+            issues.append(Issue("blank-page", "warning", f"{side} looks blank. Check that you uploaded the right file.", page_no))
     return issues
 
 
-def check_pdf(data: bytes, geometry: Geometry, *, expected_pages: int, check_rgb: bool = True) -> list[Issue]:
-    """All checks for one print file (one page per printed side)."""
+def check_pdf(
+    data: bytes,
+    geometry: Geometry,
+    *,
+    expected_pages: int | None,
+    strict: bool = True,
+    max_pages: int = 2,
+    side_names: dict[int, str] | None = None,
+) -> list[Issue]:
+    """All checks for one print file (one page per printed side). `expected_pages` None checks the
+    first `max_pages` pages there are, without a page-count rule; `side_names` labels them in messages."""
+    names = side_names or SIDE_NAMES
     try:
         doc = pikepdf.open(io.BytesIO(data))
+    except pikepdf.PasswordError:
+        return [Issue("encrypted", "error", "The PDF is protected with a password. Export it again without a password.")]
     except pikepdf.PdfError:
         return [Issue("unreadable", "error", "The file could not be read as a PDF. Export it again and upload the new file.")]
 
     issues: list[Issue] = []
     with doc:
-        if len(doc.pages) != expected_pages:
+        if expected_pages is not None and len(doc.pages) != expected_pages:
             issues.append(
                 Issue("page-count", "error", f"The print file has {len(doc.pages)} page(s); this order needs {expected_pages}.")
             )
         rendered = pdfium.PdfDocument(data)
         try:
-            for index, page in enumerate(doc.pages[:expected_pages]):
+            for index, page in enumerate(doc.pages[: expected_pages if expected_pages is not None else max_pages]):
                 page_no = index + 1
-                size_issues = check_size(page_no, _page_size(page), geometry)
+                side = names.get(page_no, f"Page {page_no}")
+                size_issues = check_size(page_no, side, _page_size(page), geometry)
                 issues += size_issues
-                issues += check_fonts(page_no, page)
-                issues += check_strokes_and_color(page_no, page, check_rgb)
-                issues += check_images_and_text(page_no, rendered[index], geometry, size_ok=not size_issues)
+                issues += check_fonts(page_no, side, page)
+                issues += check_strokes_and_color(page_no, side, page, strict)
+                issues += check_images_and_text(page_no, side, rendered[index], geometry, not size_issues, strict)
         finally:
             rendered.close()
     return issues

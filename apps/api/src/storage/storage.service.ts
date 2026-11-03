@@ -26,11 +26,11 @@ export class StorageService implements OnApplicationShutdown {
     await this.client.send(new HeadBucketCommand({ Bucket: config.s3.bucket }));
   }
 
-  /** Size and content type of an uploaded object, or null when it does not exist. */
-  async describe(key: string): Promise<{ sizeBytes: number; contentType: string | undefined } | null> {
+  /** Size, content type and user metadata of an uploaded object, or null when it does not exist. */
+  async describe(key: string): Promise<{ sizeBytes: number; contentType: string | undefined; metadata: Record<string, string> } | null> {
     try {
       const head = await this.client.send(new HeadObjectCommand({ Bucket: config.s3.bucket, Key: key }));
-      return { sizeBytes: head.ContentLength ?? 0, contentType: head.ContentType };
+      return { sizeBytes: head.ContentLength ?? 0, contentType: head.ContentType, metadata: head.Metadata ?? {} };
     } catch (err) {
       if (err instanceof NotFound || (err as { name?: string }).name === 'NotFound') return null;
       throw err;

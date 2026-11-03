@@ -2,8 +2,9 @@
  * Guest cart over HTTP against a running API (see api.e2e.test.ts).
  * Prices are whatever the seeded pricing migration says: the tests compare against /quote, not constants.
  */
+import { cmyk, PDFDocument, rgb } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
-import { testHeaders } from './helpers.js';
+import { checkArtwork, checkedArtwork, standardCard, testHeaders, uploadArtwork } from './helpers.js';
 
 const base = process.env.API_BASE_URL ?? 'http://localhost:4000';
 
@@ -51,16 +52,11 @@ async function quoteTotal(quantity: number): Promise<number> {
   return ((await res.json()) as { totalCents: number }).totalCents;
 }
 
-async function uploadPdf(): Promise<string> {
-  const pdf = new Blob(['%PDF-1.4\n%e2e\n'], { type: 'application/pdf' });
-  const presign = await fetch(`${base}/uploads/presign`, {
-    method: 'POST',
-    headers: { ...testHeaders, 'content-type': 'application/json' },
-    body: JSON.stringify({ kind: 'artwork', filename: 'card.pdf', contentType: pdf.type, sizeBytes: pdf.size }),
-  });
-  const { key, uploadUrl, headers } = (await presign.json()) as { key: string; uploadUrl: string; headers: Record<string, string> };
-  expect((await fetch(uploadUrl, { method: 'PUT', headers, body: pdf })).status).toBe(200);
-  return key;
+/** A clean 2-page CMYK card PDF (passes the upload check). */
+async function cardPdf(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  for (let i = 0; i < 2; i++) doc.addPage([270, 162]).drawRectangle({ x: 0, y: 0, width: 270, height: 162, color: cmyk(0, 0, 0, 1) });
+  return doc.save();
 }
 
 describe('guest cart', () => {
@@ -161,9 +157,9 @@ describe('guest cart', () => {
     expect(c.cookie).toBeNull();
   });
 
-  it('accepts an uploaded PDF, but needs a back design for 2-sided printing', async () => {
+  it('accepts an uploaded file that passed the check, but needs a back design for 2-sided printing', async () => {
     const c = client();
-    const key = await uploadPdf();
+    const { key } = await checkedArtwork(await cardPdf(), 'card.pdf');
     const add = (pageCount: number) =>
       c.call('POST', '/cart/items', {
         productCode: 'business-cards',
@@ -175,6 +171,31 @@ describe('guest cart', () => {
     const ok = await add(2);
     expect(ok.status).toBe(201);
     expect(ok.body.items[0].design).toMatchObject({ mode: 'upload', front: { key, fileName: 'card.pdf' } });
+  });
+
+  it('refuses files that were not checked, failed the check, or were checked for another size', async () => {
+    const c = client();
+    const add = (key: string) =>
+      c.call('POST', '/cart/items', {
+        productCode: 'business-cards',
+        configuration: { selection, quantity: 500 },
+        design: { mode: 'upload', front: { key, fileName: 'card.pdf', pageCount: 2 } },
+      });
+    const raw = await uploadArtwork(await cardPdf(), 'card.pdf');
+    expect((await add(raw)).body.message).toMatch(/did not pass the file check/);
+
+    const rgbDoc = await PDFDocument.create();
+    for (let i = 0; i < 2; i++) rgbDoc.addPage([270, 162]).drawRectangle({ x: 0, y: 0, width: 270, height: 162, color: rgb(0.1, 0.3, 0.6) });
+    const failed = await checkArtwork(await uploadArtwork(await rgbDoc.save(), 'rgb.pdf'));
+    expect(failed.issues.map((i) => `${i.code}/${i.level}`)).toContain('rgb/error');
+    expect((await add(failed.outputKey!)).status).toBe(400);
+
+    // Passes for the slim 3.5" x 1.75" card (3.75" x 2" with bleed), not for this standard card.
+    const slimDoc = await PDFDocument.create();
+    for (let i = 0; i < 2; i++) slimDoc.addPage([270, 144]).drawRectangle({ x: 0, y: 0, width: 270, height: 144, color: cmyk(0, 0, 0, 1) });
+    const slim = await checkArtwork(await uploadArtwork(await slimDoc.save(), 'slim.pdf'), { geometry: { ...standardCard, heightIn: 1.75 } });
+    expect(slim.issues).toEqual([]);
+    expect((await add(slim.outputKey!)).body.message).toMatch(/another card size/);
   });
 
   it('keeps only the template text fields it knows', async () => {

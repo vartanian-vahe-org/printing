@@ -3,13 +3,13 @@ import { orderItems, orders, storeSettings, type Database } from '@printing/db';
 import { InvalidConfigurationError, quote, type Configuration } from '@printing/pricing';
 import { layoutFace, type RenderWarning } from '@printing/templates';
 import { asc, eq } from 'drizzle-orm';
-import { PDFDocument, type PDFImage } from 'pdf-lib';
+import { PDFDocument } from 'pdf-lib';
 import sharp from 'sharp';
 import { CatalogService } from '../catalog/catalog.service.js';
 import { DATABASE } from '../database/database.tokens.js';
 import { StorageService } from '../storage/storage.service.js';
 import { TemplatesService } from '../templates/templates.service.js';
-import { PdfPainter } from './pdf-painter.js';
+import { PdfPainter, type PrintImage } from './pdf-painter.js';
 import { fontkit, fontMeasure } from './print-fonts.js';
 import { buildPrintSpec, type PrintSpec } from './print-spec.js';
 
@@ -105,11 +105,11 @@ export class PrintFilesService {
     if (!spec.template) throw new ConflictException('The template of this item is not available anymore.');
     const layout = spec.template.layout;
     const values: Record<string, string> = { ...design.values };
-    const images = new Map<string, PDFImage>();
+    const images = new Map<string, PrintImage>();
 
     const logoField = layout.fields.find((f) => f.type === 'image')?.key;
     if (logoField && design.logoKey) {
-      images.set(design.logoKey, await doc.embedPng(await this.logoPng(design.logoKey)));
+      images.set(design.logoKey, await this.embedLogo(doc, design.logoKey));
       values[logoField] = design.logoKey;
     }
 
@@ -125,14 +125,26 @@ export class PrintFilesService {
     return warnings.filter((w, i) => warnings.findIndex((o) => o.field === w.field) === i);
   }
 
-  /** PNG of the customer's logo (PNG, JPG, WebP or SVG), with transparency kept. */
-  private async logoPng(key: string): Promise<Uint8Array> {
+  /**
+   * The customer's logo (PNG, JPG, WebP or SVG) as a CMYK image with its transparency kept as a soft
+   * mask, so the print file has no RGB at all. sharp converts with its built-in CMYK profile.
+   */
+  private async embedLogo(doc: PDFDocument, key: string): Promise<PrintImage> {
     const source = await this.storage.read(key);
-    const png = await sharp(source, { density: 600 })
+    const { data: rgba, info } = await sharp(source, { density: 600 })
       .resize({ width: LOGO_MAX_PX, height: LOGO_MAX_PX, fit: 'inside', withoutEnlargement: true })
-      .png()
-      .toBuffer();
-    return new Uint8Array(png);
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const { width, height } = info;
+    const alpha = Buffer.alloc(width * height);
+    for (let i = 0; i < alpha.length; i++) alpha[i] = rgba[i * 4 + 3]!;
+    const cmykPixels = await sharp(rgba, { raw: { width, height, channels: 4 } }).removeAlpha().toColourspace('cmyk').raw().toBuffer();
+
+    const image = { Type: 'XObject', Subtype: 'Image', Width: width, Height: height, BitsPerComponent: 8 };
+    const mask = doc.context.register(doc.context.flateStream(alpha, { ...image, ColorSpace: 'DeviceGray' }));
+    const ref = doc.context.register(doc.context.flateStream(cmykPixels, { ...image, ColorSpace: 'DeviceCMYK', SMask: mask }));
+    return { ref, width, height };
   }
 
   /** One page per printed side from the customer's PDF(s). Size checks are preflight's job (step 8). */

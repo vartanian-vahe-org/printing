@@ -25,7 +25,7 @@ export interface OpenedPdf {
   pages: PageSize[];
 }
 
-export async function openPdf(file: File): Promise<OpenedPdf> {
+export async function openPdf(file: Blob): Promise<OpenedPdf> {
   const data = new Uint8Array(await file.arrayBuffer());
   const header = new TextDecoder().decode(data.subarray(0, 5));
   if (header !== '%PDF-') throw new PdfReadError('This file is not a valid PDF.');

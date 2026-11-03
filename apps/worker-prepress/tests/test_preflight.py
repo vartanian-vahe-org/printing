@@ -15,8 +15,12 @@ BLEED = (270, 162)  # (3.5 + 0.25) x (2 + 0.25) in, in points
 TRIM = (252, 144)
 
 
+#: A black box drawn on every test page unless `blank`, so pages are not reported as blank.
+MARK = b"0 0 0 1 k 20 20 100 50 re f\n"
+
+
 def make_pdf(pages: list[dict]) -> bytes:
-    """pages: [{size, content (bytes), fonts {name: dict}, images {name: (w_px, h_px, colorspace)}}]"""
+    """pages: [{size, content (bytes), fonts {name: dict}, images {name: (w_px, h_px, colorspace)}, color_spaces, blank}]"""
     pdf = pikepdf.new()
     for spec in pages:
         width, height = spec.get("size", BLEED)
@@ -39,8 +43,11 @@ def make_pdf(pages: list[dict]) -> bytes:
             images[f"/{name}"] = stream
         if images:
             resources["/XObject"] = images
+        if spec.get("color_spaces"):
+            # A callable builds objects that must belong to this PDF (streams).
+            resources["/ColorSpace"] = pikepdf.Dictionary({f"/{k}": v(pdf) if callable(v) else v for k, v in spec["color_spaces"].items()})
         page.obj["/Resources"] = resources
-        page.obj["/Contents"] = pdf.make_stream(spec.get("content", b""))
+        page.obj["/Contents"] = pdf.make_stream((b"" if spec.get("blank") else MARK) + spec.get("content", b""))
     out = io.BytesIO()
     pdf.save(out)
     return out.getvalue()
@@ -54,8 +61,7 @@ HELVETICA = {"/Type": pikepdf.Name("/Font"), "/Subtype": pikepdf.Name("/Type1"),
 
 
 def test_clean_cmyk_file_passes():
-    content = b"0 0 0 1 k 20 20 100 50 re f"
-    assert check_pdf(make_pdf([{"content": content}] * 2), CARD, expected_pages=2) == []
+    assert check_pdf(make_pdf([{}] * 2), CARD, expected_pages=2) == []
 
 
 def test_size_errors_and_missing_bleed():
@@ -84,25 +90,70 @@ def test_text_near_the_edge_is_a_warning():
     assert ("outside-safe-zone", "warning") in codes(issues)
 
 
-def test_hairlines_and_rgb_are_warnings():
+def test_hairlines_are_warnings_and_rgb_is_an_error():
     content = b"0.1 w 1 0 0 RG 20 20 m 200 20 l S"
     issues = check_pdf(make_pdf([{"content": content}]), CARD, expected_pages=1)
-    assert codes(issues) == [("hairline", "warning"), ("rgb", "warning")]
-    assert codes(check_pdf(make_pdf([{"content": content}]), CARD, expected_pages=1, check_rgb=False)) == [("hairline", "warning")]
+    assert codes(issues) == [("hairline", "warning"), ("rgb", "error")]
+    # Template files (drawn by us in CMYK) skip the color checks.
+    assert codes(check_pdf(make_pdf([{"content": content}]), CARD, expected_pages=1, strict=False)) == [("hairline", "warning")]
 
 
 def test_line_width_follows_save_and_restore():
     content = b"q 0.1 w Q 20 20 m 200 20 l S"
-    assert check_pdf(make_pdf([{"content": content}]), CARD, expected_pages=1, check_rgb=False) == []
+    assert check_pdf(make_pdf([{"content": content}]), CARD, expected_pages=1, strict=False) == []
 
 
-@pytest.mark.parametrize("pixels,expect_warning", [(300, True), (1200, False)])
-def test_image_resolution(pixels, expect_warning):
+@pytest.mark.parametrize(
+    "space,expected",
+    [
+        ("/DeviceRGB", [("rgb", "error")]),
+        ("/DeviceGray", []),
+        ("/DeviceCMYK", []),
+    ],
+)
+def test_image_color_spaces(space, expected):
+    # 1200 px across 2 in = 600 DPI, so only the color matters.
+    content = b"q 144 0 0 72 50 40 cm /Im1 Do Q"
+    assert codes(check_pdf(make_pdf([{"content": content, "images": {"Im1": (1200, 600, space)}}]), CARD, expected_pages=1)) == expected
+
+
+def test_spot_colors_and_icc_rgb_are_errors():
+    pantone = pikepdf.Array([pikepdf.Name("/Separation"), pikepdf.Name("/PANTONE 185 C"), pikepdf.Name("/DeviceCMYK"), pikepdf.Dictionary()])
+    process = pikepdf.Array([pikepdf.Name("/Separation"), pikepdf.Name("/Black"), pikepdf.Name("/DeviceCMYK"), pikepdf.Dictionary()])
+    assert codes(check_pdf(make_pdf([{"color_spaces": {"CS0": pantone}}]), CARD, expected_pages=1)) == [("spot-color", "error")]
+    assert check_pdf(make_pdf([{"color_spaces": {"CS0": process}}]), CARD, expected_pages=1) == []
+
+    def icc_rgb(pdf):
+        return pikepdf.Array([pikepdf.Name("/ICCBased"), pikepdf.Stream(pdf, b"", N=3)])
+
+    assert codes(check_pdf(make_pdf([{"color_spaces": {"CS0": icc_rgb}}]), CARD, expected_pages=1)) == [("rgb", "error")]
+
+
+@pytest.mark.parametrize("pixels,level", [(300, "error"), (1200, None)])
+def test_image_resolution(pixels, level):
     # Image placed at 2 x 1 in: 300 px wide = 150 DPI, 1200 px = 600 DPI.
     content = b"q 144 0 0 72 50 40 cm /Im1 Do Q"
     pdf = make_pdf([{"content": content, "images": {"Im1": (pixels, pixels // 2, "/DeviceCMYK")}}])
-    found = ("low-resolution", "warning") in codes(check_pdf(pdf, CARD, expected_pages=1))
-    assert found is expect_warning
+    found = [lvl for code, lvl in codes(check_pdf(pdf, CARD, expected_pages=1)) if code == "low-resolution"]
+    assert found == ([level] if level else [])
+    # A low-resolution logo in our own template file is only a warning.
+    if level:
+        assert ("low-resolution", "warning") in codes(check_pdf(pdf, CARD, expected_pages=1, strict=False))
+
+
+def test_small_text_and_blank_pages_are_warnings():
+    small = b"BT /F1 4 Tf 40 80 Td (Tiny) Tj ET"
+    font = {**HELVETICA, "/FontDescriptor": pikepdf.Dictionary({"/FontFile2": pikepdf.Dictionary()})}
+    assert ("small-text", "warning") in codes(check_pdf(make_pdf([{"content": small, "fonts": {"F1": font}}]), CARD, expected_pages=1))
+    issues = check_pdf(make_pdf([{}, {"blank": True}]), CARD, expected_pages=2)
+    assert codes(issues) == [("blank-page", "warning")]
+    assert issues[0].message.startswith("Back looks blank")
+
+
+def test_password_protected_pdf_is_refused():
+    out = io.BytesIO()
+    pikepdf.open(io.BytesIO(make_pdf([{}]))).save(out, encryption=pikepdf.Encryption(user="secret", owner="secret"))
+    assert codes(check_pdf(out.getvalue(), CARD, expected_pages=1)) == [("encrypted", "error")]
 
 
 def test_unreadable_file():

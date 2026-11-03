@@ -3,7 +3,7 @@
  * packages priced into the cart and order, the designer's delivery through the file check, change
  * requests limited by the package, and the admin settings behind them.
  */
-import { PDFDocument, rgb } from 'pdf-lib';
+import { cmyk, PDFDocument } from 'pdf-lib';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { address, base, customerOrder, selection, testHeaders, uniqueEmail, waitFor } from './helpers.js';
 
@@ -46,8 +46,8 @@ async function designPdf(): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   for (let page = 0; page < 2; page++) {
     const sheet = doc.addPage([270, 162]);
-    sheet.drawRectangle({ x: 0, y: 0, width: 270, height: 162, color: rgb(0.45, 0.3, 0.2) });
-    sheet.drawRectangle({ x: 30, y: 60, width: 120, height: 30, color: rgb(1, 1, 1) });
+    sheet.drawRectangle({ x: 0, y: 0, width: 270, height: 162, color: cmyk(0, 0.33, 0.56, 0.55) });
+    sheet.drawRectangle({ x: 30, y: 60, width: 120, height: 30, color: cmyk(0, 0, 0, 0) });
   }
   return doc.save();
 }

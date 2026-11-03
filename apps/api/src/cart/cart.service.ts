@@ -18,6 +18,7 @@ import { config } from '../config.js';
 import { DATABASE } from '../database/database.tokens.js';
 import { StorageService } from '../storage/storage.service.js';
 import { TemplatesService } from '../templates/templates.service.js';
+import { artworkProblem } from '../uploads/artwork-checks.js';
 import { isUploadKey, type UploadKind } from '../uploads/upload-kinds.js';
 import { fieldFamilies, unsupportedCharacters, type DesignServiceTier } from '@printing/templates';
 import { buildPrintSpec, type PrintSpec } from '../print/print-spec.js';
@@ -437,8 +438,13 @@ export class CartService {
       };
     }
 
-    await this.assertUploaded('artwork', design.front.key, 'The front PDF');
-    if (design.back) await this.assertUploaded('artwork', design.back.key, 'The back PDF');
+    await this.assertUploaded('artwork', design.front.key, 'The front file');
+    if (design.back) await this.assertUploaded('artwork', design.back.key, 'The back file');
+    // Only files that passed the upload check for this card size (resolution, CMYK, fonts, size).
+    for (const [file, label] of [[design.front, 'The front file'], [design.back, 'The back file']] as const) {
+      const problem = file ? await artworkProblem(this.storage, file.key, q.size, label) : null;
+      if (problem) throw new BadRequestException(problem);
+    }
     if (backMode === 'separate' && !design.back && design.front.pageCount < 2) {
       throw new BadRequestException('Add your back design: upload a back file or a 2-page PDF.');
     }

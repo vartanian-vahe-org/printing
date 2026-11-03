@@ -1,11 +1,10 @@
 /**
- * Basic checks for an uploaded print PDF (Phase 1 step 8). Full preflight (resolution,
- * fonts, color space, safe zone) runs on the server later (spec §6.3).
+ * Browser-side rules for "Upload your design": file type and size before uploading, and which pages
+ * are printed. The file check itself (size, resolution, CMYK, fonts) runs on the server (spec §6.3).
  */
 import type { BackMode } from './card3d';
 import { formatInches } from './format';
-
-export const PDF_MAX_BYTES = 50 * 1024 * 1024;
+import { ARTWORK_MAX_BYTES, artworkType } from './upload';
 /** Allowed difference between the page size and the expected size (~0.03"). */
 const TOLERANCE_PT = 2;
 const PT = 72;
@@ -37,10 +36,12 @@ const close = (a: number, b: number) => Math.abs(a - b) <= TOLERANCE_PT;
 const matches = (page: PageSize, w: number, h: number) => close(page.widthPt, w) && close(page.heightPt, h);
 const inches = (pt: number) => formatInches(Math.round((pt / PT) * 100) / 100);
 
-export function checkFile(file: { name: string; type: string; size: number }): CheckResult | null {
-  const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-  if (!isPdf) return { level: 'error', message: 'Please upload a PDF file.' };
-  if (file.size > PDF_MAX_BYTES) return { level: 'error', message: 'The file must be 50 MB or smaller.' };
+export function checkFile(file: { name: string; size: number }): CheckResult | null {
+  const extension = file.name.toLowerCase().split('.').pop() ?? '';
+  if (extension === 'png') return { level: 'error', message: 'PNG files cannot hold CMYK colors. Export your design as a CMYK PDF, TIFF or JPG.' };
+  if (extension === 'eps') return { level: 'error', message: 'EPS files are not accepted yet. Export your design as a PDF.' };
+  if (!artworkType(file.name)) return { level: 'error', message: 'Upload a PDF, AI, TIFF, JPG or PSD file.' };
+  if (file.size > ARTWORK_MAX_BYTES) return { level: 'error', message: 'The file must be 200 MB or smaller.' };
   if (file.size === 0) return { level: 'error', message: 'This file is empty.' };
   return null;
 }

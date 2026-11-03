@@ -2,8 +2,8 @@
 
 import { useState, type FormEvent } from 'react';
 import { approveProof, CheckoutError, replaceItemFile, requestDesignChanges, type OrderView, type ReplacementFile } from '../../lib/checkout';
-import { openPdf, PdfReadError } from '../../lib/pdf-render';
-import { uploadArtwork } from '../../lib/upload';
+import { checkFile } from '../../lib/pdf-checks';
+import { ARTWORK_ACCEPT, checkArtwork, uploadArtwork } from '../../lib/upload';
 import styles from './order.module.css';
 
 type Item = OrderView['items'][number];
@@ -155,7 +155,7 @@ export function ProofPanel({ item, orderNumber, token, editable, onChanged }: Pr
               Upload a different file instead
             </button>
           ) : (
-            <ReplaceFileForm orderNumber={orderNumber} itemNumber={item.number} token={token} onDone={onChanged} />
+            item.card && <ReplaceFileForm orderNumber={orderNumber} itemNumber={item.number} card={item.card} token={token} onDone={onChanged} />
           )}
         </>
       )}
@@ -163,16 +163,22 @@ export function ProofPanel({ item, orderNumber, token, editable, onChanged }: Pr
   );
 }
 
-function ReplaceFileForm({ orderNumber, itemNumber, token, onDone }: { orderNumber: number; itemNumber: number; token: string; onDone: () => void }) {
+function ReplaceFileForm(props: { orderNumber: number; itemNumber: number; card: NonNullable<Item['card']>; token: string; onDone: () => void }) {
+  const { orderNumber, itemNumber, card, token, onDone } = props;
   const [front, setFront] = useState<File | null>(null);
   const [back, setBack] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function prepare(file: File): Promise<ReplacementFile> {
-    const { pageCount } = await openPdf(file);
-    const { key } = await uploadArtwork(file);
-    return { key, fileName: file.name, pageCount };
+  /** Uploads the file and runs the same file check as before ordering; refuses a file with errors. */
+  async function prepare(file: File, side: 'front' | 'back', maxPages: 1 | 2): Promise<ReplacementFile> {
+    const invalid = checkFile(file);
+    if (invalid) throw new Error(invalid.message);
+    const { key: sourceKey } = await uploadArtwork(file);
+    const result = await checkArtwork(sourceKey, { geometry: card.geometry, side, maxPages });
+    const errors = result.issues.filter((i) => i.level === 'error');
+    if (errors.length || !result.key) throw new Error(errors.map((e) => e.message).join(' ') || 'This file cannot be printed.');
+    return { key: result.key, fileName: file.name, pageCount: result.pageCount };
   }
 
   async function submit(event: FormEvent) {
@@ -181,11 +187,12 @@ function ReplaceFileForm({ orderNumber, itemNumber, token, onDone }: { orderNumb
     setBusy(true);
     setError(null);
     try {
-      const files = { front: await prepare(front), ...(back ? { back: await prepare(back) } : {}) };
+      const frontPages = card.backMode === 'separate' && !back ? 2 : 1;
+      const files = { front: await prepare(front, 'front', frontPages), ...(back ? { back: await prepare(back, 'back', 1) } : {}) };
       await replaceItemFile(orderNumber, itemNumber, token, files);
       onDone();
     } catch (err) {
-      setError(err instanceof CheckoutError || err instanceof PdfReadError || err instanceof Error ? err.message : 'Upload failed. Please try again.');
+      setError(err instanceof Error ? err.message : 'Upload failed. Please try again.');
       setBusy(false);
     }
   }
@@ -194,15 +201,15 @@ function ReplaceFileForm({ orderNumber, itemNumber, token, onDone }: { orderNumb
     <form className={styles.replaceForm} onSubmit={(e) => void submit(e)}>
       <strong>Upload a new file</strong>
       <label>
-        <span>Front (or one PDF with front and back pages)</span>
-        <input type="file" accept="application/pdf" onChange={(e) => setFront(e.target.files?.[0] ?? null)} />
+        <span>Front (or one PDF with front and back pages): CMYK, 300 DPI, PDF, AI, TIFF, JPG or PSD</span>
+        <input type="file" accept={ARTWORK_ACCEPT} onChange={(e) => setFront(e.target.files?.[0] ?? null)} />
       </label>
       <label>
         <span>Back (optional)</span>
-        <input type="file" accept="application/pdf" onChange={(e) => setBack(e.target.files?.[0] ?? null)} />
+        <input type="file" accept={ARTWORK_ACCEPT} onChange={(e) => setBack(e.target.files?.[0] ?? null)} />
       </label>
       <button type="submit" className={styles.approveButton} disabled={busy || !front}>
-        {busy ? 'Uploading…' : 'Upload and check again'}
+        {busy ? 'Uploading and checking…' : 'Upload and check again'}
       </button>
       {error && <p className={styles.error}>{error}</p>}
     </form>

@@ -4,6 +4,7 @@ import { useId, useState, type DragEvent } from 'react';
 import type { BackMode } from '../../lib/card3d';
 import { formatInches } from '../../lib/format';
 import { worstLevel, type CheckResult, type ExpectedSize } from '../../lib/pdf-checks';
+import { ARTWORK_ACCEPT } from '../../lib/upload';
 import type { FileSide, PdfFileState, UploadChecks } from '../../lib/use-pdf-artwork';
 import styles from './design.module.css';
 
@@ -41,12 +42,26 @@ export function UploadPanel({ files, checks, backMode, size, onAdd, onRemove, si
         <strong>File setup</strong>
         <ul>
           <li>
-            PDF at {bleedW} × {bleedH}: your {formatInches(size.widthIn)} × {formatInches(size.heightIn)} card plus{' '}
+            {bleedW} × {bleedH} in: your {formatInches(size.widthIn)} × {formatInches(size.heightIn)} card plus{' '}
             {formatInches(size.bleedIn)} bleed on every side
           </li>
+          <li>
+            <strong>CMYK colors</strong> (no RGB, no Pantone) and images of at least <strong>300 DPI</strong>
+          </li>
+          <li>PDF with fonts embedded (or text converted to outlines), AI, TIFF, JPG or PSD</li>
           <li>Keep text and logos {formatInches(size.bleedIn)} inside the trim line</li>
-          <li>Up to 50 MB. Front and back can be one 2-page PDF.</li>
+          <li>Up to 200 MB. Front and back can be one 2-page PDF.</li>
         </ul>
+        <details className={styles.guideHelp}>
+          <summary>How do I export a CMYK file?</summary>
+          <ul>
+            <li>Illustrator: File › Document Color Mode › CMYK Color, then Save As › Adobe PDF (Press Quality).</li>
+            <li>Photoshop: Image › Mode › CMYK Color, then save as TIFF or PDF.</li>
+            <li>InDesign: File › Export › Adobe PDF (Print), Output › Convert to Destination (CMYK).</li>
+            <li>Canva: Share › Download › PDF Print, color profile CMYK (Canva Pro).</li>
+          </ul>
+          <p>No design software? Use one of our templates, or let our designer make the file for you.</p>
+        </details>
       </div>
 
       <FileDrop side="front" label="Front" file={files.front} checks={checks.front} onAdd={onAdd} onRemove={onRemove} />
@@ -94,7 +109,8 @@ function FileDrop({
     if (dropped) onAdd(side, dropped);
   }
 
-  const results = file?.status === 'error' ? [{ level: 'error' as const, message: file.error ?? 'Invalid file' }] : checks;
+  const results = checks;
+  const busy = file?.status === 'uploading' || file?.status === 'checking';
   const level = worstLevel(results);
 
   return (
@@ -107,7 +123,7 @@ function FileDrop({
       <input
         id={inputId}
         type="file"
-        accept="application/pdf,.pdf"
+        accept={ARTWORK_ACCEPT}
         className={styles.fileInput}
         onChange={(e) => {
           const picked = e.target.files?.[0];
@@ -127,11 +143,11 @@ function FileDrop({
           onDragLeave={() => setDragging(false)}
           onDrop={handleDrop}
         >
-          <span className={styles.dropTitle}>Drag your PDF here</span>
+          <span className={styles.dropTitle}>Drag your file here</span>
           <span className={styles.hint}>or click to choose a file</span>
         </label>
       ) : (
-        <div className={styles.fileCard} data-level={file.status === 'reading' ? 'info' : level}>
+        <div className={styles.fileCard} data-level={busy ? 'info' : level}>
           <div className={styles.fileRow}>
             <span className={styles.fileName} title={file.fileName}>
               {file.fileName}
@@ -139,7 +155,9 @@ function FileDrop({
             <span className={styles.fileSize}>{(file.sizeBytes / 1024 / 1024).toFixed(1)} MB</span>
           </div>
 
-          {file.status === 'reading' && <p className={styles.hint}>Checking your file…</p>}
+          {file.status === 'uploading' && <p className={styles.hint}>Uploading…</p>}
+          {file.status === 'checking' && <p className={styles.hint}>Checking your file: size, resolution, CMYK colors and fonts…</p>}
+          {file.status === 'ready' && level !== 'error' && <p className={styles.uploadState}>File checked</p>}
 
           {results.length > 0 && (
             <ul className={styles.checks}>
@@ -152,14 +170,6 @@ function FileDrop({
                 </li>
               ))}
             </ul>
-          )}
-
-          {file.status === 'ready' && (
-            <p className={styles.uploadState} data-state={file.upload}>
-              {file.upload === 'uploading' && 'Uploading…'}
-              {file.upload === 'done' && 'Uploaded'}
-              {file.upload === 'failed' && `Not uploaded: ${file.uploadError}. Your preview still works.`}
-            </p>
           )}
 
           <div className={styles.fileActions}>

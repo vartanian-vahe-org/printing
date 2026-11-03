@@ -243,20 +243,27 @@ Giờ chốt đơn, ngày làm việc và danh sách ngày lễ đều nằm tro
 - Khách guest xem trạng thái đơn bằng link bảo mật gửi qua email.
 
 ### 6.2 Upload file
-- MVP **chỉ nhận PDF** cho mặt trước, và mặt sau nếu Printed Side = `front_back`.
-- Upload thẳng lên S3 bằng presigned URL. Giới hạn kích thước file lưu trong cấu hình.
+- Nhận **PDF, AI** (lưu có bật "PDF Compatible"), **TIFF, JPG, PSD**, tối đa 200 MB. Không nhận PNG (không chứa được CMYK). EPS chưa nhận (open issue O7).
+- Upload thẳng lên S3 bằng presigned URL. Ngay sau khi upload, worker **check file trước khi cho vào giỏ**: đổi ảnh thành PDF đúng size card, cắt bỏ crop marks nếu PDF có khai báo TrimBox, rồi chạy các check ở mục 6.3. File có lỗi thì không vào giỏ được (API chỉ nhận file đã qua check, đúng size card). File thay thế sau khi đặt hàng cũng phải qua check này.
 - Template tải về (PDF có sẵn bleed và safe zone) cho từng size có sẵn.
 
 ### 6.3 Preflight tự động (worker Python)
 
+Áp dụng cho file của khách và file designer giao. File template do hệ thống vẽ thẳng bằng CMYK nên chỉ chạy check size, font và DPI của logo (chỉ cảnh báo).
+
 | Kiểm tra | Kết quả nếu không đạt |
 |---|---|
-| Kích thước trang khớp file có bleed (có sai số cho phép) | **Lỗi**: bắt upload lại |
+| Đúng loại file (đọc nội dung, không tin đuôi file); ảnh không quá 100 triệu pixel | **Lỗi** |
+| PDF có mật khẩu | **Lỗi** |
+| Kích thước trang khớp file có bleed (có sai số cho phép); ảnh đúng tỉ lệ card | **Lỗi**: bắt upload lại |
 | Kích thước bằng trim, thiếu bleed | **Cảnh báo** |
 | Số trang khớp với Printed Side | **Lỗi** |
-| Ảnh dưới 300 DPI | **Cảnh báo** |
+| Ảnh dưới 300 DPI (sai số 1%) | **Lỗi** |
 | Font chưa nhúng | **Lỗi** |
-| Hệ màu RGB | **Cảnh báo**, hệ thống tự chuyển sang CMYK khi in |
+| Có màu RGB hoặc Lab (ảnh, chữ, hình, gradient) | **Lỗi**. Grayscale được chấp nhận |
+| Có màu pha (Pantone / spot) | **Lỗi** |
+| Chữ nhỏ hơn 6pt | **Cảnh báo** |
+| Trang trắng trơn | **Cảnh báo** |
 | Chữ hoặc đối tượng nằm ngoài safe zone | **Cảnh báo** |
 | Nét mảnh dưới 0.25pt | **Cảnh báo** |
 

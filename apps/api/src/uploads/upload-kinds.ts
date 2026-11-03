@@ -1,7 +1,20 @@
 /** What customers may upload, and where each kind is stored. */
 export const UPLOAD_KINDS = {
-  /** Print-ready PDF for "Upload your design". */
-  artwork: { prefix: 'artwork/', contentTypes: ['application/pdf'], extension: { 'application/pdf': 'pdf' } },
+  /**
+   * "Upload your design": PDF, Illustrator, TIFF, JPG or Photoshop, CMYK only (checked by the worker,
+   * which stores a print PDF next to it). The type is what the storefront says; the worker reads the bytes.
+   */
+  artwork: {
+    prefix: 'artwork/',
+    contentTypes: ['application/pdf', 'application/illustrator', 'image/tiff', 'image/jpeg', 'image/vnd.adobe.photoshop'],
+    extension: {
+      'application/pdf': 'pdf',
+      'application/illustrator': 'ai',
+      'image/tiff': 'tif',
+      'image/jpeg': 'jpg',
+      'image/vnd.adobe.photoshop': 'psd',
+    },
+  },
   /** Logo placed into a template. */
   logo: {
     prefix: 'logos/',

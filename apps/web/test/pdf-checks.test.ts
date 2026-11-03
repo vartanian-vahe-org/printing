@@ -4,15 +4,19 @@ import { checkFile, checkPages, checkPageSize, worstLevel } from '../lib/pdf-che
 const std = { widthIn: 3.5, heightIn: 2, bleedIn: 0.125 };
 
 describe('checkFile', () => {
-  it('accepts a PDF up to 50 MB', () => {
-    expect(checkFile({ name: 'card.pdf', type: 'application/pdf', size: 1000 })).toBeNull();
-    expect(checkFile({ name: 'CARD.PDF', type: '', size: 1000 })).toBeNull();
+  it('accepts PDF, AI, TIFF, JPG and PSD files up to 200 MB', () => {
+    for (const name of ['card.pdf', 'CARD.PDF', 'card.ai', 'card.tif', 'card.tiff', 'card.jpg', 'card.jpeg', 'card.psd']) {
+      expect(checkFile({ name, size: 1000 })).toBeNull();
+    }
+    expect(checkFile({ name: 'card.tif', size: 199 * 1024 * 1024 })).toBeNull();
   });
 
   it('rejects other types, empty and oversized files', () => {
-    expect(checkFile({ name: 'card.png', type: 'image/png', size: 1000 })?.level).toBe('error');
-    expect(checkFile({ name: 'card.pdf', type: 'application/pdf', size: 0 })?.message).toMatch(/empty/);
-    expect(checkFile({ name: 'card.pdf', type: 'application/pdf', size: 51 * 1024 * 1024 })?.message).toMatch(/50 MB/);
+    expect(checkFile({ name: 'card.png', size: 1000 })?.message).toMatch(/PNG files cannot hold CMYK/);
+    expect(checkFile({ name: 'card.eps', size: 1000 })?.message).toMatch(/EPS/);
+    expect(checkFile({ name: 'card.docx', size: 1000 })?.level).toBe('error');
+    expect(checkFile({ name: 'card.pdf', size: 0 })?.message).toMatch(/empty/);
+    expect(checkFile({ name: 'card.pdf', size: 201 * 1024 * 1024 })?.message).toMatch(/200 MB/);
   });
 });
 

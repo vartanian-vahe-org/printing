@@ -25,3 +25,7 @@ class Storage:
 
     def write_png(self, key: str, data: bytes) -> None:
         self.client.put_object(Bucket=self.bucket, Key=key, Body=data, ContentType="image/png")
+
+    def write_pdf(self, key: str, data: bytes, metadata: dict[str, str]) -> None:
+        """`metadata` is stored with the object (S3 user metadata) and read back by the API."""
+        self.client.put_object(Bucket=self.bucket, Key=key, Body=data, ContentType="application/pdf", Metadata=metadata)

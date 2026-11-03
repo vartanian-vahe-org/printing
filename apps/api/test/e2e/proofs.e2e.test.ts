@@ -1,13 +1,14 @@
 /**
  * File check and proof (Phase 2 step 8) end to end, with the Python prepress worker running:
- * proof images, warnings to confirm, errors that need a new file, approvals, emails.
+ * proof images, warnings to confirm, replacement files, approvals, emails. Customer files with
+ * errors never reach an order: the upload check refuses them before the cart.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import * as fontkit from '@pdf-lib/fontkit';
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { cmyk, PDFDocument, StandardFonts } from 'pdf-lib';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { address, base, customerOrder, searchMail, selection, testHeaders, uniqueEmail, waitFor, waitForProofs } from './helpers.js';
+import { address, base, checkArtwork, checkedArtwork, customerOrder, searchMail, selection, testHeaders, uniqueEmail, uploadArtwork, waitFor, waitForProofs } from './helpers.js';
 
 const adminEmail = process.env.ADMIN_EMAIL;
 const adminPassword = process.env.ADMIN_PASSWORD;
@@ -23,29 +24,22 @@ beforeAll(async () => {
   adminCookie = res.headers.get('set-cookie')!.split(';')[0]!;
 });
 
-/** A 2-page card PDF at bleed size; `embedFont` false uses a standard font that is not embedded. */
-async function cardPdf(embedFont: boolean): Promise<Uint8Array> {
+/**
+ * A 2-page CMYK card PDF; `embedFont` false uses a standard font that is not embedded, `bleed` false
+ * makes pages of the finished card size (a warning to confirm).
+ */
+async function cardPdf({ embedFont = true, bleed = true } = {}): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
   const interPath = join(dirname(require.resolve('@expo-google-fonts/inter/package.json')), '700Bold/Inter_700Bold.ttf');
   const font = embedFont ? await doc.embedFont(readFileSync(interPath)) : await doc.embedFont(StandardFonts.Helvetica);
+  const [width, height] = bleed ? [270, 162] : [252, 144];
   for (const label of ['FRONT', 'BACK']) {
-    const page = doc.addPage([270, 162]);
-    page.drawRectangle({ x: 0, y: 0, width: 270, height: 162, color: rgb(0.1, 0.3, 0.6) });
-    page.drawText(label, { x: 40, y: 70, size: 24, font, color: rgb(1, 1, 1) });
+    const page = doc.addPage([width, height]);
+    page.drawRectangle({ x: 0, y: 0, width, height, color: cmyk(0.9, 0.6, 0, 0.2) });
+    page.drawText(label, { x: 40, y: 60, size: 24, font, color: cmyk(0, 0, 0, 0) });
   }
   return doc.save();
-}
-
-async function uploadPdf(bytes: Uint8Array, fileName: string) {
-  const presign = await fetch(`${base}/uploads/presign`, {
-    method: 'POST',
-    headers: { ...testHeaders, 'content-type': 'application/json' },
-    body: JSON.stringify({ kind: 'artwork', filename: fileName, contentType: 'application/pdf', sizeBytes: bytes.byteLength }),
-  });
-  const { key, uploadUrl, headers } = (await presign.json()) as { key: string; uploadUrl: string; headers: Record<string, string> };
-  await fetch(uploadUrl, { method: 'PUT', headers, body: bytes });
-  return { key, fileName, pageCount: 2 };
 }
 
 async function placeOrder(email: string, design: unknown): Promise<{ number: number; accessToken: string }> {
@@ -96,29 +90,40 @@ describe('proofs', () => {
     expect(mail.Subject).toContain('Your proof for order');
   });
 
-  it('upload with a font that is not embedded: new file needed, then a good file with warnings to confirm', async () => {
-    const email = uniqueEmail();
-    const bad = await uploadPdf(await cardPdf(false), 'card.pdf');
-    const order = await placeOrder(email, { mode: 'upload', front: bad });
-    const first = await waitForProofs(order.number, order.accessToken);
-    expect(first.items[0].proof.status).toBe('needs_new_file');
-    expect(first.items[0].proof.issues.map((i: any) => `${i.code}/${i.level}`)).toContain('font-not-embedded/error');
-    expect((await post(`/orders/${order.number}/items/1/proof/approve`, {}, { 'x-order-token': order.accessToken })).status).toBe(409);
-    await waitFor(async () => (await searchMail(`to:"${email}" subject:"new file"`))[0]);
+  it('upload with a font that is not embedded is refused before the cart', async () => {
+    const bad = await checkArtwork(await uploadArtwork(await cardPdf({ embedFont: false }), 'card.pdf'));
+    expect(bad.issues.map((i) => `${i.code}/${i.level}`)).toContain('font-not-embedded/error');
+    const cart = await post('/cart/items', {
+      productCode: 'business-cards',
+      configuration: { selection, quantity: 500 },
+      design: { mode: 'upload', front: { key: bad.outputKey, fileName: 'card.pdf', pageCount: 2 } },
+    });
+    expect(cart.status).toBe(400);
+  });
 
-    const good = await uploadPdf(await cardPdf(true), 'card-v2.pdf');
+  it('upload with warnings to confirm, then a replacement file that is checked again', async () => {
+    const email = uniqueEmail();
+    const noBleed = await checkedArtwork(await cardPdf({ bleed: false }), 'card.pdf');
+    const order = await placeOrder(email, { mode: 'upload', front: noBleed });
+    const first = await waitForProofs(order.number, order.accessToken);
+    const proof = first.items[0].proof;
+    expect(proof.status).toBe('awaiting_customer');
+    expect(proof.issues.map((i: any) => i.id).sort()).toEqual(['no-bleed@1', 'no-bleed@2']);
+    const partial = await post(`/orders/${order.number}/items/1/proof/approve`, { acknowledged: ['no-bleed@1'] }, { 'x-order-token': order.accessToken });
+    expect(partial.status).toBe(400);
+
+    // A replacement must pass the same check as before ordering.
+    const raw = await uploadArtwork(await cardPdf(), 'card-v2.pdf');
+    const unchecked = await post(`/orders/${order.number}/items/1/file`, { front: { key: raw, fileName: 'card-v2.pdf', pageCount: 2 } }, { 'x-order-token': order.accessToken });
+    expect(unchecked.status).toBe(400);
+    const good = await checkedArtwork(await cardPdf(), 'card-v2.pdf');
     const replaced = await post(`/orders/${order.number}/items/1/file`, { front: good }, { 'x-order-token': order.accessToken });
     expect(replaced.status).toBe(202);
     const second = await waitForProofs(order.number, order.accessToken);
-    const proof = second.items[0].proof;
-    expect(proof.status).toBe('awaiting_customer');
-    expect(proof.issues.map((i: any) => i.id).sort()).toEqual(['rgb@1', 'rgb@2']);
+    expect(second.items[0].proof).toMatchObject({ status: 'awaiting_customer', issues: [] });
     expect(second.items[0].design.front.fileName).toBe('card-v2.pdf');
-
-    const partial = await post(`/orders/${order.number}/items/1/proof/approve`, { acknowledged: ['rgb@1'] }, { 'x-order-token': order.accessToken });
-    expect(partial.status).toBe(400);
-    const full = await post(`/orders/${order.number}/items/1/proof/approve`, { acknowledged: ['rgb@1', 'rgb@2'] }, { 'x-order-token': order.accessToken });
-    expect(full.status).toBe(204);
+    expect((await post(`/orders/${order.number}/items/1/proof/approve`, {}, { 'x-order-token': order.accessToken })).status).toBe(204);
+    await waitFor(async () => (await searchMail(`to:"${email}" subject:"proof"`))[0]);
   });
 
   it('staff can re-run the check and approve for the customer', async () => {
@@ -139,7 +144,7 @@ describe('proofs', () => {
   it('refuses a replacement file for a template item', async () => {
     const order = await placeOrder(uniqueEmail(), { mode: 'template', templateCode: 'classic', values: { name: 'Jamie' } });
     await waitForProofs(order.number, order.accessToken);
-    const file = await uploadPdf(await cardPdf(true), 'card.pdf');
+    const file = await checkedArtwork(await cardPdf(), 'card.pdf');
     expect((await post(`/orders/${order.number}/items/1/file`, { front: file }, { 'x-order-token': order.accessToken })).status).toBe(409);
   });
   it('template approved when added to the cart: no proof to approve after ordering', async () => {
@@ -161,17 +166,10 @@ describe('proofs', () => {
   });
 
   it('upload with "print right away": approved once the file check passes', async () => {
-    const pdf = await uploadPdf(await cardPdf(true), 'ready.pdf');
+    const pdf = await checkedArtwork(await cardPdf(), 'ready.pdf');
     const order = await placeOrder(uniqueEmail(), { mode: 'upload', front: pdf, proof: 'skip' });
     const checked = await waitForProofs(order.number, order.accessToken);
     expect(checked.items[0].proof.status).toBe('approved');
     expect(checked.items[0].design.proof).toBe('skip');
-  });
-
-  it('upload with "print right away" still stops on file errors', async () => {
-    const pdf = await uploadPdf(await cardPdf(false), 'not-embedded.pdf');
-    const order = await placeOrder(uniqueEmail(), { mode: 'upload', front: pdf, proof: 'skip' });
-    const checked = await waitForProofs(order.number, order.accessToken);
-    expect(checked.items[0].proof.status).toBe('needs_new_file');
   });
 });

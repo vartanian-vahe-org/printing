@@ -241,6 +241,25 @@
   line-height: 1.5;
 }
 
+.guide strong {
+  color: var(--color-text);
+}
+
+.guideHelp {
+  margin-top: 8px;
+}
+
+.guideHelp summary {
+  cursor: pointer;
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.guideHelp p {
+  margin: 6px 0 0;
+  color: var(--color-muted);
+}
+
 .fileBlock {
   display: flex;
   flex-direction: column;
