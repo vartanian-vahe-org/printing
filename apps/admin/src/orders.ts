@@ -78,7 +78,8 @@ export interface OrderDetail {
 export interface ServiceDesign {
   mode: 'service';
   tierCode: string;
-  brief: { content: string; notes: string; files: { fileName: string }[] };
+  /** `fields`: what to print, field by field (older orders only have the free text `content`). */
+  brief: { content: string; fields?: { key: string; label: string; value: string }[]; notes: string; files: { fileName: string }[] };
   artwork?: { front: { fileName: string }; back?: { fileName: string }; round: number; deliveredAt: string };
   changeRequests?: { message: string; at: string; round: number }[];
 }

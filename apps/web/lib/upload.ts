@@ -63,11 +63,16 @@ export interface ArtworkCheckRequest {
   side: 'front' | 'back';
   /** 2 when page 2 of the front file is the back. */
   maxPages: 1 | 2;
+  /** Pages the customer picked from a multi-page file (front, then back), 1-based; the default is the first pages. */
+  pages?: number[];
 }
 
 export interface ArtworkCheck {
   issues: { code: string; level: 'error' | 'warning'; message: string; page?: number }[];
+  /** Pages of the print PDF (the picked pages, or the whole file). */
   pageCount: number;
+  /** Pages of the file as uploaded. */
+  sourcePageCount: number;
   /** The print PDF made from the upload (what goes in the cart), and a short-lived link to it. */
   key: string | null;
   url: string | null;
@@ -96,7 +101,15 @@ export async function checkArtwork(key: string, request: ArtworkCheckRequest): P
     if (!res.ok) throw new UploadError('Could not check the file. Please try again.');
     const view = (await res.json()) as { status: 'checking' | 'done' | 'failed' } & Partial<ArtworkCheck> & { outputKey?: string | null };
     if (view.status === 'failed') throw new UploadError('We could not check this file. Please try again, or export it again.');
-    if (view.status === 'done') return { issues: view.issues ?? [], pageCount: view.pageCount ?? 0, key: view.outputKey ?? null, url: view.url ?? null };
+    if (view.status === 'done') {
+      return {
+        issues: view.issues ?? [],
+        pageCount: view.pageCount ?? 0,
+        sourcePageCount: view.sourcePageCount ?? view.pageCount ?? 0,
+        key: view.outputKey ?? null,
+        url: view.url ?? null,
+      };
+    }
   }
   throw new UploadError('Checking the file is taking too long. Please try again.');
 }

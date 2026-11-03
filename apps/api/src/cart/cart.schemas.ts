@@ -51,13 +51,20 @@ const serviceDesignSchema = z
     tierCode: code,
     brief: z
       .object({
-        /** Text to print (name, title, phone…), as the customer wants it. */
-        content: z.string().trim().min(1, 'Tell us what to put on your card').max(3000),
+        /** Text to print (name, title, phone…), as the customer wants it; rebuilt from `fields` when they are sent. */
+        content: z.string().trim().max(3000).default(''),
+        /** The same text field by field, in form order (storefront form). */
+        fields: z
+          .array(z.object({ key: z.string().regex(/^[a-z0-9_]{1,40}$/), label: z.string().trim().min(1).max(60), value: z.string().trim().min(1).max(1000) }).strict())
+          .max(20)
+          .optional(),
         /** Look and feel: style, colors, examples. */
         notes: z.string().trim().max(3000).default(''),
         files: z.array(referenceFileSchema).max(5).default([]),
       })
-      .strict(),
+      .strict()
+      .transform((brief) => (brief.fields?.length ? { ...brief, content: brief.fields.map((f) => `${f.label}: ${f.value}`).join('\n') } : brief))
+      .refine((brief) => brief.content.length > 0, { message: 'Tell us what to put on your card', path: ['content'] }),
   })
   .strict();
 

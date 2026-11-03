@@ -37,8 +37,10 @@ export type UploadProof = 'send' | 'skip';
 
 /** What the customer tells our designer ("let us design it for you"). */
 export interface ServiceBrief {
-  /** Text to print on the card. */
+  /** Text to print on the card, one "Label: value" line per filled field (older orders: free text). */
   content: string;
+  /** What to print, field by field (name, title, phone…), in form order. */
+  fields?: { key: string; label: string; value: string }[];
   /** Look and feel. */
   notes: string;
   /** Logo and reference files, already uploaded. */

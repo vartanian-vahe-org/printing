@@ -388,7 +388,18 @@ function ServiceDesignBox(props: {
         {design.artwork ? ` · draft ${design.artwork.round} sent ${shopDateTime(design.artwork.deliveredAt)}` : ' · no draft sent yet'}
       </div>
       <p className="muted">Text to print</p>
-      <div className="brief">{design.brief.content}</div>
+      {design.brief.fields?.length ? (
+        <dl className="brief brief-fields">
+          {design.brief.fields.map((f) => (
+            <div key={f.key}>
+              <dt>{f.label}</dt>
+              <dd>{f.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <div className="brief">{design.brief.content}</div>
+      )}
       {design.brief.notes && (
         <>
           <p className="muted">Look and feel</p>

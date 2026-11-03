@@ -21,7 +21,7 @@ import time
 import pikepdf
 from bullmq import Queue, Worker
 
-from .formats import normalize
+from .formats import normalize, select_pages
 from .preflight import Geometry, Issue, check_pdf
 from .proof import render_proofs
 from .storage import Storage
@@ -63,23 +63,36 @@ def check_upload(storage: Storage, data: dict) -> dict:
     geometry = Geometry.from_job(data["geometry"])
     normalized = normalize(storage.read(data["sourceKey"]), geometry)
     issues = list(normalized.issues)
+    pdf = normalized.pdf
+    source_pages = _page_count(pdf) if pdf is not None else 0
+    pages = data.get("pages")
+    if pdf is not None and pages:
+        # The customer picked which pages are the front and back: the print PDF holds just those, in order.
+        pdf, page_issues = select_pages(pdf, pages)
+        issues += page_issues
     page_count = 0
-    if normalized.pdf is not None:
+    if pdf is not None:
         names = {1: "Back"} if data["side"] == "back" else {1: "Front", 2: "Back"}
-        issues += check_pdf(normalized.pdf, geometry, expected_pages=None, max_pages=data["maxPages"], side_names=names)
-        try:
-            with pikepdf.open(io.BytesIO(normalized.pdf)) as doc:
-                page_count = len(doc.pages)
-        except pikepdf.PdfError:
-            pass  # unreadable or password-protected: preflight reported it
+        max_pages = len(pages) if pages else data["maxPages"]
+        issues += check_pdf(pdf, geometry, expected_pages=None, max_pages=max_pages, side_names=names)
+        page_count = _page_count(pdf)
         passed = not any(i.level == "error" for i in issues)
-        storage.write_pdf(data["outputKey"], normalized.pdf, {"check": "passed" if passed else "failed", "geometry": geometry_tag(geometry)})
+        storage.write_pdf(data["outputKey"], pdf, {"check": "passed" if passed else "failed", "geometry": geometry_tag(geometry)})
     return {
         "format": normalized.format,
         "issues": [i.to_dict() for i in issues],
         "pageCount": page_count,
-        "outputKey": data["outputKey"] if normalized.pdf is not None else None,
+        "sourcePageCount": source_pages,
+        "outputKey": data["outputKey"] if pdf is not None else None,
     }
+
+
+def _page_count(pdf: bytes) -> int:
+    try:
+        with pikepdf.open(io.BytesIO(pdf)) as doc:
+            return len(doc.pages)
+    except pikepdf.PdfError:
+        return 0  # unreadable or password-protected: preflight reports it
 
 
 async def main() -> None:

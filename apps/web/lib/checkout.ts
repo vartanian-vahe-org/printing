@@ -75,7 +75,7 @@ export interface OrderView {
       | {
           mode: 'service';
           tierCode: string;
-          brief: { content: string; notes: string; files: { fileName: string }[] };
+          brief: { content: string; fields?: { key: string; label: string; value: string }[]; notes: string; files: { fileName: string }[] };
           artwork?: { round: number };
           changeRequests?: { message: string; at: string; round: number }[];
         };

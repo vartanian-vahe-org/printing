@@ -3,6 +3,7 @@
  * Run from the host so presigned upload URLs (http://localhost:9000) are reachable.
  */
 import { describe, expect, it } from 'vitest';
+import { cmyk, PDFDocument } from 'pdf-lib';
 import sharp from 'sharp';
 import { checkArtwork, standardCard, testHeaders, uploadArtwork } from './helpers.js';
 
@@ -171,6 +172,22 @@ describe('upload file check (POST /uploads/checks)', () => {
     expect(rgb.outputKey).toBeNull();
     const low = await checkArtwork(await uploadArtwork(await jpeg('cmyk', 150), 'card.jpg', 'image/jpeg'), { maxPages: 1 });
     expect(low.issues.map((i) => `${i.code}/${i.level}`)).toEqual(['low-resolution/error']);
+  });
+
+  it('makes the print PDF from the pages the customer picked, front then back', async () => {
+    const doc = await PDFDocument.create();
+    // Page 1 is the back (blank), pages 2 and 3 are designs: the customer picks 3 as front, 2 as back.
+    doc.addPage([270, 162]);
+    for (const k of [0.5, 1]) doc.addPage([270, 162]).drawRectangle({ x: 0, y: 0, width: 270, height: 162, color: cmyk(0, 0, 0, k) });
+    const key = await uploadArtwork(await doc.save(), 'three.pdf');
+    const whole = await checkArtwork(key);
+    expect(whole).toMatchObject({ pageCount: 3, sourcePageCount: 3 });
+    expect(whole.issues.map((i) => i.code)).toEqual(['blank-page']);
+
+    const picked = await checkArtwork(key, { pages: [3, 2] });
+    expect(picked).toMatchObject({ pageCount: 2, sourcePageCount: 3, issues: [] });
+    const missing = await checkArtwork(key, { pages: [4, 1] });
+    expect(missing.issues.map((i) => `${i.code}/${i.level}`)).toEqual(['page-missing/error']);
   });
 
   it('needs an uploaded artwork file and a known check id', async () => {

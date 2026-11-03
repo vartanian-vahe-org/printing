@@ -87,6 +87,39 @@
   min-width: 0;
 }
 
+.briefSection {
+  border: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.briefTitle {
+  padding: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.briefGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 14px;
+  margin-top: 6px;
+}
+
+.briefWide {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 520px) {
+  .briefGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .logoField {
   grid-column: 1 / -1;
 }
@@ -258,6 +291,114 @@
 .guideHelp p {
   margin: 6px 0 0;
   color: var(--color-muted);
+}
+
+.pagePicker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  margin: 6px 0;
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+
+.pagePickerTitle {
+  font-weight: 600;
+}
+
+.pagePickerRow {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pagePickerField {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--color-muted);
+}
+
+.pagePickerField select {
+  font: inherit;
+  padding: 4px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 6px 0;
+}
+
+.thumb {
+  margin: 0;
+  width: 112px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.thumbImage,
+.thumbLoading {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3.75 / 2.25;
+  object-fit: contain;
+  background: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.thumbLoading {
+  background: linear-gradient(90deg, var(--color-bg), var(--color-surface), var(--color-bg));
+}
+
+.thumb[data-role] .thumbImage {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-accent-soft);
+}
+
+.thumb strong {
+  color: var(--color-text);
+}
+
+.thumbActions {
+  display: flex;
+  gap: 4px;
+}
+
+.thumbButton {
+  flex: 1;
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 0;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.thumbButton[aria-pressed='true'] {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #ffffff;
+}
+
+.thumbButton:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 .fileBlock {

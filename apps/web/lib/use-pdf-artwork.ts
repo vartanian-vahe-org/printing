@@ -27,6 +27,12 @@ export interface PdfFileState {
   checkedFor?: string;
   /** Findings of the server check. */
   issues: CheckResult[];
+  /** Pages of the file as uploaded (right away for a PDF or AI file, else after the first check). */
+  sourcePageCount?: number;
+  /** A PDF or AI file as picked, opened in the browser for page thumbnails before it is even uploaded. */
+  source?: OpenedPdf;
+  /** The customer's pick of pages from a multi-page file: [front, back] or [front], 1-based. Unset: the first pages. */
+  pages?: number[];
   /** The print PDF made by the check: opened for the preview; its key goes in the cart. */
   pdf?: OpenedPdf;
   key?: string;
@@ -35,6 +41,12 @@ export interface PdfFileState {
 type Files = Partial<Record<FileSide, PdfFileState>>;
 
 let nextId = 1;
+
+/** Frees the pdf.js documents of a file that is replaced or removed. */
+function release(file: PdfFileState | undefined) {
+  void file?.pdf?.doc.destroy();
+  void file?.source?.doc.destroy();
+}
 
 export function usePdfFiles() {
   const [files, setFiles] = useState<Files>({});
@@ -51,7 +63,7 @@ export function usePdfFiles() {
   }, []);
 
   const removeFile = useCallback((side: FileSide) => {
-    void filesRef.current[side]?.pdf?.doc.destroy();
+    release(filesRef.current[side]);
     setFiles((current) => {
       const next = { ...current };
       delete next[side];
@@ -62,7 +74,7 @@ export function usePdfFiles() {
   /** Uploads the file; useArtworkChecks then checks it for the chosen card. */
   const addFile = useCallback(
     async (side: FileSide, file: File) => {
-      void filesRef.current[side]?.pdf?.doc.destroy();
+      release(filesRef.current[side]);
       const id = nextId++;
       const invalid = checkFile(file);
       setFiles((current) => ({
@@ -70,6 +82,21 @@ export function usePdfFiles() {
         [side]: { id, fileName: file.name, sizeBytes: file.size, status: invalid ? 'error' : 'uploading', error: invalid?.message, issues: [] },
       }));
       if (invalid) return;
+      if (/\.(pdf|ai)$/i.test(file.name)) {
+        // Thumbnails of every page while it uploads; files pdf.js cannot open just wait for the check.
+        openPdf(file)
+          .then((source) =>
+            setFiles((current) => {
+              const now = current[side];
+              if (now?.id !== id) {
+                void source.doc.destroy();
+                return current;
+              }
+              return { ...current, [side]: { ...now, source, sourcePageCount: now.sourcePageCount ?? source.pageCount } };
+            }),
+          )
+          .catch(() => undefined);
+      }
       try {
         const { key } = await uploadArtwork(file);
         update(side, id, { status: 'checking', sourceKey: key });
@@ -103,8 +130,8 @@ export function usePdfFiles() {
         void file!.pdf?.doc.destroy();
         // No print PDF: the file cannot be used at all (RGB image, unsupported type…); the issues say why.
         const next: PdfFileState = pdf
-          ? { ...file!, status: 'ready', issues, pdf, key: result.key! }
-          : { ...file!, status: 'error', issues, pdf: undefined, key: undefined };
+          ? { ...file!, status: 'ready', issues, pdf, key: result.key!, sourcePageCount: result.sourcePageCount }
+          : { ...file!, status: 'error', issues, pdf: undefined, key: undefined, sourcePageCount: result.sourcePageCount };
         return { ...files, [side]: next };
       });
     } catch (err) {
@@ -113,14 +140,20 @@ export function usePdfFiles() {
     }
   }, []);
 
+  /** The customer picks which pages of the file are printed as the front and back; the file is checked again. */
+  const choosePages = useCallback((side: FileSide, pages: number[]) => {
+    const file = filesRef.current[side];
+    if (file) update(side, file.id, { pages });
+  }, [update]);
+
   useEffect(
     () => () => {
-      for (const file of Object.values(filesRef.current)) void file?.pdf?.doc.destroy();
+      for (const file of Object.values(filesRef.current)) release(file);
     },
     [],
   );
 
-  return { files, addFile, removeFile, check };
+  return { files, addFile, removeFile, check, choosePages };
 }
 
 /**
@@ -139,7 +172,9 @@ export function useArtworkChecks(
       const file = files[side];
       if (!file?.sourceKey) continue;
       const maxPages = side === 'front' && backMode === 'separate' && !files.back ? 2 : 1;
-      const request: ArtworkCheckRequest = { geometry: { widthIn, heightIn, bleedIn, safeIn }, side, maxPages };
+      // A pick of pages keeps only what is printed: the front alone when the back is not from this file.
+      const pages = file.pages?.slice(0, maxPages);
+      const request: ArtworkCheckRequest = { geometry: { widthIn, heightIn, bleedIn, safeIn }, side, maxPages, ...(pages ? { pages } : {}) };
       if (file.checkedFor !== JSON.stringify(request)) void check(side, file.id, file.sourceKey, request);
     }
   }, [files, check, backMode, widthIn, heightIn, bleedIn, safeIn]);
@@ -177,10 +212,9 @@ export function useArtworkSources(files: Files, size: ExpectedSize, backMode: Ba
       front: [...(files.front?.issues ?? []), ...errorOf(files.front)],
       back: backMode === 'separate' ? [...(files.back?.issues ?? []), ...errorOf(files.back)] : [],
     };
-    if (front) {
-      checks.front.push(
-        ...checkPages(front.pdf!.pageCount, backMode === 'separate' && backFile ? backFile.pdf!.pageCount : null, backMode),
-      );
+    // Multi-page files show a page picker instead of "page 2 is the back" notes.
+    if (front && (front.sourcePageCount ?? 1) <= 1) {
+      checks.front.push(...checkPages(front.pdf!.pageCount, backMode === 'separate' && backFile ? backFile.pdf!.pageCount : null, backMode));
     }
 
     return {
@@ -222,3 +256,39 @@ export function usePageImage(source: (PageSource & { cropPt: number }) | null): 
 
   return url;
 }
+
+/** Small images of the first `count` pages (at most `max`) for picking pages and showing what prints. */
+export function usePageThumbnails(doc: OpenedPdf['doc'] | undefined, count: number, max = 20): (string | null)[] {
+  const [urls, setUrls] = useState<(string | null)[]>([]);
+  const pages = Math.min(count, max);
+  useEffect(() => {
+    if (!doc || pages === 0) {
+      setUrls([]);
+      return;
+    }
+    let cancelled = false;
+    const created: string[] = [];
+    setUrls(Array(pages).fill(null));
+    void (async () => {
+      for (let index = 0; index < pages && !cancelled; index++) {
+        try {
+          const url = await renderPageImage(doc, index, 0, THUMBNAIL_PX_PER_INCH);
+          created.push(url);
+          if (cancelled) break;
+          setUrls((current) => current.map((u, i) => (i === index ? url : u)));
+        } catch {
+          // A page that cannot be drawn keeps its placeholder.
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      for (const url of created) URL.revokeObjectURL(url);
+    };
+  }, [doc, pages]);
+  return urls;
+}
+
+/** About 150 px across a business card: sharp at thumbnail size, quick to draw. */
+const THUMBNAIL_PX_PER_INCH = 40;
+

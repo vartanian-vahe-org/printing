@@ -16,12 +16,17 @@ export interface UploadCheckInput {
   side: 'front' | 'back';
   /** Pages that are printed from this file: 2 when the front file also holds the back. */
   maxPages: 1 | 2;
+  /** The customer's pick of pages (front, then back), 1-based; the print PDF holds just these, in order. */
+  pages?: number[];
 }
 
 export interface UploadCheckResult {
   format: string;
   issues: { code: string; level: 'error' | 'warning'; message: string; page?: number }[];
+  /** Pages of the print PDF (the picked pages, or the whole file). */
   pageCount: number;
+  /** Pages of the file as uploaded, for choosing the front and back. */
+  sourcePageCount: number;
   outputKey: string | null;
 }
 

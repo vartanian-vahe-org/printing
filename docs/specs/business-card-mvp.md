@@ -245,6 +245,7 @@ Giờ chốt đơn, ngày làm việc và danh sách ngày lễ đều nằm tro
 ### 6.2 Upload file
 - Nhận **PDF, AI** (lưu có bật "PDF Compatible"), **TIFF, JPG, PSD**, tối đa 200 MB. Không nhận PNG (không chứa được CMYK). EPS chưa nhận (open issue O7).
 - Upload thẳng lên S3 bằng presigned URL. Ngay sau khi upload, worker **check file trước khi cho vào giỏ**: đổi ảnh thành PDF đúng size card, cắt bỏ crop marks nếu PDF có khai báo TrimBox, rồi chạy các check ở mục 6.3. File có lỗi thì không vào giỏ được (API chỉ nhận file đã qua check, đúng size card). File thay thế sau khi đặt hàng cũng phải qua check này.
+- File nhiều trang: khách chọn trang nào in mặt trước, trang nào in mặt sau (mặc định trang 1 và 2, có nút Swap). File in chỉ giữ các trang đã chọn, đúng thứ tự trước → sau.
 - Template tải về (PDF có sẵn bleed và safe zone) cho từng size có sẵn.
 
 ### 6.3 Preflight tự động (worker Python)

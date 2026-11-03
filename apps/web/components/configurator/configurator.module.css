@@ -87,6 +87,12 @@
   overflow: visible;
 }
 
+/* "Let us design it" details: no preview yet, the brief form takes the preview's room. */
+.studioNoPreview {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  grid-template-areas: 'main order';
+}
+
 .previewColumn {
   grid-area: preview;
   min-height: 0;
@@ -683,6 +689,12 @@
     height: 520px;
   }
 
+  .studio.studioNoPreview {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+    grid-template-rows: auto;
+    grid-template-areas: 'main order';
+  }
+
   .column {
     overflow: visible;
   }
@@ -704,6 +716,11 @@
   .mainColumn,
   .orderColumn {
     grid-area: auto;
+  }
+
+  .studio.studioNoPreview {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: none;
   }
 
   /* The order column's parts become grid items so the price bar can stick to the screen bottom. */

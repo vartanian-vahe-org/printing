@@ -1435,3 +1435,22 @@ a.sidebar-user {
   margin: 4px 0 10px;
   font-size: 14px;
 }
+
+.brief-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+}
+
+.brief-fields > div {
+  display: contents;
+}
+
+.brief-fields dt {
+  color: var(--muted);
+}
+
+.brief-fields dd {
+  margin: 0;
+  white-space: pre-line;
+}

@@ -17,6 +17,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { canvasMeasure } from '../../lib/browser-measure';
 import { cardSpec } from '../../lib/card3d';
 import {
+  briefFromSaved,
   EMPTY_BRIEF,
   logoFieldKey,
   prepareServiceDesign,
@@ -134,7 +135,7 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
       const draftMethod = draft.step ? draft.mode : null;
       setMethod(draftMethod);
       setTierCode(draft.tierCode && designServices.some((t) => t.code === draft.tierCode) ? draft.tierCode : null);
-      if (draft.brief) setBrief(draft.brief);
+      if (draft.brief) setBrief(briefFromSaved(draft.brief));
       // Picked PDFs are not kept across reloads: back to choosing them.
       setStep(draft.step === 'details' && draftMethod === 'upload' ? 'design' : (draft.step ?? 'options'));
     }
@@ -174,11 +175,14 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
         } else if (itemDesign.mode === 'service') {
           setMethod('service');
           setTierCode(itemDesign.tierCode);
-          setBrief({
-            content: itemDesign.brief.content,
-            notes: itemDesign.brief.notes,
-            files: itemDesign.brief.files.map((f) => ({ id: f.key, fileName: f.fileName, status: 'done', key: f.key })),
-          });
+          setBrief(
+            briefFromSaved({
+              fields: itemDesign.brief.fields ? Object.fromEntries(itemDesign.brief.fields.map((f) => [f.key, f.value])) : undefined,
+              content: itemDesign.brief.content,
+              notes: itemDesign.brief.notes,
+              files: itemDesign.brief.files.map((f) => ({ id: f.key, fileName: f.fileName, status: 'done', key: f.key })),
+            }),
+          );
         } else {
           setMethod('upload');
           setUploadProof(itemDesign.proof ?? 'send');
@@ -300,7 +304,7 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
 
   const preview = (
     <section className={styles.previewColumn} aria-label="Card preview">
-      <CardPreview fill catalog={catalog} selection={state.selection} size={size} artwork={previewImages} blank={method === 'service' && step === 'details'} />
+      <CardPreview fill catalog={catalog} selection={state.selection} size={size} artwork={previewImages} />
     </section>
   );
 
@@ -428,6 +432,7 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
                 size={expectedSize}
                 onAdd={(side, file) => void pdf.addFile(side, file)}
                 onRemove={pdf.removeFile}
+                onChoosePages={pdf.choosePages}
                 sizeName={sizeName}
                 onChangeSize={() => go('options')}
               />
@@ -472,8 +477,9 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
       )}
 
       {step === 'details' && method && (
-        <div className={styles.studio}>
-          {preview}
+        // The designer's card does not exist yet: no preview, the brief form gets the room.
+        <div className={method === 'service' ? `${styles.studio} ${styles.studioNoPreview}` : styles.studio}>
+          {method !== 'service' && preview}
 
           <section className={`${styles.column} ${styles.mainColumn}`} aria-label={DETAILS_TITLE[method]}>
             <div className={styles.columnBody}>
@@ -497,6 +503,7 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
                   size={expectedSize}
                   onAdd={(side, file) => void pdf.addFile(side, file)}
                   onRemove={pdf.removeFile}
+                  onChoosePages={pdf.choosePages}
                   sizeName={sizeName}
                   onChangeSize={() => go('options')}
                 />

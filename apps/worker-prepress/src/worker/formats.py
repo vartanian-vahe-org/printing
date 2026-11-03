@@ -178,3 +178,23 @@ def image_to_pdf(data: bytes, geometry: Geometry, kind: str) -> Normalized:
     out = io.BytesIO()
     pdf.save(out)
     return Normalized(out.getvalue(), kind)
+
+
+def select_pages(pdf: bytes, pages: list[int]) -> tuple[bytes | None, list[Issue]]:
+    """The customer's choice of pages from a multi-page file, in print order (front, then back).
+    `pages` are 1-based page numbers of the file."""
+    try:
+        source = pikepdf.open(io.BytesIO(pdf))
+    except pikepdf.PdfError:
+        return pdf, []  # preflight reports it
+    with source:
+        missing = [n for n in pages if not 1 <= n <= len(source.pages)]
+        if missing:
+            return None, [Issue("page-missing", "error", f"The file has {len(source.pages)} page(s); page {missing[0]} does not exist.")]
+        chosen = pikepdf.new()
+        for number in pages:
+            chosen.pages.append(source.pages[number - 1])
+        out = io.BytesIO()
+        chosen.save(out)
+        return out.getvalue(), []
+

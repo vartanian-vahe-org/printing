@@ -126,6 +126,7 @@ export interface ArtworkCheck {
   format: string;
   issues: { code: string; level: 'error' | 'warning'; message: string; page?: number }[];
   pageCount: number;
+  sourcePageCount: number;
   outputKey: string | null;
   url?: string;
 }
@@ -133,12 +134,12 @@ export interface ArtworkCheck {
 /** Runs the upload file check (Python worker) and waits for its result. */
 export async function checkArtwork(
   key: string,
-  options: { side?: 'front' | 'back'; maxPages?: 1 | 2; geometry?: typeof standardCard } = {},
+  options: { side?: 'front' | 'back'; maxPages?: 1 | 2; geometry?: typeof standardCard; pages?: number[] } = {},
 ): Promise<ArtworkCheck> {
   const start = await fetch(`${base}/uploads/checks`, {
     method: 'POST',
     headers: { ...testHeaders, 'content-type': 'application/json' },
-    body: JSON.stringify({ key, geometry: options.geometry ?? standardCard, side: options.side ?? 'front', maxPages: options.maxPages ?? 2 }),
+    body: JSON.stringify({ key, geometry: options.geometry ?? standardCard, side: options.side ?? 'front', maxPages: options.maxPages ?? 2, pages: options.pages }),
   });
   expect(start.status).toBe(202);
   const { id } = (await start.json()) as { id: string };

@@ -5,6 +5,7 @@
 import type { Template } from '@printing/templates';
 import type { CartItem, ServiceBrief, UploadProof } from './cart';
 import { worstLevel, type CheckResult } from './pdf-checks';
+import { briefLines } from './brief-fields';
 import type { PdfFileState } from './use-pdf-artwork';
 
 export type PreparedDesign = { ok: true; design: CartItem['design'] } | { ok: false; message: string };
@@ -78,19 +79,28 @@ export interface BriefFile {
 }
 
 export interface BriefState {
-  content: string;
+  /** What to print, by field key (lib/brief-fields.ts). */
+  fields: Record<string, string>;
   notes: string;
   files: BriefFile[];
 }
 
-export const EMPTY_BRIEF: BriefState = { content: '', notes: '', files: [] };
+export const EMPTY_BRIEF: BriefState = { fields: {}, notes: '', files: [] };
+
+/** A brief saved before the form had fields (free text): the text goes in "Anything else to print". */
+export function briefFromSaved(saved: Partial<BriefState> & { content?: string }): BriefState {
+  const fields = saved.fields ?? (saved.content?.trim() ? { other: saved.content } : {});
+  return { fields, notes: saved.notes ?? '', files: saved.files ?? [] };
+}
 
 export function prepareServiceDesign(tierCode: string | null, brief: BriefState): PreparedDesign {
   if (!tierCode) return { ok: false, message: 'Choose a design package first.' };
-  if (!brief.content.trim()) return { ok: false, message: 'Tell us what to put on your card.' };
+  const lines = briefLines(brief.fields);
+  if (lines.length === 0) return { ok: false, message: 'Tell us what to put on your card: at least your name or company.' };
   if (brief.files.some((f) => f.status === 'uploading')) return { ok: false, message: 'Still uploading your files…' };
   const failed = brief.files.find((f) => f.status === 'error');
   if (failed) return { ok: false, message: `"${failed.fileName}" was not uploaded. Remove it or try again.` };
   const files: ServiceBrief['files'] = brief.files.map((f) => ({ key: f.key!, fileName: f.fileName }));
-  return { ok: true, design: { mode: 'service', tierCode, brief: { content: brief.content.trim(), notes: brief.notes.trim(), files } } };
+  const content = lines.map((l) => `${l.label}: ${l.value}`).join('\n');
+  return { ok: true, design: { mode: 'service', tierCode, brief: { content, fields: lines, notes: brief.notes.trim(), files } } };
 }

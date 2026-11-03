@@ -1,7 +1,7 @@
 import { parseLayout, type Template } from '@printing/templates';
 import { describe, expect, it } from 'vitest';
 import seed from '../../../packages/templates/seed/business-cards-templates.json' with { type: 'json' };
-import { logoFieldKey, prepareTemplateDesign, prepareUploadDesign, templateTextValues } from '../lib/cart-design.js';
+import { briefFromSaved, EMPTY_BRIEF, logoFieldKey, prepareServiceDesign, prepareTemplateDesign, prepareUploadDesign, templateTextValues } from '../lib/cart-design.js';
 import type { PdfFileState } from '../lib/use-pdf-artwork.js';
 
 const templates: Template[] = seed.templates.map((t) => ({ ...t, layout: parseLayout(t.layout) }));
@@ -66,3 +66,34 @@ describe('upload design', () => {
     expect(withBack.ok && withBack.design.mode === 'upload' && withBack.design.back?.fileName).toBe('back.pdf');
   });
 });
+
+describe('design service brief', () => {
+  it('needs at least one line to print', () => {
+    expect(prepareServiceDesign('standard', { ...EMPTY_BRIEF, fields: { name: '  ' } })).toMatchObject({ ok: false });
+  });
+
+  it('sends the filled fields in form order, and the same text as lines', () => {
+    const brief = { ...EMPTY_BRIEF, fields: { email: ' jane@acme.com ', name: 'Jane Doe', title: '' }, notes: ' Navy ' };
+    expect(prepareServiceDesign('standard', brief)).toEqual({
+      ok: true,
+      design: {
+        mode: 'service',
+        tierCode: 'standard',
+        brief: {
+          content: 'Full name: Jane Doe\nEmail: jane@acme.com',
+          fields: [
+            { key: 'name', label: 'Full name', value: 'Jane Doe' },
+            { key: 'email', label: 'Email', value: 'jane@acme.com' },
+          ],
+          notes: 'Navy',
+          files: [],
+        },
+      },
+    });
+  });
+
+  it('keeps a brief saved before the form had fields', () => {
+    expect(briefFromSaved({ content: 'Jane Doe\nCEO', notes: '', files: [] }).fields).toEqual({ other: 'Jane Doe\nCEO' });
+  });
+});
+

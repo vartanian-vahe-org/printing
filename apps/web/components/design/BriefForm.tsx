@@ -2,6 +2,7 @@
 
 import type { DesignServiceTier } from '@printing/templates';
 import { useId } from 'react';
+import { BRIEF_FIELDS, type BriefFieldDef } from '../../lib/brief-fields';
 import type { BriefFile, BriefState } from '../../lib/cart-design';
 import { formatCents } from '../../lib/format';
 import { REFERENCE_TYPES, uploadReference, UploadError } from '../../lib/upload';
@@ -20,7 +21,7 @@ interface Props {
 
 /** Step 3 with "let us design it": what our designer needs to make the card. */
 export function BriefForm({ tier, brief, onChange, onChangeTier }: Props) {
-  const contentId = useId();
+  const formId = useId();
   const notesId = useId();
   const filesId = useId();
 
@@ -55,21 +56,21 @@ export function BriefForm({ tier, brief, onChange, onChangeTier }: Props) {
         </p>
       )}
 
-      <div className={styles.field}>
-        <label htmlFor={contentId} className={styles.label}>
-          What should your card say?
-        </label>
-        <textarea
-          id={contentId}
-          className={`${styles.input} ${styles.textarea}`}
-          rows={7}
-          maxLength={3000}
-          value={brief.content}
-          placeholder={'Jane Doe\nMarketing Director\nAcme Inc.\n(555) 123-4567 · jane@acme.com\nacme.com'}
-          onChange={(e) => onChange((b) => ({ ...b, content: e.target.value }))}
-        />
-        <span className={styles.hint}>Exactly as it should be printed: names, titles, phone, email, website, address.</span>
-      </div>
+      <fieldset className={styles.briefSection}>
+        <legend className={styles.briefTitle}>What should your card say?</legend>
+        <p className={styles.hint}>Type it exactly as it should be printed. Leave out anything you don't want on the card.</p>
+        <div className={styles.briefGrid}>
+          {BRIEF_FIELDS.map((field) => (
+            <BriefInput
+              key={field.key}
+              id={`${formId}-${field.key}`}
+              field={field}
+              value={brief.fields[field.key] ?? ''}
+              onChange={(value) => onChange((b) => ({ ...b, fields: { ...b.fields, [field.key]: value } }))}
+            />
+          ))}
+        </div>
+      </fieldset>
 
       <div className={styles.field}>
         <label htmlFor={notesId} className={styles.label}>
@@ -132,3 +133,27 @@ export function BriefForm({ tier, brief, onChange, onChangeTier }: Props) {
     </div>
   );
 }
+
+function BriefInput({ id, field, value, onChange }: { id: string; field: BriefFieldDef; value: string; onChange: (value: string) => void }) {
+  const common = {
+    id,
+    className: field.multiline ? `${styles.input} ${styles.textarea}` : styles.input,
+    value,
+    maxLength: field.maxLength,
+    placeholder: field.placeholder,
+    autoComplete: field.autoComplete ?? 'off',
+  };
+  return (
+    <div className={`${styles.field} ${field.wide ? styles.briefWide : ''}`}>
+      <label htmlFor={id} className={styles.label}>
+        {field.label}
+      </label>
+      {field.multiline ? (
+        <textarea {...common} rows={field.key === 'address' ? 2 : 3} onChange={(e) => onChange(e.target.value)} />
+      ) : (
+        <input {...common} type={field.type ?? 'text'} onChange={(e) => onChange(e.target.value)} />
+      )}
+    </div>
+  );
+}
+

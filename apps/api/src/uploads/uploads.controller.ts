@@ -47,6 +47,8 @@ const checkRequestSchema = z.object({
   geometry: z.object({ widthIn: inches(48), heightIn: inches(48), bleedIn: z.number().min(0).max(1), safeIn: z.number().min(0).max(1) }).strict(),
   side: z.enum(['front', 'back']),
   maxPages: z.union([z.literal(1), z.literal(2)]),
+  /** Pages the customer picked from a multi-page file, in print order (front, then back), 1-based. */
+  pages: z.array(z.number().int().min(1).max(1000)).min(1).max(2).optional(),
 });
 
 type CheckRequest = z.infer<typeof checkRequestSchema>;
@@ -98,7 +100,7 @@ export class UploadsController {
     }
     const now = new Date();
     const outputKey = `${UPLOAD_KINDS.artwork.prefix}${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${randomUUID()}.pdf`;
-    const id = await this.checks.start({ sourceKey: body.key, outputKey, geometry: body.geometry, side: body.side, maxPages: body.maxPages });
+    const id = await this.checks.start({ sourceKey: body.key, outputKey, geometry: body.geometry, side: body.side, maxPages: body.maxPages, pages: body.pages });
     return { id };
   }
 

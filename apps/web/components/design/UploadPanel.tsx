@@ -5,7 +5,8 @@ import type { BackMode } from '../../lib/card3d';
 import { formatInches } from '../../lib/format';
 import { worstLevel, type CheckResult, type ExpectedSize } from '../../lib/pdf-checks';
 import { ARTWORK_ACCEPT } from '../../lib/upload';
-import type { FileSide, PdfFileState, UploadChecks } from '../../lib/use-pdf-artwork';
+import type { OpenedPdf } from '../../lib/pdf-render';
+import { usePageThumbnails, type FileSide, type PdfFileState, type UploadChecks } from '../../lib/use-pdf-artwork';
 import styles from './design.module.css';
 
 interface Props {
@@ -15,12 +16,14 @@ interface Props {
   size: ExpectedSize;
   onAdd: (side: FileSide, file: File) => void;
   onRemove: (side: FileSide) => void;
+  /** The customer picked which pages of a multi-page file are printed (front, then back), 1-based. */
+  onChoosePages: (side: FileSide, pages: number[]) => void;
   /** The card size chosen in step 1 (e.g. "Slim 3.5" x 1.75""), with a way back to change it. */
   sizeName?: string;
   onChangeSize?: () => void;
 }
 
-export function UploadPanel({ files, checks, backMode, size, onAdd, onRemove, sizeName, onChangeSize }: Props) {
+export function UploadPanel({ files, checks, backMode, size, onAdd, onRemove, onChoosePages, sizeName, onChangeSize }: Props) {
   const bleedW = formatInches(size.widthIn + 2 * size.bleedIn);
   const bleedH = formatInches(size.heightIn + 2 * size.bleedIn);
 
@@ -64,7 +67,17 @@ export function UploadPanel({ files, checks, backMode, size, onAdd, onRemove, si
         </details>
       </div>
 
-      <FileDrop side="front" label="Front" file={files.front} checks={checks.front} onAdd={onAdd} onRemove={onRemove} />
+      <FileDrop
+        side="front"
+        label="Front"
+        file={files.front}
+        checks={checks.front}
+        // The back comes from this file too unless there is a separate back file.
+        roles={backMode === 'separate' && !files.back ? ['Front', 'Back'] : ['Front']}
+        onAdd={onAdd}
+        onRemove={onRemove}
+        onChoosePages={onChoosePages}
+      />
       {backMode === 'separate' && (
         <FileDrop
           side="back"
@@ -72,8 +85,10 @@ export function UploadPanel({ files, checks, backMode, size, onAdd, onRemove, si
           optionalHint="Optional if your front PDF has 2 pages"
           file={files.back}
           checks={checks.back}
+          roles={['Back']}
           onAdd={onAdd}
           onRemove={onRemove}
+          onChoosePages={onChoosePages}
         />
       )}
     </div>
@@ -88,16 +103,21 @@ function FileDrop({
   optionalHint,
   file,
   checks,
+  roles,
   onAdd,
   onRemove,
+  onChoosePages,
 }: {
   side: FileSide;
   label: string;
   optionalHint?: string;
   file: PdfFileState | undefined;
   checks: CheckResult[];
+  /** What the pages of this file are printed as, in order. */
+  roles: string[];
   onAdd: (side: FileSide, file: File) => void;
   onRemove: (side: FileSide) => void;
+  onChoosePages: (side: FileSide, pages: number[]) => void;
 }) {
   const inputId = useId();
   const [dragging, setDragging] = useState(false);
@@ -159,6 +179,19 @@ function FileDrop({
           {file.status === 'checking' && <p className={styles.hint}>Checking your file: size, resolution, CMYK colors and fonts…</p>}
           {file.status === 'ready' && level !== 'error' && <p className={styles.uploadState}>File checked</p>}
 
+          {file.sourcePageCount && file.sourcePageCount > 1 && file.status !== 'error' ? (
+            <PagePicker
+              doc={file.source?.doc}
+              pageCount={file.sourcePageCount}
+              roles={roles}
+              pages={file.pages ?? roles.map((_, i) => i + 1)}
+              disabled={file.status === 'checking'}
+              onChange={(pages) => onChoosePages(side, pages)}
+            />
+          ) : (
+            file.status === 'ready' && file.pdf && <PrintedPages pdf={file.pdf} roles={roles} />
+          )}
+
           {results.length > 0 && (
             <ul className={styles.checks}>
               {results.map((result) => (
@@ -180,6 +213,124 @@ function FileDrop({
               Remove
             </button>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Thumbnails of what is printed from this file (the checked print PDF): front, and back when it comes from here. */
+function PrintedPages({ pdf, roles }: { pdf: OpenedPdf; roles: string[] }) {
+  const shown = roles.slice(0, pdf.pageCount);
+  const urls = usePageThumbnails(pdf.doc, shown.length);
+  return (
+    <div className={styles.thumbs}>
+      {shown.map((role, index) => (
+        <figure key={role} className={styles.thumb}>
+          <Thumbnail url={urls[index] ?? null} alt={`${role} of your card`} />
+          <figcaption>{role}</figcaption>
+        </figure>
+      ))}
+    </div>
+  );
+}
+
+function Thumbnail({ url, alt }: { url: string | null; alt: string }) {
+  return url ? <img src={url} alt={alt} className={styles.thumbImage} /> : <span className={styles.thumbLoading} aria-hidden="true" />;
+}
+
+/** Most pages shown as thumbnails; longer files pick from a list. */
+const MAX_THUMBNAIL_PAGES = 12;
+
+/**
+ * Which page of a multi-page file is the front, and which the back: thumbnails of every page with
+ * a button per side, or lists when the file cannot be shown (not a PDF, very long). Picking the
+ * other side's page swaps them.
+ */
+function PagePicker({
+  doc,
+  pageCount,
+  roles,
+  pages,
+  disabled,
+  onChange,
+}: {
+  doc: OpenedPdf['doc'] | undefined;
+  pageCount: number;
+  roles: string[];
+  pages: number[];
+  disabled: boolean;
+  onChange: (pages: number[]) => void;
+}) {
+  const current = roles.map((_, i) => pages[i] ?? i + 1);
+  const withThumbnails = Boolean(doc) && pageCount <= MAX_THUMBNAIL_PAGES;
+  const urls = usePageThumbnails(withThumbnails ? doc : undefined, pageCount, MAX_THUMBNAIL_PAGES);
+  function pick(index: number, page: number) {
+    const next = [...current];
+    const other = next.indexOf(page);
+    if (other !== -1 && other !== index) next[other] = current[index]!;
+    next[index] = page;
+    onChange(next);
+  }
+  const swap =
+    roles.length === 2 ? (
+      <button type="button" className={styles.linkButton} disabled={disabled} onClick={() => onChange([current[1]!, current[0]!])}>
+        ⇄ Swap front and back
+      </button>
+    ) : null;
+
+  return (
+    <div className={styles.pagePicker}>
+      <span className={styles.pagePickerTitle}>
+        Your file has {pageCount} pages. Choose the {roles.length === 2 ? 'front and back' : roles[0]!.toLowerCase()}.
+      </span>
+      {withThumbnails ? (
+        <>
+          <div className={styles.thumbs}>
+            {Array.from({ length: pageCount }, (_, i) => i + 1).map((page) => {
+              const role = roles[current.indexOf(page)];
+              return (
+                <figure key={page} className={styles.thumb} data-role={role ? role.toLowerCase() : undefined}>
+                  <Thumbnail url={urls[page - 1] ?? null} alt={`Page ${page}`} />
+                  <figcaption>
+                    Page {page}
+                    {role && <strong> · {role}</strong>}
+                  </figcaption>
+                  <div className={styles.thumbActions}>
+                    {roles.map((r, index) => (
+                      <button
+                        key={r}
+                        type="button"
+                        className={styles.thumbButton}
+                        aria-pressed={current[index] === page}
+                        disabled={disabled}
+                        onClick={() => pick(index, page)}
+                      >
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                </figure>
+              );
+            })}
+          </div>
+          {swap}
+        </>
+      ) : (
+        <div className={styles.pagePickerRow}>
+          {roles.map((role, index) => (
+            <label key={role} className={styles.pagePickerField}>
+              <span>{role}</span>
+              <select value={current[index]} disabled={disabled} onChange={(e) => pick(index, Number(e.target.value))}>
+                {Array.from({ length: pageCount }, (_, i) => i + 1).map((page) => (
+                  <option key={page} value={page}>
+                    Page {page}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+          {swap}
         </div>
       )}
     </div>

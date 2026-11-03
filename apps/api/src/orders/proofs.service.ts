@@ -26,7 +26,7 @@ export interface FileRef {
 export interface ServiceDesign {
   mode: 'service';
   tierCode: string;
-  brief: { content: string; notes: string; files: { key: string; fileName: string }[] };
+  brief: { content: string; fields?: { key: string; label: string; value: string }[]; notes: string; files: { key: string; fileName: string }[] };
   /** The designer's latest file; `round` counts deliveries (1 = first draft). */
   artwork?: { front: FileRef; back?: FileRef; round: number; deliveredAt: string };
   /** The customer's change requests, oldest first. */

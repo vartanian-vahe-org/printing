@@ -7,7 +7,7 @@ import pikepdf
 import pytest
 from PIL import Image
 
-from worker.formats import detect, normalize
+from worker.formats import detect, normalize, select_pages
 from worker.preflight import check_pdf
 
 from test_preflight import CARD, MARK, codes
@@ -129,3 +129,18 @@ def test_crop_marks_are_cut_off_at_the_bleed():
 def test_other_pdfs_are_unchanged():
     data = normalize(image_bytes("CMYK", FULL, "JPEG"), CARD).pdf
     assert normalize(data, CARD).pdf == data
+
+
+def test_chosen_pages_become_front_and_back_in_order():
+    pdf = pikepdf.new()
+    for width in (270, 271, 272):  # tell the pages apart by width
+        pdf.add_blank_page(page_size=(width, 162))
+    out = io.BytesIO()
+    pdf.save(out)
+    chosen, issues = select_pages(out.getvalue(), [3, 1])
+    assert issues == []
+    with pikepdf.open(io.BytesIO(chosen)) as doc:
+        assert [float(p.mediabox[2]) for p in doc.pages] == [272, 270]
+    missing, issues = select_pages(out.getvalue(), [1, 4])
+    assert missing is None and codes(issues) == [("page-missing", "error")]
+
