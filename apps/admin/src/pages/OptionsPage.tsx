@@ -2,7 +2,11 @@ import { useState } from 'react';
 import { api, type AdminGroup, type AdminValue } from '../api';
 import { useCatalog, useSaver } from '../catalog';
 import { AttributeEditor } from '../components/AttributeEditor';
+import { QuantityList } from '../components/QuantityList';
 import { Toast } from '../components/Toast';
+
+/** Quantities are not an option group, so their tab sits after the groups. */
+const QUANTITY_TAB = 'quantity';
 
 export function OptionsPage() {
   const { catalog } = useCatalog();
@@ -11,6 +15,7 @@ export function OptionsPage() {
 
   if (!catalog) return <p className="page-loading">Loading…</p>;
   const group = catalog.groups.find((g) => g.code === groupCode) ?? catalog.groups[0]!;
+  const showQuantities = groupCode === QUANTITY_TAB;
 
   return (
     <div className="page">
@@ -26,29 +31,37 @@ export function OptionsPage() {
           <button
             key={g.code}
             type="button"
-            className={`tab ${g.code === group.code ? 'tab-active' : ''}`}
+            className={`tab ${!showQuantities && g.code === group.code ? 'tab-active' : ''}`}
             onClick={() => setGroupCode(g.code)}
           >
             {g.label}
             <span className="tab-count">{g.values.filter((v) => v.isActive).length}</span>
           </button>
         ))}
+        <button type="button" className={`tab ${showQuantities ? 'tab-active' : ''}`} onClick={() => setGroupCode(QUANTITY_TAB)}>
+          Quantity
+          <span className="tab-count">{catalog.quantityTiers.filter((t) => t.isActive).length}</span>
+        </button>
       </div>
 
-      <div className="card">
-        {group.values.map((value, index) => (
-          <ValueRow
-            key={`${group.code}.${value.code}`}
-            group={group}
-            value={value}
-            first={index === 0}
-            last={index === group.values.length - 1}
-            neighbours={[group.values[index - 1], group.values[index + 1]]}
-            saver={saver}
-          />
-        ))}
-        <AddValue key={group.code} group={group} saver={saver} />
-      </div>
+      {showQuantities ? (
+        <QuantityList saver={saver} />
+      ) : (
+        <div className="card">
+          {group.values.map((value, index) => (
+            <ValueRow
+              key={`${group.code}.${value.code}`}
+              group={group}
+              value={value}
+              first={index === 0}
+              last={index === group.values.length - 1}
+              neighbours={[group.values[index - 1], group.values[index + 1]]}
+              saver={saver}
+            />
+          ))}
+          <AddValue key={group.code} group={group} saver={saver} />
+        </div>
+      )}
 
       <Toast status={saver.status} onClose={saver.clearStatus} />
     </div>

@@ -610,6 +610,124 @@ export class AdminCatalogService {
     });
   }
 
+  private async quantityTier(db: Executor, productId: string, quantity: number) {
+    const [tier] = await db
+      .select()
+      .from(productQuantityTiers)
+      .where(and(eq(productQuantityTiers.productId, productId), eq(productQuantityTiers.quantity, quantity)))
+      .for('update');
+    if (!tier) throw new NotFoundException(`Quantity ${quantity} not found`);
+    return tier;
+  }
+
+  private async assertQuantityIsNew(db: Executor, productId: string, quantity: number) {
+    const [taken] = await db
+      .select({ id: productQuantityTiers.id })
+      .from(productQuantityTiers)
+      .where(and(eq(productQuantityTiers.productId, productId), eq(productQuantityTiers.quantity, quantity)));
+    if (taken) throw new BadRequestException(`${quantity.toLocaleString('en-US')} already exists.`);
+  }
+
+  /** Quantities are always listed from smallest to largest. */
+  private async sortQuantityTiers(tx: Tx, productId: string, staffId: string) {
+    const tiers = await tx
+      .select({ id: productQuantityTiers.id })
+      .from(productQuantityTiers)
+      .where(eq(productQuantityTiers.productId, productId))
+      .orderBy(asc(productQuantityTiers.quantity));
+    for (const [index, tier] of tiers.entries()) {
+      await tx.update(productQuantityTiers).set({ sortOrder: index + 1, updatedBy: staffId }).where(eq(productQuantityTiers.id, tier.id));
+    }
+  }
+
+  /**
+   * Adds a quantity. It starts with the turnaround of the closest quantity, because every quantity needs
+   * a speed, and with no prices: it is not sold until they are entered on the Pricing page.
+   */
+  async createQuantity(productCode: string, quantity: number, staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const productId = await this.productId(tx, productCode);
+      await this.assertQuantityIsNew(tx, productId, quantity);
+
+      const others = await tx
+        .select({ id: productQuantityTiers.id, quantity: productQuantityTiers.quantity })
+        .from(productQuantityTiers)
+        .where(eq(productQuantityTiers.productId, productId))
+        .orderBy(asc(productQuantityTiers.quantity));
+      const closest = others.reduce<(typeof others)[number] | undefined>(
+        (best, tier) => (!best || Math.abs(tier.quantity - quantity) < Math.abs(best.quantity - quantity) ? tier : best),
+        undefined,
+      );
+
+      const [tier] = await tx
+        .insert(productQuantityTiers)
+        .values({ productId, quantity, createdBy: staffId, updatedBy: staffId })
+        .returning({ id: productQuantityTiers.id });
+      if (closest) {
+        const cells = await tx.select().from(turnaroundOptions).where(eq(turnaroundOptions.quantityTierId, closest.id));
+        if (cells.length) {
+          await tx.insert(turnaroundOptions).values(
+            cells.map((c) => ({
+              optionValueId: c.optionValueId,
+              quantityTierId: tier!.id,
+              businessDays: c.businessDays,
+              pricePercent: c.pricePercent,
+              createdBy: staffId,
+              updatedBy: staffId,
+            })),
+          );
+        }
+      }
+
+      await this.sortQuantityTiers(tx, productId, staffId);
+      await this.assertStorefrontStillWorks(tx, productCode);
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.quantity.create',
+        target: `${productCode} · quantity / ${quantity}`,
+        summary: `Added quantity ${quantity}`,
+        changes: { before: null, after: { quantity, turnaroundFrom: closest?.quantity ?? null } },
+      });
+    });
+  }
+
+  /** Changes the number of a quantity; its prices and turnaround stay on it. */
+  async updateQuantity(productCode: string, from: number, to: number, staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const productId = await this.productId(tx, productCode);
+      const tier = await this.quantityTier(tx, productId, from);
+      if (from === to) return;
+      await this.assertQuantityIsNew(tx, productId, to);
+
+      await tx.update(productQuantityTiers).set({ quantity: to, updatedBy: staffId }).where(eq(productQuantityTiers.id, tier.id));
+      await this.sortQuantityTiers(tx, productId, staffId);
+      await this.assertStorefrontStillWorks(tx, productCode);
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.quantity.update',
+        target: `${productCode} · quantity / ${from}`,
+        summary: `Changed quantity ${from} to ${to}`,
+        changes: { before: { quantity: from }, after: { quantity: to } },
+      });
+    });
+  }
+
+  async deleteQuantity(productCode: string, quantity: number, staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const productId = await this.productId(tx, productCode);
+      const tier = await this.quantityTier(tx, productId, quantity);
+      if (tier.isDefault) throw new BadRequestException('This is the default quantity. Make another quantity the default before deleting it.');
+
+      await tx.delete(productQuantityTiers).where(eq(productQuantityTiers.id, tier.id));
+      await this.sortQuantityTiers(tx, productId, staffId);
+      await this.assertStorefrontStillWorks(tx, productCode);
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.quantity.delete',
+        target: `${productCode} · quantity / ${quantity}`,
+        summary: `Deleted quantity ${quantity}`,
+        changes: { before: { quantity, isActive: tier.isActive }, after: null },
+      });
+    });
+  }
+
   async updatePricing(productCode: string, input: PricingInput, staffId: string) {
     await this.db.transaction(async (tx) => {
       const productId = await this.productId(tx, productCode);

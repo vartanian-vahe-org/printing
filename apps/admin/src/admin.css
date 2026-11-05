@@ -458,7 +458,8 @@ select {
   gap: 6px;
 }
 
-.value-add .value-form-new {
+.value-add .value-form-new,
+.quantity-row .value-form {
   margin-left: 0;
 }
 

@@ -73,6 +73,7 @@ On startup the `migrate` service applies all database migrations (schema + defau
 | PATCH | `/admin/products/:code/groups/:group/values/:value` | Edit label, description, order, active, default, attributes (admin) |
 | PUT | `/admin/products/:code/rules` | Set or remove a rule (admin) |
 | PUT | `/admin/products/:code/pricing` | Core prices, add-on percents, tier visibility/default (admin) |
+| POST · PATCH · DELETE | `/admin/products/:code/quantities` · `/:quantity` | Add, renumber or delete a quantity (admin) |
 | PATCH | `/admin/products/:code/templates/:template` | Show or hide a template (admin) |
 
 Admin writes run in a transaction and are rejected if the storefront could no longer build and price a default configuration.

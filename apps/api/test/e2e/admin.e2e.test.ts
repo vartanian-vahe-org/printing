@@ -176,6 +176,68 @@ describe('admin catalog', () => {
   });
 });
 
+describe('admin catalog: quantities', () => {
+  const quantities = async () => (await call('GET', `${admin}/catalog`)).body.quantityTiers.map((t: any) => t.quantity);
+  const quote = (quantity: number) =>
+    call('POST', `${base}/quotes`, { productCode: 'business-cards', selection: defaultSelection, quantity }, false);
+
+  afterAll(async () => {
+    for (const quantity of [600, 700, 12000]) await call('DELETE', `${admin}/quantities/${quantity}`);
+  });
+
+  it('adds a quantity in order, with the closest turnaround and no price', async () => {
+    expect((await call('POST', `${admin}/quantities`, { quantity: 600 })).status).toBe(204);
+    expect(await quantities()).toEqual([50, 100, 250, 500, 600, 1000, 2500, 5000, 10000]);
+
+    const { turnarounds, corePrices } = (await call('GET', `${admin}/catalog`)).body;
+    const at = (quantity: number) => turnarounds.filter((c: any) => c.quantity === quantity).map(({ quantity: _q, ...rest }: any) => rest);
+    expect(at(600)).toEqual(at(500));
+    expect(corePrices.filter((p: any) => p.quantity === 600)).toEqual([]);
+    expect((await quote(600)).status).toBe(400);
+  });
+
+  it('sells the quantity once it has a price', async () => {
+    await call('PUT', `${admin}/pricing`, { corePrices: [{ ...defaultCore, quantity: 600, priceCents: 4500 }] });
+    const res = await quote(600);
+    expect(res.status).toBe(200);
+    expect(res.body.corePriceCents).toBe(4500);
+  });
+
+  it('changes the number and keeps its price and turnaround', async () => {
+    expect((await call('PATCH', `${admin}/quantities/600`, { quantity: 12000 })).status).toBe(204);
+    expect((await quantities()).slice(-2)).toEqual([10000, 12000]);
+    expect((await quote(12000)).body.corePriceCents).toBe(4500);
+    expect((await quote(600)).status).toBe(400);
+  });
+
+  it('refuses a quantity that already exists', async () => {
+    const added = await call('POST', `${admin}/quantities`, { quantity: 500 });
+    expect(added.status).toBe(400);
+    expect(added.body.message).toMatch(/500 already exists/);
+    expect((await call('PATCH', `${admin}/quantities/12000`, { quantity: 500 })).status).toBe(400);
+    expect((await call('POST', `${admin}/quantities`, { quantity: 0 })).status).toBe(400);
+  });
+
+  it('refuses a default quantity with no price', async () => {
+    await call('POST', `${admin}/quantities`, { quantity: 700 });
+    const res = await call('PUT', `${admin}/pricing`, { tiers: [{ quantity: 700, isDefault: true }] });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/need a price at the default quantity/);
+  });
+
+  it('deletes a quantity, but not the default one', async () => {
+    const res = await call('DELETE', `${admin}/quantities/500`);
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/default quantity/);
+
+    expect((await call('DELETE', `${admin}/quantities/12000`)).status).toBe(204);
+    expect((await call('DELETE', `${admin}/quantities/700`)).status).toBe(204);
+    expect(await quantities()).toEqual([50, 100, 250, 500, 1000, 2500, 5000, 10000]);
+    expect((await quote(12000)).status).toBe(400);
+    expect((await call('DELETE', `${admin}/quantities/12000`)).status).toBe(404);
+  });
+});
+
 describe('admin catalog: turnaround table', () => {
   const selection = { size: 'std_3_5x2', paper: '14pt', coating: 'matte_both', printed_side: 'front_back', corners: 'square' };
   const quote = (turnaround: string, quantity: number) =>

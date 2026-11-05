@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe.js';
 import { AdminGuard, type AdminRequest } from '../auth/admin.guard.js';
@@ -75,6 +75,8 @@ const pricingSchema = z.object({
     .max(500)
     .optional(),
 });
+
+const quantitySchema = z.object({ quantity: z.number().int().min(1).max(1_000_000) }).strict();
 
 const turnaroundSchema = z.object({
   cells: z
@@ -206,6 +208,36 @@ export class AdminCatalogController {
     @Req() request: AdminRequest,
   ) {
     await this.catalog.setRule(productCode, body, request.staff!.id);
+    await this.storefront.invalidate(productCode);
+  }
+
+  @Post('quantities')
+  @HttpCode(204)
+  async createQuantity(
+    @Param('code') productCode: string,
+    @Body(new ZodValidationPipe(quantitySchema)) body: z.infer<typeof quantitySchema>,
+    @Req() request: AdminRequest,
+  ) {
+    await this.catalog.createQuantity(productCode, body.quantity, request.staff!.id);
+    await this.storefront.invalidate(productCode);
+  }
+
+  @Patch('quantities/:quantity')
+  @HttpCode(204)
+  async updateQuantity(
+    @Param('code') productCode: string,
+    @Param('quantity', ParseIntPipe) quantity: number,
+    @Body(new ZodValidationPipe(quantitySchema)) body: z.infer<typeof quantitySchema>,
+    @Req() request: AdminRequest,
+  ) {
+    await this.catalog.updateQuantity(productCode, quantity, body.quantity, request.staff!.id);
+    await this.storefront.invalidate(productCode);
+  }
+
+  @Delete('quantities/:quantity')
+  @HttpCode(204)
+  async deleteQuantity(@Param('code') productCode: string, @Param('quantity', ParseIntPipe) quantity: number, @Req() request: AdminRequest) {
+    await this.catalog.deleteQuantity(productCode, quantity, request.staff!.id);
     await this.storefront.invalidate(productCode);
   }
 

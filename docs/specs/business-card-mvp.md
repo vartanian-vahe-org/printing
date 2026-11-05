@@ -83,6 +83,8 @@ Mỗi coating khai báo bề mặt **mặt trước** và **mặt sau**.
 
 Lấy từ bảng giá thật của Vistaprint (bỏ bớt mức 1,500 và 2,000).
 
+Admin thêm, sửa số, ẩn, đặt mặc định và xóa số lượng ở tab Quantity của trang Options. Số lượng mới lấy turnaround của mức gần nhất và chưa có giá, nên khách chưa thấy cho đến khi admin nhập giá ở trang Pricing. Danh sách luôn xếp từ nhỏ đến lớn.
+
 ### 2.7 Turnaround
 
 Mỗi sản phẩm có các mức tốc độ và một bảng **Số lượng × Tốc độ** (`turnaround_options`). Mỗi ô gồm số ngày sản xuất và % cộng vào giá in (giá gốc + option, đã nhân hệ số size); % âm là giảm giá. Ô trống nghĩa là không bán mức đó ở số lượng đó. Admin sửa ở trang Turnaround. Số liệu dưới đây là số tạm (open issue P7):
@@ -362,6 +364,7 @@ Phụ phí trong `0003` được tính sẵn ra cent cho từng mức số lư�
 |---|---|
 | Product → Option groups | Danh sách nhóm, đổi thứ tự, đổi label, kiểu hiển thị |
 | Option group → Values | Thêm/sửa/ẩn value, chọn mặc định, sửa attributes (form theo loại nhóm) |
+| Options → Quantity | Thêm, sửa số, ẩn, đặt mặc định, xóa số lượng |
 | **Paper detail** | Tab "Coatings available" (checkbox), tab "Turnaround available". Lưu vào `option_value_rules`. |
 | Coating detail | Tab "Turnaround available" |
 | Size detail | Kích thước, bleed, safe zone. |
