@@ -26,7 +26,7 @@ import {
   TURNAROUND_GROUP,
   UnsatisfiableSelectionError,
 } from '@printing/pricing';
-import { and, asc, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, max, ne } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { CatalogService } from '../../catalog/catalog.service.js';
 import { DATABASE } from '../../database/database.tokens.js';
@@ -51,6 +51,43 @@ export interface ValueInput {
   description?: string | null;
   attributes: Record<string, unknown>;
   copyFrom?: string;
+}
+
+export interface ProductInput {
+  code?: string;
+  name: string;
+  description?: string | null;
+  /** Existing product whose whole configuration the new one starts with. */
+  copyFrom: string;
+}
+
+export interface ProductPatch {
+  name?: string;
+  description?: string | null;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  sortOrder?: number;
+  isActive?: boolean;
+}
+
+/** Top-level pages of the storefront: a product cannot take their URL. */
+const RESERVED_PRODUCT_CODES = ['account', 'api', 'cart', 'checkout', 'fonts', 'orders'];
+
+/** "Premium Business Cards!" -> "premium-business-cards" */
+export function productCodeFrom(name: string): string {
+  const code = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+    .replace(/-+$/, '');
+  return code || 'product';
+}
+
+/** The values of `row` for a copy: the database gives it a new id and dates. */
+function copyRow<T extends { createdAt: Date; updatedAt: Date }>(row: T, staffId: string) {
+  const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...values } = row as T & { id?: string };
+  return { ...values, createdBy: staffId, updatedBy: staffId };
 }
 
 /** "Premium – 18pt Cardstock" -> "premium_18pt_cardstock" */
@@ -172,7 +209,7 @@ export class AdminCatalogService {
   private async assertStorefrontStillWorks(tx: Tx, productCode: string) {
     let quantity: number | null = null;
     try {
-      const catalog = await new CatalogService(tx as unknown as Database).loadCatalog(productCode);
+      const catalog = await new CatalogService(tx as unknown as Database).readCatalog(productCode, { includeHidden: true });
       const tiers = sortedTiers(catalog);
       if (tiers.length === 0) throw new BadRequestException('At least one quantity tier must stay active.');
       for (const tier of tiers) {
@@ -199,9 +236,17 @@ export class AdminCatalogService {
 
   async listProducts() {
     const rows = await this.db
-      .select({ code: products.code, name: products.name, isActive: products.isActive })
+      .select({
+        code: products.code,
+        name: products.name,
+        description: products.description,
+        seoTitle: products.seoTitle,
+        seoDescription: products.seoDescription,
+        sortOrder: products.sortOrder,
+        isActive: products.isActive,
+      })
       .from(products)
-      .orderBy(asc(products.name));
+      .orderBy(asc(products.sortOrder), asc(products.name));
     return { products: rows };
   }
 
@@ -606,6 +651,169 @@ export class AdminCatalogService {
         target: `${productCode} · ${input.whenGroup} / ${input.whenValue} → ${input.targetGroup}`,
         summary: input.allowed === null ? 'Removed the rule (all options allowed)' : `Allowed ${input.allowed.join(', ')}`,
         changes: { before, after: input.allowed ? [...input.allowed].sort() : null },
+      });
+    });
+  }
+
+  /**
+   * Adds a product that starts as a full copy of another one: options, rules, quantities, prices,
+   * turnaround, templates and design packages. It stays off the storefront until it is shown.
+   */
+  async createProduct(input: ProductInput, staffId: string): Promise<{ code: string }> {
+    return this.db.transaction(async (tx) => {
+      const code = input.code ?? productCodeFrom(input.name);
+      if (RESERVED_PRODUCT_CODES.includes(code)) throw new BadRequestException(`/${code} is already a page of the site. Choose another URL.`);
+      const [taken] = await tx.select({ id: products.id }).from(products).where(eq(products.code, code));
+      if (taken) throw new BadRequestException(`/${code} is already used by another product. Choose another URL.`);
+
+      const sourceId = await this.productId(tx, input.copyFrom);
+      const [last] = await tx.select({ sortOrder: max(products.sortOrder) }).from(products);
+      const [product] = await tx
+        .insert(products)
+        .values({
+          code,
+          name: input.name,
+          description: input.description ?? null,
+          sortOrder: (last?.sortOrder ?? 0) + 1,
+          isActive: false,
+          createdBy: staffId,
+          updatedBy: staffId,
+        })
+        .returning({ id: products.id });
+      await this.copyConfiguration(tx, sourceId, product!.id, staffId);
+
+      await this.assertStorefrontStillWorks(tx, code);
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.product.create',
+        target: code,
+        summary: `Added ${input.name}, copied from ${input.copyFrom}`,
+        changes: { before: null, after: { code, name: input.name, copyFrom: input.copyFrom } },
+      });
+      return { code };
+    });
+  }
+
+  private async copyConfiguration(tx: Tx, sourceId: string, targetId: string, staffId: string) {
+    const groups = await tx.select().from(optionGroups).where(eq(optionGroups.productId, sourceId));
+    const newGroups = await tx
+      .insert(optionGroups)
+      .values(groups.map((g) => ({ ...copyRow(g, staffId), productId: targetId })))
+      .returning({ id: optionGroups.id, code: optionGroups.code });
+    const groupId = new Map(groups.map((g) => [g.id, newGroups.find((n) => n.code === g.code)!.id]));
+
+    const values = await tx.select().from(optionValues).where(inArray(optionValues.groupId, [...groupId.keys()]));
+    const newValues = await tx
+      .insert(optionValues)
+      .values(values.map((v) => ({ ...copyRow(v, staffId), groupId: groupId.get(v.groupId)! })))
+      .returning({ id: optionValues.id, groupId: optionValues.groupId, code: optionValues.code });
+    const valueId = new Map(values.map((v) => [v.id, newValues.find((n) => n.groupId === groupId.get(v.groupId) && n.code === v.code)!.id]));
+
+    const tiers = await tx.select().from(productQuantityTiers).where(eq(productQuantityTiers.productId, sourceId));
+    const newTiers = await tx
+      .insert(productQuantityTiers)
+      .values(tiers.map((t) => ({ ...copyRow(t, staffId), productId: targetId })))
+      .returning({ id: productQuantityTiers.id, quantity: productQuantityTiers.quantity });
+    const tierId = new Map(tiers.map((t) => [t.id, newTiers.find((n) => n.quantity === t.quantity)!.id]));
+
+    const prices = await tx.select().from(corePrices).where(inArray(corePrices.quantityTierId, [...tierId.keys()]));
+    if (prices.length) {
+      await tx.insert(corePrices).values(
+        prices.map((p) => ({
+          ...copyRow(p, staffId),
+          sizeValueId: valueId.get(p.sizeValueId)!,
+          paperValueId: valueId.get(p.paperValueId)!,
+          printedSideValueId: valueId.get(p.printedSideValueId)!,
+          quantityTierId: tierId.get(p.quantityTierId)!,
+        })),
+      );
+    }
+
+    const speeds = await tx.select().from(turnaroundOptions).where(inArray(turnaroundOptions.quantityTierId, [...tierId.keys()]));
+    if (speeds.length) {
+      await tx.insert(turnaroundOptions).values(
+        speeds.map((c) => ({
+          ...copyRow(c, staffId),
+          optionValueId: valueId.get(c.optionValueId)!,
+          quantityTierId: tierId.get(c.quantityTierId)!,
+        })),
+      );
+    }
+
+    const rules = await tx.select().from(optionValueRules).where(eq(optionValueRules.productId, sourceId));
+    if (rules.length) {
+      const newRules = await tx
+        .insert(optionValueRules)
+        .values(
+          rules.map((r) => ({
+            ...copyRow(r, staffId),
+            productId: targetId,
+            whenValueId: valueId.get(r.whenValueId)!,
+            targetGroupId: groupId.get(r.targetGroupId)!,
+          })),
+        )
+        .returning({ id: optionValueRules.id, whenValueId: optionValueRules.whenValueId, targetGroupId: optionValueRules.targetGroupId });
+      const ruleId = new Map(
+        rules.map((r) => [
+          r.id,
+          newRules.find((n) => n.whenValueId === valueId.get(r.whenValueId) && n.targetGroupId === groupId.get(r.targetGroupId))!.id,
+        ]),
+      );
+      const allowed = await tx.select().from(optionValueRuleAllowed).where(inArray(optionValueRuleAllowed.ruleId, [...ruleId.keys()]));
+      if (allowed.length) {
+        await tx.insert(optionValueRuleAllowed).values(allowed.map((a) => ({ ruleId: ruleId.get(a.ruleId)!, valueId: valueId.get(a.valueId)! })));
+      }
+    }
+
+    const templateRows = await tx.select().from(templates).where(eq(templates.productId, sourceId));
+    if (templateRows.length) await tx.insert(templates).values(templateRows.map((t) => ({ ...copyRow(t, staffId), productId: targetId })));
+    const facets = await tx.select().from(templateFacets).where(eq(templateFacets.productId, sourceId));
+    if (facets.length) await tx.insert(templateFacets).values(facets.map((f) => ({ ...copyRow(f, staffId), productId: targetId })));
+    const packages = await tx.select().from(designServiceTiers).where(eq(designServiceTiers.productId, sourceId));
+    if (packages.length) await tx.insert(designServiceTiers).values(packages.map((p) => ({ ...copyRow(p, staffId), productId: targetId })));
+  }
+
+  private async assertAnotherProductIsLive(tx: Tx, productId: string) {
+    const [other] = await tx
+      .select({ id: products.id })
+      .from(products)
+      .where(and(eq(products.isActive, true), ne(products.id, productId)))
+      .limit(1);
+    if (!other) throw new BadRequestException('At least one product must stay on the storefront. Show another product first.');
+  }
+
+  /** Edits a product. Its code stays: it is the URL search engines and open carts point to. */
+  async updateProduct(productCode: string, patch: ProductPatch, staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const [before] = await tx.select().from(products).where(eq(products.code, productCode)).for('update');
+      if (!before) throw new NotFoundException(`Product "${productCode}" not found`);
+      if (patch.isActive === false && before.isActive) await this.assertAnotherProductIsLive(tx, before.id);
+
+      await tx.update(products).set({ ...patch, updatedBy: staffId }).where(eq(products.id, before.id));
+      await this.assertStorefrontStillWorks(tx, productCode);
+
+      const changed = (Object.keys(patch) as (keyof ProductPatch)[]).filter((k) => patch[k] !== before[k]);
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.product.update',
+        target: productCode,
+        summary: `Changed ${changed.join(', ') || 'nothing'} of ${before.name}`,
+        changes: { before: Object.fromEntries(changed.map((k) => [k, before[k]])), after: Object.fromEntries(changed.map((k) => [k, patch[k]])) },
+      });
+    });
+  }
+
+  /** Placed orders keep their own copy of what was ordered, so they are not affected. */
+  async deleteProduct(productCode: string, staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const [product] = await tx.select().from(products).where(eq(products.code, productCode)).for('update');
+      if (!product) throw new NotFoundException(`Product "${productCode}" not found`);
+      if (product.isActive) await this.assertAnotherProductIsLive(tx, product.id);
+
+      await tx.delete(products).where(eq(products.id, product.id));
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.product.delete',
+        target: productCode,
+        summary: `Deleted ${product.name}`,
+        changes: { before: { code: product.code, name: product.name, isActive: product.isActive }, after: null },
       });
     });
   }

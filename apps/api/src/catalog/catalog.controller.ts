@@ -10,6 +10,12 @@ export class CatalogController {
     private readonly calendars: ProductionCalendarService,
   ) {}
 
+  /** Menu, home page and SEO text of each product page. */
+  @Get()
+  async list() {
+    return { products: await this.catalogs.listProducts() };
+  }
+
   /** Everything the storefront needs to render the configurator and price it client-side. */
   @Get(':code/configurator')
   async configurator(@Param('code') code: string) {

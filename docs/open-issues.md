@@ -43,6 +43,8 @@ Cập nhật: 2026-10-20. Khi giải quyết xong một mục: ghi quyết đị
 | O7 | **Chưa nhận EPS** (và AI lưu không bật PDF Compatible): đọc EPS cần Ghostscript, từng có lỗi chạy mã độc từ file EPS | Báo lỗi, hướng dẫn xuất PDF | Có cần nhận EPS không; nếu có thì chạy Ghostscript `-dSAFER` trong container riêng, cập nhật thường xuyên | Thấp |
 | O8 | Chặn chặt: dưới 300 DPI, RGB, Pantone đều là **lỗi**. File từ Canva bản free, Word, điện thoại gần như luôn là RGB nên sẽ bị chặn | Hướng dẫn xuất CMYK ngay ở bước upload, gợi ý dùng template hoặc gói thiết kế | Theo dõi tỉ lệ khách bỏ ở bước upload sau khi chạy thật; cân nhắc tự đổi RGB sang CMYK thay vì chặn | Trung bình |
 | O9 | **T tự chọn: bỏ Custom Size**, vì giá cố định theo tổ hợp không tính được cho kích thước tự nhập. Cần size mới thì admin thêm thành option | Đã xoá khỏi data và code | Hỏi Alex có cần size theo yêu cầu không (vd. báo giá riêng) | Cao |
+| O10 | Templates và gói thiết kế đang **copy theo từng product**, nên sửa ở một product không áp dụng sang product khác. Alex muốn dùng chung, template khớp theo size | Copy khi tạo product | Làm module template và design service dùng chung | Cao |
+| O11 | Product đang ẩn chưa xem trước được trên storefront; phải Show mới thấy trang thật. Chưa có `sitemap.xml` cho các URL product | Chưa làm | Có cần link xem trước cho admin; thêm sitemap trước khi công khai | Trung bình |
 | O7 | Kiểm tra file chưa có: chữ quá nhỏ (dưới 6pt), màu đen 4 lớp (rich black) cho chữ nhỏ, tổng mực quá cao | Chỉ các mục trong spec 6.3 | Hỏi xưởng các ngưỡng thường dùng rồi thêm vào `preflight.py` | Thấp |
 
 ## Giao diện (storefront)

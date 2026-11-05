@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router';
 import { AuthProvider, useAuth } from './auth';
-import { CatalogProvider, useCatalog } from './catalog';
+import type { AdminProduct } from './api';
+import { CatalogProvider, STOREFRONT_ORIGIN, useCatalog } from './catalog';
 import { AccountPage } from './pages/AccountPage';
 import { ActivityPage } from './pages/ActivityPage';
 import { LoginPage } from './pages/LoginPage';
@@ -12,16 +13,16 @@ import { PricingPage } from './pages/PricingPage';
 import { TurnaroundPage } from './pages/TurnaroundPage';
 import { RulesPage } from './pages/RulesPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { ProductsPage } from './pages/ProductsPage';
 import { StaffPage } from './pages/StaffPage';
 import { TemplatesPage } from './pages/TemplatesPage';
 import { DesignServicesPage } from './pages/DesignServicesPage';
 import { isHiddenPath } from './features';
 
-const STOREFRONT_URL = import.meta.env.VITE_STOREFRONT_URL ?? 'http://localhost:3000/business-cards';
-
 const ROUTES = [
   { path: '/orders', element: <OrdersPage /> },
   { path: '/orders/:number', element: <OrderDetailPage /> },
+  { path: '/products', element: <ProductsPage /> },
   { path: '/options', element: <OptionsPage /> },
   { path: '/rules', element: <RulesPage /> },
   { path: '/pricing', element: <PricingPage /> },
@@ -73,7 +74,12 @@ type Role = 'owner' | 'admin' | 'staff';
 
 /** Sidebar, grouped; `roles` hides links a role cannot use (the API enforces it too), features.ts hides unreleased pages. */
 const NAV: { section?: string; product?: true; items: { to: string; label: string; hint: string; roles?: Role[] }[] }[] = [
-  { items: [{ to: '/orders', label: 'Orders', hint: 'Payments, printing, shipping' }] },
+  {
+    items: [
+      { to: '/orders', label: 'Orders', hint: 'Payments, printing, shipping' },
+      { to: '/products', label: 'Products', hint: 'Add products, URLs and SEO' },
+    ],
+  },
   {
     // Configuration of the product picked in the sidebar (Business Cards, Postcards…).
     product: true,
@@ -127,7 +133,7 @@ function Layout() {
           })}
         </nav>
         <div className="sidebar-footer">
-          <a href={STOREFRONT_URL} target="_blank" rel="noreferrer" className="sidebar-link">
+          <a href={`${STOREFRONT_ORIGIN}/${product?.isActive ? product.code : ''}`} target="_blank" rel="noreferrer" className="sidebar-link">
             View storefront ↗
           </a>
           <NavLink to="/account" className="sidebar-user">
@@ -150,7 +156,7 @@ function Layout() {
 }
 
 /** Section title of the product pages; a picker once there is more than one product. */
-function ProductPicker({ products, current, onChange }: { products: { code: string; name: string }[]; current: string; onChange: (code: string) => void }) {
+function ProductPicker({ products, current, onChange }: { products: AdminProduct[]; current: string; onChange: (code: string) => void }) {
   const name = products.find((p) => p.code === current)?.name ?? 'Product';
   if (products.length <= 1) return <div className="sidebar-product">{name}</div>;
   return (
@@ -160,6 +166,7 @@ function ProductPicker({ products, current, onChange }: { products: { code: stri
         {products.map((p) => (
           <option key={p.code} value={p.code}>
             {p.name}
+            {p.isActive ? '' : ' (hidden)'}
           </option>
         ))}
       </select>

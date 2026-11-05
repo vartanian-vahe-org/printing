@@ -1,10 +1,12 @@
 import Link from 'next/link';
+import { getProducts } from '../../lib/api';
 import { isEnabled } from '../../lib/features';
 import { BRAND_NAME } from './SiteHeader';
 import styles from './site.module.css';
 
-export function SiteFooter() {
+export async function SiteFooter() {
   const year = new Date().getFullYear();
+  const products = await getProducts().catch(() => []);
   return (
     <footer className={styles.footer}>
       <div className={styles.footerInner}>
@@ -14,7 +16,11 @@ export function SiteFooter() {
         </div>
         <div className={styles.footerColumn}>
           <h2>Products</h2>
-          <Link href="/business-cards">Business Cards</Link>
+          {products.map((product) => (
+            <Link key={product.code} href={`/${product.code}`}>
+              {product.name}
+            </Link>
+          ))}
           <span className={styles.footerSoon}>Flyers · coming soon</span>
           <span className={styles.footerSoon}>Stickers &amp; Labels · coming soon</span>
         </div>

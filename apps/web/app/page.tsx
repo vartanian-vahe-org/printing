@@ -1,22 +1,21 @@
-import { quote, resolveSelection, sortedTiers, type Catalog } from '@printing/pricing';
+import { defaultQuantity, offeredQuantities, quote, resolveSelection, type Catalog } from '@printing/pricing';
 import type { Template } from '@printing/templates';
 import Link from 'next/link';
-import { getConfigurator, getTemplates } from '../lib/api';
+import { getConfigurator, getProducts, getTemplates } from '../lib/api';
 import { CardArt } from '../components/home/CardArt';
 import { formatCents } from '../lib/format';
 import styles from './home.module.css';
 
 export const dynamic = 'force-dynamic';
 
-const PRODUCT_CODE = 'business-cards';
 const STANDARD_CARD = { widthIn: 3.5, heightIn: 2, bleedIn: 0.125, safeIn: 0.125 };
 
-/** Cheapest tier with the default options, e.g. "From $15.80 for 50 cards". */
+/** Smallest quantity sold with the default options, e.g. "From $15.80 for 50 cards". */
 function startingPrice(catalog: Catalog): { cents: number; quantity: number } | null {
-  const tier = sortedTiers(catalog)[0];
-  if (!tier) return null;
-  const q = quote(catalog, { selection: resolveSelection(catalog, {}, tier.quantity), quantity: tier.quantity });
-  return { cents: q.totalCents, quantity: tier.quantity };
+  const quantity = offeredQuantities(catalog, resolveSelection(catalog, {}, defaultQuantity(catalog)))[0];
+  if (!quantity) return null;
+  const q = quote(catalog, { selection: resolveSelection(catalog, {}, quantity), quantity });
+  return { cents: q.totalCents, quantity };
 }
 
 
@@ -30,12 +29,17 @@ const VALUE_PROPS = [
 const COMING_SOON = ['Flyers', 'Postcards', 'Stickers & Labels', 'Signs & Banners'];
 
 export default async function HomePage() {
-  const [configurator, templates] = await Promise.all([
-    getConfigurator(PRODUCT_CODE).catch(() => null),
-    getTemplates(PRODUCT_CODE).then((r) => r.templates, () => [] as Template[]),
+  const products = await getProducts().catch(() => []);
+  // The first product leads the page; the admin sets the order.
+  const lead = products[0];
+  const [configurators, templates] = await Promise.all([
+    Promise.all(products.map((p) => getConfigurator(p.code).catch(() => null))),
+    lead ? getTemplates(lead.code).then((r) => r.templates, () => [] as Template[]) : ([] as Template[]),
   ]);
-  const catalog = configurator?.catalog ?? null;
-  const price = catalog ? startingPrice(catalog) : null;
+  const prices = configurators.map((c) => (c ? startingPrice(c.catalog) : null));
+  const catalog = configurators[0]?.catalog ?? null;
+  const price = prices[0] ?? null;
+  const leadHref = lead ? `/${lead.code}` : '#products';
   const papers = catalog?.groups.find((g) => g.code === 'paper')?.values ?? [];
   const hero = templates.slice(0, 3);
 
@@ -51,7 +55,7 @@ export default async function HomePage() {
               California shop.
             </p>
             <div className={styles.heroActions}>
-              <Link href="/business-cards" className={styles.primaryButton}>
+              <Link href={leadHref} className={styles.primaryButton}>
                 Design your business cards
               </Link>
               <a href="#templates" className={styles.secondaryButton}>
@@ -87,18 +91,23 @@ export default async function HomePage() {
         ))}
       </section>
 
-      <section className={styles.section}>
+      <section className={styles.section} id="products">
         <div className={styles.sectionHead}>
-          <h2>Shop by category</h2>
+          <h2>Shop our products</h2>
         </div>
         <div className={styles.categories}>
-          <Link href="/business-cards" className={`${styles.category} ${styles.categoryActive}`}>
-            <div className={styles.categoryImage}>
-              {templates[0] && <CardArt template={templates[0]} geometry={STANDARD_CARD} className={styles.categoryCard} />}
-            </div>
-            <span className={styles.categoryName}>Business Cards</span>
-            {price && <span className={styles.categoryMeta}>From {formatCents(price.cents)}</span>}
-          </Link>
+          {products.map((product, i) => {
+            const from = prices[i];
+            return (
+              <Link key={product.code} href={`/${product.code}`} className={`${styles.category} ${styles.categoryActive}`}>
+                <div className={styles.categoryImage}>
+                  {templates[0] && <CardArt template={templates[0]} geometry={STANDARD_CARD} className={styles.categoryCard} />}
+                </div>
+                <span className={styles.categoryName}>{product.name}</span>
+                {from && <span className={styles.categoryMeta}>From {formatCents(from.cents)}</span>}
+              </Link>
+            );
+          })}
           {COMING_SOON.map((name) => (
             <div key={name} className={styles.category} aria-disabled="true">
               <div className={`${styles.categoryImage} ${styles.categoryPlaceholder}`} />
@@ -113,13 +122,13 @@ export default async function HomePage() {
         <section className={styles.section} id="templates">
           <div className={styles.sectionHead}>
             <h2>Start from a template</h2>
-            <Link href="/business-cards" className={styles.sectionLink}>
+            <Link href={leadHref} className={styles.sectionLink}>
               Customize one →
             </Link>
           </div>
           <div className={styles.templates}>
             {templates.map((template) => (
-              <Link key={template.code} href="/business-cards" className={styles.template}>
+              <Link key={template.code} href={leadHref} className={styles.template}>
                 <CardArt template={template} geometry={STANDARD_CARD} className={styles.templateCard} label={`${template.name} business card template`} />
                 <span className={styles.templateName}>{template.name}</span>
                 {template.description && <span className={styles.templateText}>{template.description}</span>}
@@ -152,7 +161,7 @@ export default async function HomePage() {
           <h2>Ready to make your cards?</h2>
           <p>Choose your options, see the price instantly and preview your design in 3D.</p>
         </div>
-        <Link href="/business-cards" className={styles.primaryButton}>
+        <Link href={leadHref} className={styles.primaryButton}>
           Order business cards
         </Link>
       </section>

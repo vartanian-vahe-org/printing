@@ -19,20 +19,25 @@ const draft: Draft = {
 
 describe('design draft', () => {
   it('round-trips and clears', () => {
-    saveDraft(draft);
-    expect(loadDraft()).toEqual(draft);
-    clearDraft();
-    expect(loadDraft()).toBeNull();
+    saveDraft('business-cards', draft);
+    expect(loadDraft('business-cards')).toEqual(draft);
+    clearDraft('business-cards');
+    expect(loadDraft('business-cards')).toBeNull();
+  });
+
+  it('keeps a separate draft for each product', () => {
+    saveDraft('business-cards', draft);
+    expect(loadDraft('premium-cards')).toBeNull();
   });
 
   it('leaves out a logo too big for storage but keeps the rest', () => {
-    saveDraft({ ...draft, design: { ...draft.design, values: { name: 'Jamie', logo: `data:image/png;base64,${'A'.repeat(1_100_000)}` } } });
-    expect(loadDraft()?.design.values).toEqual({ name: 'Jamie' });
+    saveDraft('business-cards', { ...draft, design: { ...draft.design, values: { name: 'Jamie', logo: `data:image/png;base64,${'A'.repeat(1_100_000)}` } } });
+    expect(loadDraft('business-cards')?.design.values).toEqual({ name: 'Jamie' });
   });
 
   it('ignores broken or blocked storage', () => {
-    store.set('business-card-draft-v1', '{not json');
-    expect(loadDraft()).toBeNull();
+    store.set('business-card-draft-v1:business-cards', '{not json');
+    expect(loadDraft('business-cards')).toBeNull();
     globalThis.localStorage = {
       getItem: () => {
         throw new Error('blocked');
@@ -44,7 +49,7 @@ describe('design draft', () => {
         throw new Error('blocked');
       },
     } as unknown as Storage;
-    expect(() => saveDraft(draft)).not.toThrow();
-    expect(loadDraft()).toBeNull();
+    expect(() => saveDraft('business-cards', draft)).not.toThrow();
+    expect(loadDraft('business-cards')).toBeNull();
   });
 });

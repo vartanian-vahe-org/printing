@@ -60,11 +60,27 @@ export class CatalogService implements OnModuleInit {
     await this.redis?.del(cacheKey(productCode));
   }
 
-  private async readCatalog(productCode: string): Promise<Catalog> {
+  /** Products on the storefront, in display order. */
+  async listProducts() {
+    return this.db
+      .select({
+        code: products.code,
+        name: products.name,
+        description: products.description,
+        seoTitle: products.seoTitle,
+        seoDescription: products.seoDescription,
+      })
+      .from(products)
+      .where(eq(products.isActive, true))
+      .orderBy(asc(products.sortOrder), asc(products.name));
+  }
+
+  /** `includeHidden`: admin checks also read products that are not on the storefront yet. */
+  async readCatalog(productCode: string, { includeHidden = false } = {}): Promise<Catalog> {
     const [product] = await this.db
       .select({ id: products.id, code: products.code, name: products.name })
       .from(products)
-      .where(and(eq(products.code, productCode), eq(products.isActive, true)))
+      .where(and(eq(products.code, productCode), includeHidden ? undefined : eq(products.isActive, true)))
       .limit(1);
     if (!product) throw new NotFoundException(`Product "${productCode}" not found`);
 

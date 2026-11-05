@@ -1,5 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, errorText, type AdminCatalog, type AdminProduct } from './api';
+
+/** Where product pages live, from the "View storefront" setting. */
+export const STOREFRONT_ORIGIN = new URL(import.meta.env.VITE_STOREFRONT_URL ?? 'http://localhost:3000').origin;
 
 interface CatalogState {
   /** Every product the admin can configure (Business Cards, Postcards…). */
@@ -12,6 +15,8 @@ interface CatalogState {
   catalog: AdminCatalog | null;
   error: string | null;
   reload: () => Promise<void>;
+  /** After adding, editing or deleting a product. */
+  reloadProducts: () => Promise<void>;
 }
 
 const CatalogContext = createContext<CatalogState | null>(null);
@@ -35,32 +40,41 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   const [catalog, setCatalog] = useState<AdminCatalog | null>(null);
   const [error, setError] = useState<string | null>(null);
   const path = productCode ? `/admin/products/${productCode}` : '';
+  const pathRef = useRef(path);
+  pathRef.current = path;
 
-  useEffect(() => {
-    api<{ products: AdminProduct[] }>('/admin/products')
-      .then(({ products: list }) => {
-        setProducts(list);
-        const remembered = rememberedProduct();
-        setProductCode(list.find((p) => p.code === remembered)?.code ?? list[0]?.code ?? null);
-        if (list.length === 0) setError('No products yet.');
-      })
-      .catch((err: unknown) => setError(errorText(err)));
+  const reloadProducts = useCallback(async () => {
+    const { products: list } = await api<{ products: AdminProduct[] }>('/admin/products');
+    setProducts(list);
+    setProductCode((current) => {
+      const wanted = current ?? rememberedProduct();
+      return list.find((p) => p.code === wanted)?.code ?? list[0]?.code ?? null;
+    });
+    if (list.length === 0) setError('No products yet.');
   }, []);
 
+  useEffect(() => {
+    reloadProducts().catch((err: unknown) => setError(errorText(err)));
+  }, [reloadProducts]);
+
+  // Reads the path at call time: a save may have just deleted the product that was picked.
   const reload = useCallback(async () => {
-    if (!path) return;
+    const current = pathRef.current;
+    if (!current) return;
     try {
-      setCatalog(await api<AdminCatalog>(`${path}/catalog`));
+      const data = await api<AdminCatalog>(`${current}/catalog`);
+      if (current !== pathRef.current) return;
+      setCatalog(data);
       setError(null);
     } catch (err) {
-      setError(errorText(err));
+      if (current === pathRef.current) setError(errorText(err));
     }
-  }, [path]);
+  }, []);
 
   useEffect(() => {
     setCatalog(null);
     void reload();
-  }, [reload]);
+  }, [path, reload]);
 
   const selectProduct = useCallback((code: string) => {
     setProductCode(code);
@@ -73,7 +87,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
 
   const product = products.find((p) => p.code === productCode) ?? null;
   return (
-    <CatalogContext.Provider value={{ products, product, selectProduct, path, catalog, error, reload }}>{children}</CatalogContext.Provider>
+    <CatalogContext.Provider value={{ products, product, selectProduct, path, catalog, error, reload, reloadProducts }}>{children}</CatalogContext.Provider>
   );
 }
 

@@ -14,10 +14,17 @@ import {
 } from 'drizzle-orm/pg-core';
 import { auditColumns, id, timestamps } from './columns.js';
 
+/** `code` is also the product's storefront URL, e.g. /premium-business-cards. */
 export const products = pgTable('products', {
   id: id(),
   code: text('code').notNull().unique(),
   name: text('name').notNull(),
+  /** Shown under the name on the product page. */
+  description: text('description'),
+  /** Browser title and search result text; the name and description are used when empty. */
+  seoTitle: text('seo_title'),
+  seoDescription: text('seo_description'),
+  sortOrder: integer('sort_order').notNull().default(0),
   isActive: boolean('is_active').notNull().default(true),
   ...auditColumns,
   ...timestamps,

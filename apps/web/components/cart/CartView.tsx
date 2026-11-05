@@ -72,7 +72,7 @@ export function CartView() {
       <div className={styles.empty}>
         <h2>Your cart is empty</h2>
         <p>Design your business cards and add them here.</p>
-        <Link href="/business-cards" className={styles.primary}>
+        <Link href="/#products" className={styles.primary}>
           Design business cards
         </Link>
       </div>
@@ -123,7 +123,7 @@ export function CartView() {
             Checkout
           </Link>
         )}
-        <Link href="/business-cards" className={styles.secondary}>
+        <Link href="/#products" className={styles.secondary}>
           Continue shopping
         </Link>
       </aside>
@@ -180,7 +180,7 @@ function CartRow({
               ))}
             </select>
           </label>
-          <Link href={`/business-cards?edit=${item.id}`} className={styles.link}>
+          <Link href={`/${item.productCode}?edit=${item.id}`} className={styles.link}>
             Edit
           </Link>
           <button type="button" className={styles.link} onClick={onRemove} disabled={busy}>

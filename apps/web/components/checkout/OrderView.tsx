@@ -241,7 +241,7 @@ export function OrderView({ number }: { number: number }) {
         </p>
       )}
 
-      <Link href="/business-cards" className={styles.link}>
+      <Link href="/#products" className={styles.link}>
         Continue shopping
       </Link>
     </div>

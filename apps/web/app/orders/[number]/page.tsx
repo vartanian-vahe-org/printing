@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { OrderView } from '../../../components/checkout/OrderView';
-import styles from '../../business-cards/page.module.css';
+import styles from '../../page.module.css';
 
 export const metadata: Metadata = {
   title: 'Your order',

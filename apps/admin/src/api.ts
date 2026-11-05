@@ -132,8 +132,13 @@ export interface AdminDesignService {
 }
 
 export interface AdminProduct {
+  /** Also the storefront URL. */
   code: string;
   name: string;
+  description: string | null;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  sortOrder: number;
   isActive: boolean;
 }
 

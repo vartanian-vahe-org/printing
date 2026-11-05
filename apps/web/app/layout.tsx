@@ -4,6 +4,9 @@ import { BRAND_NAME, SiteHeader } from '../components/site/SiteHeader';
 import { SiteFooter } from '../components/site/SiteFooter';
 import './globals.css';
 
+// The menu lists the products, which the admin can change at any time.
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: {
     default: `${BRAND_NAME} | Custom Business Cards Printed in California`,

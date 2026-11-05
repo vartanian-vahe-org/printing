@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { CartView } from '../../components/cart/CartView';
-import styles from '../business-cards/page.module.css';
+import styles from '../page.module.css';
 
 export const metadata: Metadata = {
   title: 'Your cart',

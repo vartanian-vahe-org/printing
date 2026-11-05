@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import { AccountView } from '../../components/account/AccountView';
-import styles from '../business-cards/page.module.css';
+import styles from '../page.module.css';
 
 export const metadata: Metadata = { title: 'Your account', robots: { index: false } };
 

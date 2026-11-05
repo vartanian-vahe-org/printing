@@ -118,14 +118,14 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
   /** Upload: a proof after ordering, or print right away. */
   const [uploadProof, setUploadProof] = useState<UploadProof>('send');
   const pdf = usePdfFiles();
-  /** Cart item being edited (/business-cards?edit=<id>), saved back instead of added. */
+  /** Cart item being edited (/<product>?edit=<id>), saved back instead of added. */
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // Unsaved design from an earlier visit (U7); saved as the customer works, cleared once in the cart.
   const [draftReady, setDraftReady] = useState(false);
   useEffect(() => {
     if (editingItemId()) return;
-    const draft = loadDraft();
+    const draft = loadDraft(catalog.product.code);
     if (draft && (!draft.design.templateCode || templates.some((t) => t.code === draft.design.templateCode))) {
       setState(settle(catalog, draft.state.selection, draft.state.quantity));
       setDesign(draft.design);
@@ -140,7 +140,7 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
   }, [catalog, templates, designServices]);
   useEffect(() => {
     if (!draftReady || editingId) return;
-    const timer = setTimeout(() => saveDraft({ state, design, mode: method ?? 'template', step, tierCode, brief }), 400);
+    const timer = setTimeout(() => saveDraft(catalog.product.code, { state, design, mode: method ?? 'template', step, tierCode, brief }), 400);
     return () => clearTimeout(timer);
   }, [draftReady, editingId, state, design, method, step, tierCode, brief]);
 
@@ -534,7 +534,7 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
               {isEnabled('cart') && (
                 <AddToCart
                   editingItemId={editingId}
-                  onAdded={clearDraft}
+                  onAdded={() => clearDraft(catalog.product.code)}
                   productCode={catalog.product.code}
                   configuration={{
                     selection: currentQuote.selection,

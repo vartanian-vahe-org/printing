@@ -365,6 +365,7 @@ Phụ phí trong `0003` được tính sẵn ra cent cho từng mức số lư�
 | Product → Option groups | Danh sách nhóm, đổi thứ tự, đổi label, kiểu hiển thị |
 | Option group → Values | Thêm/sửa/ẩn value, chọn mặc định, sửa attributes (form theo loại nhóm) |
 | Options → Quantity | Thêm, sửa số, ẩn, đặt mặc định, xóa số lượng |
+| Products | Thêm product bằng cách copy toàn bộ từ product có sẵn; sửa tên, mô tả, SEO; đổi thứ tự, ẩn/hiện, xóa |
 | **Paper detail** | Tab "Coatings available" (checkbox), tab "Turnaround available". Lưu vào `option_value_rules`. |
 | Coating detail | Tab "Turnaround available" |
 | Size detail | Kích thước, bleed, safe zone. |

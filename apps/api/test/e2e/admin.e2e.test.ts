@@ -238,6 +238,101 @@ describe('admin catalog: quantities', () => {
   });
 });
 
+describe('admin products', () => {
+  const copy = `${base}/admin/products/e2e-premium`;
+  const publicList = async () => (await call('GET', `${base}/products`, undefined, false)).body.products.map((p: any) => p.code);
+  const quote = (productCode: string) => call('POST', `${base}/quotes`, { productCode, selection: defaultSelection, quantity: 500 }, false);
+
+  afterAll(async () => {
+    await call('PATCH', admin, { isActive: true });
+    await call('DELETE', copy);
+  });
+
+  it('copies a whole product and keeps it hidden', async () => {
+    const res = await call('POST', `${base}/admin/products`, { name: 'E2E Premium', code: 'e2e-premium', description: 'Thick cards', copyFrom: 'business-cards' });
+    expect(res.status).toBe(201);
+    expect(res.body.code).toBe('e2e-premium');
+
+    const [source, target] = [(await call('GET', `${admin}/catalog`)).body, (await call('GET', `${copy}/catalog`)).body];
+    expect(target.product).toEqual({ code: 'e2e-premium', name: 'E2E Premium' });
+    const shape = (c: any) => ({
+      groups: c.groups.map((g: any) => ({ ...g, values: g.values.map(({ updatedAt: _u, ...v }: any) => v) })),
+      rules: c.rules,
+      tiers: c.quantityTiers.map(({ id: _i, productId: _p, createdAt: _c, updatedAt: _u, createdBy: _b, updatedBy: _d, ...t }: any) => t),
+      corePrices: [...c.corePrices].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+      turnarounds: [...c.turnarounds].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+      templates: c.templates.map((t: any) => t.code),
+      facets: c.templateFacets.map((f: any) => f.code),
+      designServices: c.designServices.map((d: any) => d.code),
+    });
+    expect(shape(target)).toEqual(shape(source));
+
+    expect(await publicList()).not.toContain('e2e-premium');
+    expect((await call('GET', `${base}/products/e2e-premium/configurator`, undefined, false)).status).toBe(404);
+  });
+
+  it('edits a hidden product without touching the one it came from', async () => {
+    expect((await call('PUT', `${copy}/pricing`, { corePrices: [{ ...defaultCore, quantity: 500, priceCents: 5999 }] })).status).toBe(204);
+    expect((await call('DELETE', `${copy}/groups/paper/values/16pt`)).status).toBe(204);
+    const source = (await call('GET', `${admin}/catalog`)).body;
+    expect(source.corePrices.find((p: any) => p.size === defaultCore.size && p.paper === '14pt' && p.printedSide === 'front_back' && p.quantity === 500).priceCents).toBe(3948);
+    expect(source.groups.find((g: any) => g.code === 'paper').values.map((v: any) => v.code)).toContain('16pt');
+  });
+
+  it('shows the product with its own URL, text and prices', async () => {
+    const seo = { seoTitle: 'Premium Cards', seoDescription: 'Thick premium cards' };
+    expect((await call('PATCH', copy, { isActive: true, ...seo })).status).toBe(204);
+    const products = (await call('GET', `${base}/products`, undefined, false)).body.products;
+    expect(products.find((p: any) => p.code === 'e2e-premium')).toEqual({ code: 'e2e-premium', name: 'E2E Premium', description: 'Thick cards', ...seo });
+    expect((await quote('e2e-premium')).body.corePriceCents).toBe(5999);
+    expect((await quote('business-cards')).body.corePriceCents).toBe(3948);
+  });
+
+  it('a cart holding a hidden product asks the customer to choose again', async () => {
+    const design = { mode: 'template', templateCode: 'classic', values: { name: 'Jamie' } };
+    const added = await call('POST', `${base}/cart/items`, { productCode: 'e2e-premium', configuration: { selection: defaultSelection, quantity: 500 }, design }, false);
+    expect(added.status).toBe(201);
+    const cart = added.headers.get('set-cookie')!.split(';')[0]!;
+
+    await call('PATCH', copy, { isActive: false });
+    const view = (await (await fetch(`${base}/cart`, { headers: { cookie: cart } })).json()) as any;
+    expect(view.hasUnavailableItems).toBe(true);
+    expect(view.items[0].totalCents).toBeNull();
+    await call('PATCH', copy, { isActive: true });
+  });
+
+  it('refuses a URL that is taken, reserved or malformed', async () => {
+    const add = (code: string) => call('POST', `${base}/admin/products`, { name: 'X', code, copyFrom: 'business-cards' });
+    expect((await add('e2e-premium')).body.message).toMatch(/already used/);
+    expect((await add('checkout')).body.message).toMatch(/already a page/);
+    expect((await add('Bad URL')).status).toBe(400);
+    expect((await call('POST', `${base}/admin/products`, { name: 'X', copyFrom: 'nope' })).status).toBe(404);
+  });
+
+  it('makes the URL from the name, and deletes the product', async () => {
+    const res = await call('POST', `${base}/admin/products`, { name: 'E2E Silk Cards!', copyFrom: 'business-cards' });
+    expect(res.body.code).toBe('e2e-silk-cards');
+    expect((await call('DELETE', `${base}/admin/products/e2e-silk-cards`)).status).toBe(204);
+    expect((await call('GET', `${base}/admin/products/e2e-silk-cards/catalog`)).status).toBe(404);
+  });
+
+  it('keeps at least one product on the storefront', async () => {
+    expect((await call('PATCH', admin, { isActive: false })).status).toBe(204);
+    expect(await publicList()).not.toContain('business-cards');
+    expect((await quote('business-cards')).status).toBe(404);
+
+    const hide = await call('PATCH', copy, { isActive: false });
+    expect(hide.status).toBe(400);
+    expect(hide.body.message).toMatch(/At least one product/);
+    expect((await call('DELETE', copy)).status).toBe(400);
+
+    expect((await call('PATCH', admin, { isActive: true })).status).toBe(204);
+    expect((await quote('business-cards')).status).toBe(200);
+    expect((await call('DELETE', copy)).status).toBe(204);
+    expect(await publicList()).toEqual(['business-cards']);
+  });
+});
+
 describe('admin catalog: turnaround table', () => {
   const selection = { size: 'std_3_5x2', paper: '14pt', coating: 'matte_both', printed_side: 'front_back', corners: 'square' };
   const quote = (turnaround: string, quantity: number) =>
@@ -383,7 +478,7 @@ describe('admin products and design packages', () => {
   it('lists the products to configure', async () => {
     const res = await call('GET', `${base}/admin/products`);
     expect(res.status).toBe(200);
-    expect(res.body.products).toContainEqual({ code: 'business-cards', name: expect.any(String), isActive: true });
+    expect(res.body.products).toContainEqual(expect.objectContaining({ code: 'business-cards', name: expect.any(String), isActive: true }));
     expect((await call('GET', `${base}/admin/products`, undefined, false)).status).toBe(401);
     expect((await call('GET', `${admin}/catalog`)).body.product).toEqual({ code: 'business-cards', name: expect.any(String) });
   });

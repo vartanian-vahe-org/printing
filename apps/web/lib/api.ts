@@ -1,5 +1,14 @@
 import type { Catalog, ProductionCalendar, Selection } from '@printing/pricing';
 import type { DesignServiceTier, Template, TemplateFacet } from '@printing/templates';
+import { cache } from 'react';
+
+export interface StorefrontProduct {
+  code: string;
+  name: string;
+  description: string | null;
+  seoTitle: string | null;
+  seoDescription: string | null;
+}
 
 export interface ConfiguratorResponse {
   catalog: Catalog;
@@ -15,6 +24,15 @@ function serverHeaders(): HeadersInit {
   const secret = process.env.API_PROXY_SECRET;
   return secret ? { 'x-proxy-secret': secret } : {};
 }
+
+/** Products on the storefront, in display order (server-side only, read once per page request). */
+export const getProducts = cache(async (): Promise<StorefrontProduct[]> => {
+  const apiUrl = process.env.API_INTERNAL_URL;
+  if (!apiUrl) throw new Error('API_INTERNAL_URL is not set');
+  const res = await fetch(`${apiUrl}/products`, { cache: 'no-store', headers: serverHeaders() });
+  if (!res.ok) throw new Error(`Products request failed with HTTP ${res.status}`);
+  return ((await res.json()) as { products: StorefrontProduct[] }).products;
+});
 
 /** Server-side only: the API is reached on the internal Docker network (or its public URL from Vercel). */
 export async function getConfigurator(productCode: string): Promise<ConfiguratorResponse> {

@@ -69,11 +69,13 @@ On startup the `migrate` service applies all database migrations (schema + defau
 | POST | `/account/password/forgot` · `/password/reset` | Password reset by email (always 202; link works once, 60 min) |
 | GET · POST | `/account/orders` · `/account/orders/:number/reorder` | Order history with private order links · put a past order back in the cart |
 | POST | `/admin/auth/login` · `/logout` · GET `/me` | Admin session (httpOnly cookie, 5 failed attempts / 15 min limit) |
+| GET | `/products` | Products on the storefront, with their page and SEO text |
 | GET | `/admin/products/:code/catalog` | Full configuration incl. hidden values (admin) |
 | PATCH | `/admin/products/:code/groups/:group/values/:value` | Edit label, description, order, active, default, attributes (admin) |
 | PUT | `/admin/products/:code/rules` | Set or remove a rule (admin) |
 | PUT | `/admin/products/:code/pricing` | Core prices, add-on percents, tier visibility/default (admin) |
 | POST · PATCH · DELETE | `/admin/products/:code/quantities` · `/:quantity` | Add, renumber or delete a quantity (admin) |
+| POST · PATCH · DELETE | `/admin/products` · `/:code` | Add a product as a copy of another, edit its text, order and visibility, delete it (admin) |
 | PATCH | `/admin/products/:code/templates/:template` | Show or hide a template (admin) |
 
 Admin writes run in a transaction and are rejected if the storefront could no longer build and price a default configuration.

@@ -76,6 +76,32 @@ const pricingSchema = z.object({
     .optional(),
 });
 
+const productCreateSchema = z
+  .object({
+    /** The storefront URL; made from the name when left out. */
+    code: z
+      .string()
+      .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, 'Use lowercase letters, numbers and dashes')
+      .max(60)
+      .optional(),
+    name: z.string().trim().min(1).max(120),
+    description: z.string().trim().max(500).nullable().optional(),
+    copyFrom: code,
+  })
+  .strict();
+
+const productPatchSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    description: z.string().trim().max(500).nullable().optional(),
+    seoTitle: z.string().trim().max(70).nullable().optional(),
+    seoDescription: z.string().trim().max(170).nullable().optional(),
+    sortOrder: z.number().int().min(0).max(10_000).optional(),
+    isActive: z.boolean().optional(),
+  })
+  .strict()
+  .refine((p) => Object.keys(p).length > 0, { message: 'Nothing to update' });
+
 const quantitySchema = z.object({ quantity: z.number().int().min(1).max(1_000_000) }).strict();
 
 const turnaroundSchema = z.object({
@@ -315,10 +341,36 @@ export class AdminCatalogController {
 @Controller('admin/products')
 @UseGuards(AdminGuard)
 export class AdminProductsController {
-  constructor(private readonly catalog: AdminCatalogService) {}
+  constructor(
+    private readonly catalog: AdminCatalogService,
+    private readonly storefront: CatalogService,
+  ) {}
 
   @Get()
   list() {
     return this.catalog.listProducts();
+  }
+
+  @Post()
+  create(@Body(new ZodValidationPipe(productCreateSchema)) body: z.infer<typeof productCreateSchema>, @Req() request: AdminRequest) {
+    return this.catalog.createProduct(body, request.staff!.id);
+  }
+
+  @Patch(':code')
+  @HttpCode(204)
+  async update(
+    @Param('code') productCode: string,
+    @Body(new ZodValidationPipe(productPatchSchema)) body: z.infer<typeof productPatchSchema>,
+    @Req() request: AdminRequest,
+  ) {
+    await this.catalog.updateProduct(productCode, body, request.staff!.id);
+    await this.storefront.invalidate(productCode);
+  }
+
+  @Delete(':code')
+  @HttpCode(204)
+  async remove(@Param('code') productCode: string, @Req() request: AdminRequest) {
+    await this.catalog.deleteProduct(productCode, request.staff!.id);
+    await this.storefront.invalidate(productCode);
   }
 }

@@ -48,6 +48,47 @@
   color: var(--color-accent);
 }
 
+.navMenu {
+  position: relative;
+}
+
+.navDropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: -14px;
+  z-index: 20;
+  min-width: 240px;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #e6e6e3;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
+.navMenu:hover .navDropdown,
+.navMenu:focus-within .navDropdown {
+  display: block;
+}
+
+.navDropdown:empty {
+  display: none !important;
+}
+
+.navDropdown a {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--color-text);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.navDropdown a:hover {
+  background: #f4f4f1;
+  color: var(--color-accent);
+}
+
 .navSoon {
   color: #a2a2a7;
   font-size: 15px;
@@ -171,6 +212,11 @@
     flex-basis: 100%;
     gap: 16px;
     overflow-x: auto;
+  }
+
+  /* The scrolling menu would clip it: "Products" goes to the list on the home page instead. */
+  .navDropdown {
+    display: none !important;
   }
 
   .accountLink {
