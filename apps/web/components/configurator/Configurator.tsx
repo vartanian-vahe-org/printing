@@ -1,14 +1,14 @@
 'use client';
 
 import {
-  CUSTOM_SIZE_VALUE,
+  CORE_GROUPS,
   getAllowedValues,
   productionSchedule,
-  resolveSelection,
   SIZE_GROUP,
   sortedGroups,
   TURNAROUND_GROUP,
   type Catalog,
+  type OptionGroup,
   type ProductionCalendar,
   type Selection,
 } from '@printing/pricing';
@@ -26,14 +26,13 @@ import {
   type BriefState,
 } from '../../lib/cart-design';
 import {
-  changeCustomSize,
   changeOption,
   changeQuantity,
-  customSizeAttributes,
   groupLabel,
   initialState,
   optionDeltas,
   priceOf,
+  settle,
   speedChoices,
   tierPrices,
   valueLabel,
@@ -52,7 +51,6 @@ import {
 import { editingItemId, loadItemToEdit } from '../../lib/edit-cart-item';
 import { isEnabled } from '../../lib/features';
 import { loadTemplateFonts } from '../../lib/template-fonts';
-import { formatInches } from '../../lib/format';
 import { formatShopDate } from '../../lib/schedule-text';
 import { useNow } from '../../lib/use-now';
 import { worstLevel } from '../../lib/pdf-checks';
@@ -70,7 +68,6 @@ import { DesignReview } from './DesignReview';
 import { ProofChoice } from './ProofChoice';
 import type { UploadProof } from '../../lib/cart';
 import styles from './configurator.module.css';
-import { CustomSizeInputs } from './CustomSizeInputs';
 import { OptionSelect } from './OptionSelect';
 import { OptionTiles } from './OptionTiles';
 import { PriceSummary } from './PriceSummary';
@@ -130,7 +127,7 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
     if (editingItemId()) return;
     const draft = loadDraft();
     if (draft && (!draft.design.templateCode || templates.some((t) => t.code === draft.design.templateCode))) {
-      setState({ ...draft.state, selection: resolveSelection(catalog, draft.state.selection, draft.state.quantity) });
+      setState(settle(catalog, draft.state.selection, draft.state.quantity));
       setDesign(draft.design);
       const draftMethod = draft.step ? draft.mode : null;
       setMethod(draftMethod);
@@ -158,11 +155,7 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
         }
         const { item, logoDataUrl, files } = loaded;
         setEditingId(item.id);
-        setState((s) => ({
-          selection: resolveSelection(catalog, item.configuration.selection, item.quantity),
-          quantity: item.quantity,
-          customSize: item.configuration.customSize ?? s.customSize,
-        }));
+        setState(settle(catalog, item.configuration.selection, item.quantity));
         const itemDesign = item.design;
         if (itemDesign.mode === 'template') {
           const editedTemplate = templates.find((t) => t.code === itemDesign.templateCode);
@@ -204,13 +197,13 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
   }, []);
 
   const groups = useMemo(() => sortedGroups(catalog), [catalog]);
-  const optionGroups = groups.filter((g) => g.code !== TURNAROUND_GROUP);
+  const coreGroups = groups.filter((g) => (CORE_GROUPS as readonly string[]).includes(g.code));
+  const addonGroups = groups.filter((g) => !coreGroups.includes(g) && g.code !== TURNAROUND_GROUP);
   const turnaroundGroup = groups.find((g) => g.code === TURNAROUND_GROUP) ?? null;
   const allowed = useMemo(() => getAllowedValues(catalog, state.selection, state.quantity), [catalog, state.selection, state.quantity]);
   const currentQuote = useMemo(() => priceOf(catalog, state), [catalog, state]);
   const deltas = useMemo(() => optionDeltas(catalog, state, allowed), [catalog, state, allowed]);
   const tiers = useMemo(() => tierPrices(catalog, state), [catalog, state]);
-  const customAttrs = useMemo(() => customSizeAttributes(catalog), [catalog]);
   const speeds = useMemo(() => speedChoices(catalog, state), [catalog, state]);
   const now = useNow();
   // "Ships Thu, Nov 6" under each speed (production days until mounted, see useNow).
@@ -295,12 +288,27 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
   const backFileReady = backMode !== 'separate' || !pdf.files.back || pdf.files.back.status === 'ready';
   const uploadReady =
     pdf.files.front?.status === 'ready' && backFileReady && worstLevel([...pdfSources.checks.front, ...pdfSources.checks.back]) !== 'error';
-  const sizeName = size.code === CUSTOM_SIZE_VALUE ? `Custom ${formatInches(size.widthIn)} × ${formatInches(size.heightIn)}` : valueLabel(catalog, SIZE_GROUP, size.code);
+  const sizeName = valueLabel(catalog, SIZE_GROUP, size.code);
   const reachable: Record<Step, boolean> = {
     options: true,
     design: true,
     details: method === 'template' ? Boolean(template) : method === 'service' ? Boolean(tier) : method === 'upload' ? uploadReady : false,
   };
+
+  const optionField = (group: OptionGroup) => (
+    <div key={group.code} className={styles.field}>
+      <OptionSelect
+        group={group}
+        allowed={allowed[group.code] ?? []}
+        value={state.selection[group.code] ?? ''}
+        deltas={deltas[group.code] ?? {}}
+        onChange={(value) => {
+          const result = changeOption(catalog, state, group.code, value);
+          apply(result.state, result.autoChanges);
+        }}
+      />
+    </div>
+  );
 
   const preview = (
     <section className={styles.previewColumn} aria-label="Card preview">
@@ -342,31 +350,10 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
 
           <section className={`${styles.column} ${styles.mainColumn}`} aria-label="Card options">
             <div className={styles.columnBody}>
-              <h2 className={styles.columnTitle}>Options</h2>
-              {optionGroups.map((group) => (
-                <div key={group.code} className={styles.field}>
-                  <OptionSelect
-                    group={group}
-                    allowed={allowed[group.code] ?? []}
-                    value={state.selection[group.code] ?? ''}
-                    deltas={deltas[group.code] ?? {}}
-                    onChange={(value) => {
-                      const result = changeOption(catalog, state, group.code, value);
-                      apply(result.state, result.autoChanges);
-                    }}
-                  />
-                  {group.code === SIZE_GROUP && state.selection[SIZE_GROUP] === CUSTOM_SIZE_VALUE && customAttrs && (
-                    <CustomSizeInputs
-                      attributes={customAttrs}
-                      value={state.customSize}
-                      onChange={(customSize) => {
-                        const result = changeCustomSize(catalog, state, customSize);
-                        apply(result.state, result.autoChanges);
-                      }}
-                    />
-                  )}
-                </div>
-              ))}
+              <h2 className={styles.columnTitle}>Your card</h2>
+              {coreGroups.map(optionField)}
+              {addonGroups.length > 0 && <h2 className={styles.columnTitle}>Add-ons</h2>}
+              {addonGroups.map(optionField)}
               <AutoChangeNotice catalog={catalog} changes={autoChanges} />
             </div>
           </section>
@@ -552,7 +539,6 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
                   configuration={{
                     selection: currentQuote.selection,
                     quantity: state.quantity,
-                    ...(size.code === CUSTOM_SIZE_VALUE ? { customSize: state.customSize } : {}),
                   }}
                   logoDataUrl={method === 'template' && template ? (design.values[logoFieldKey(template) ?? ''] || null) : null}
                   prepareDesign={(logoKey) =>

@@ -12,7 +12,7 @@ beforeEach(() => {
 });
 
 const draft: Draft = {
-  state: { selection: { size: 'std_3_5x2' }, quantity: 500, customSize: { widthIn: 3, heightIn: 2.5 } },
+  state: { selection: { size: 'std_3_5x2' }, quantity: 500 },
   design: { templateCode: 'classic', values: { name: 'Jamie', logo: 'data:image/png;base64,AAAA' } },
   mode: 'template',
 };

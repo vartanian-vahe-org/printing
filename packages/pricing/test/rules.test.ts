@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { getAllowedValues, resolveSelection, UnsatisfiableSelectionError } from '../src/rules.js';
-import type { Catalog } from '../src/types.js';
+import { getAllowedValues, nearestQuantity, offeredQuantities, resolveSelection, UnsatisfiableSelectionError } from '../src/rules.js';
+import type { Catalog, CorePrice } from '../src/types.js';
 import { businessCards, defaultSelection } from './fixtures/business-cards.js';
 
 describe('getAllowedValues', () => {
@@ -44,7 +44,7 @@ describe('getAllowedValues', () => {
 
   it('does not restrict groups without triggered rules', () => {
     const allowed = getAllowedValues(businessCards, defaultSelection, 500);
-    expect(allowed.size).toEqual(['std_3_5x2', 'square_2_5', 'slim_3_5x1_75', 'custom']);
+    expect(allowed.size).toEqual(['std_3_5x2', 'square_2_5', 'slim_3_5x1_75']);
     expect(allowed.turnaround).toEqual(['economy', 'standard', 'express', 'rush']);
   });
 
@@ -102,5 +102,32 @@ describe('resolveSelection', () => {
       rules: [...businessCards.rules, { whenGroup: 'paper', whenValue: '14pt', targetGroup: 'corners', allowed: [] }],
     };
     expect(() => resolveSelection(broken, defaultSelection, 500)).toThrow(UnsatisfiableSelectionError);
+  });
+});
+
+describe('core combinations without a price', () => {
+  const without = (drop: (p: CorePrice) => boolean) => ({ ...businessCards, corePrices: businessCards.corePrices.filter((p) => !drop(p)) });
+
+  it('narrows paper by size and printed sides by size and paper', () => {
+    const catalog = without((p) => (p.size === 'slim_3_5x1_75' && p.paper === '17pt_uncoated') || (p.paper === '16pt' && p.printedSide === 'same_both'));
+    const allowed = getAllowedValues(catalog, { ...defaultSelection, size: 'slim_3_5x1_75', paper: '16pt' }, 500);
+    expect(allowed.paper).toEqual(['14pt', '16pt']);
+    expect(allowed.printed_side).toEqual(['front_back', 'front_only']);
+    expect(allowed.size).toEqual(['std_3_5x2', 'square_2_5', 'slim_3_5x1_75']);
+  });
+
+  it('keeps the size the customer picked and moves the paper', () => {
+    const catalog = without((p) => p.size === 'slim_3_5x1_75' && p.paper === '17pt_uncoated');
+    const selection = resolveSelection(catalog, { ...defaultSelection, size: 'slim_3_5x1_75', paper: '17pt_uncoated', coating: 'uncoated_both' }, 500);
+    expect(selection).toMatchObject({ size: 'slim_3_5x1_75', paper: '14pt' });
+  });
+
+  it('lists the quantities sold and finds the nearest one', () => {
+    const catalog = without((p) => p.paper === '16pt' && (p.quantity === 500 || p.quantity === 10000));
+    const selection = { ...defaultSelection, paper: '16pt' };
+    expect(offeredQuantities(catalog, selection)).toEqual([50, 100, 250, 1000, 2500, 5000]);
+    expect(nearestQuantity(catalog, selection, 250)).toBe(250);
+    expect(nearestQuantity(catalog, selection, 500)).toBe(1000);
+    expect(nearestQuantity(catalog, selection, 10000)).toBe(5000);
   });
 });

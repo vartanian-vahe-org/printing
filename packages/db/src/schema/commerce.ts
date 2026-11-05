@@ -46,7 +46,7 @@ export const cartItems = pgTable(
       .notNull()
       .references(() => carts.id, { onDelete: 'cascade' }),
     productCode: text('product_code').notNull(),
-    /** { selection, quantity, customSize? } as accepted by POST /quotes. */
+    /** { selection, quantity } as accepted by POST /quotes. */
     configuration: jsonb('configuration').$type<Record<string, unknown>>().notNull(),
     /** { mode: 'template' | 'upload', templateCode?, values?, files? } */
     design: jsonb('design').$type<Record<string, unknown>>().notNull(),

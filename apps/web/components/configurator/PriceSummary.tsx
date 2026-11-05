@@ -11,10 +11,7 @@ interface Props {
 }
 
 export function PriceSummary({ quote, designFee = null }: Props) {
-  const upcharges = quote.lines.filter((line) => line.upchargeCents !== 0);
-  // Turnaround is a percent of the price after the size adjustment, so it is listed after it.
-  const addOns = upcharges.filter((line) => line.percent === undefined);
-  const speed = upcharges.filter((line) => line.percent !== undefined);
+  const addOns = quote.lines.filter((line) => line.upchargeCents !== 0);
   const totalCents = quote.totalCents + (designFee?.priceCents ?? 0);
 
   return (
@@ -31,24 +28,10 @@ export function PriceSummary({ quote, designFee = null }: Props) {
         <summary>Price breakdown</summary>
         <dl>
           <div>
-            <dt>Base price ({qty.format(quote.quantity)} cards)</dt>
-            <dd>{formatCents(quote.basePriceCents)}</dd>
+            <dt>{qty.format(quote.quantity)} cards</dt>
+            <dd>{formatCents(quote.corePriceCents)}</dd>
           </div>
           {addOns.map((line) => (
-            <div key={line.group}>
-              <dt>
-                {line.groupLabel}: {line.valueLabel}
-              </dt>
-              <dd>{formatDelta(line.upchargeCents)}</dd>
-            </div>
-          ))}
-          {quote.size.priceMultiplier !== 1 && (
-            <div>
-              <dt>Size adjustment</dt>
-              <dd>× {quote.size.priceMultiplier.toFixed(2)}</dd>
-            </div>
-          )}
-          {speed.map((line) => (
             <div key={line.group}>
               <dt>
                 {line.groupLabel}: {line.valueLabel}

@@ -224,7 +224,7 @@ function useDesignPreview(item: CartItem, product: ProductData | null): string |
     let cancelled = false;
     void (async () => {
       await loadTemplateFonts().catch(() => undefined);
-      const size = resolveSize(product.catalog, item.configuration.selection.size ?? '', item.configuration.customSize);
+      const size = resolveSize(product.catalog, item.configuration.selection.size ?? '');
       const geometry = { widthIn: size.widthIn, heightIn: size.heightIn, bleedIn: size.bleedIn, safeIn: size.safeIn };
       // The logo comes from storage through a short-lived link.
       const logoField = template.layout.fields.find((f) => f.type === 'image')?.key;

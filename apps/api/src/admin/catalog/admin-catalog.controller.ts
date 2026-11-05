@@ -6,7 +6,6 @@ import { CatalogService } from '../../catalog/catalog.service.js';
 import { AdminCatalogService } from './admin-catalog.service.js';
 
 const code = z.string().min(1).max(100);
-const cents = z.number().int().min(-1_000_000).max(10_000_000);
 
 const valuePatchSchema = z
   .object({
@@ -31,7 +30,7 @@ const valueCreateSchema = z
     label: z.string().trim().min(1).max(120),
     description: z.string().trim().max(300).nullable().optional(),
     attributes: z.record(z.string(), z.unknown()),
-    /** Existing value of the same group whose upcharges and rules the new one starts with. */
+    /** Existing value of the same group whose prices and rules the new one starts with. */
     copyFrom: code.optional(),
   })
   .strict();
@@ -49,7 +48,6 @@ const pricingSchema = z.object({
       z
         .object({
           quantity: z.number().int().positive(),
-          basePriceCents: z.number().int().min(0).max(10_000_000).optional(),
           isActive: z.boolean().optional(),
           isDefault: z.boolean().optional(),
         })
@@ -57,9 +55,24 @@ const pricingSchema = z.object({
     )
     .max(100)
     .optional(),
-  upcharges: z
-    .array(z.object({ group: code, value: code, quantity: z.number().int().positive(), upchargeCents: cents }).strict())
-    .max(2000)
+  corePrices: z
+    .array(
+      z
+        .object({
+          size: code,
+          paper: code,
+          printedSide: code,
+          quantity: z.number().int().positive(),
+          /** null: this combination is no longer sold at this quantity. */
+          priceCents: z.number().int().min(1).max(10_000_000).nullable(),
+        })
+        .strict(),
+    )
+    .max(5000)
+    .optional(),
+  addons: z
+    .array(z.object({ group: code, value: code, percent: z.number().min(-90).max(500) }).strict())
+    .max(500)
     .optional(),
 });
 

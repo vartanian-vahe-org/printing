@@ -2,18 +2,15 @@
  * Pure configurator state logic for the homepage (no React), built on @printing/pricing.
  */
 import {
-  CUSTOM_SIZE_VALUE,
+  corePriceAt,
+  nearestQuantity,
   quote,
   resolveSelection,
-  resolveSize,
   ruleAllowedValues,
-  SIZE_GROUP,
   sortedTiers,
   TURNAROUND_GROUP,
   turnaroundAt,
   type Catalog,
-  type CustomSize,
-  type CustomSizeAttributes,
   type Quote,
   type Selection,
 } from '@printing/pricing';
@@ -21,9 +18,10 @@ import {
 export interface ConfiguratorState {
   selection: Selection;
   quantity: number;
-  /** Kept even when a preset size is selected, so switching back to Custom restores it. */
-  customSize: CustomSize;
 }
+
+/** AutoChange.group of a quantity moved because the new options are not sold at the old one. */
+export const QUANTITY_CHANGE = 'quantity';
 
 /** A value the engine changed automatically because of a rule (shown to the customer). */
 export interface AutoChange {
@@ -32,30 +30,20 @@ export interface AutoChange {
   to: string;
 }
 
-/** Starting custom size: 3" x 2.5" (inside the 2"-4" range and not equal to any preset). */
-const INITIAL_CUSTOM_SIZE: CustomSize = { widthIn: 3, heightIn: 2.5 };
-
-export function customSizeAttributes(catalog: Catalog): CustomSizeAttributes | null {
-  const value = catalog.groups
-    .find((g) => g.code === SIZE_GROUP)
-    ?.values.find((v) => v.code === CUSTOM_SIZE_VALUE);
-  return value ? (value.attributes as unknown as CustomSizeAttributes) : null;
-}
-
-/** Allowed custom dimensions, e.g. [2, 2.25, ..., 4]. */
-export function customSizeSteps(attrs: CustomSizeAttributes): number[] {
-  const steps: number[] = [];
-  const count = Math.round((attrs.max_in - attrs.min_in) / attrs.step_in);
-  for (let i = 0; i <= count; i++) steps.push(Number((attrs.min_in + i * attrs.step_in).toFixed(4)));
-  return steps;
+/**
+ * Turns any (stale) selection and quantity into ones that can be priced. A quantity not sold for these
+ * options moves to the nearest one sold; turnaround then follows the new quantity.
+ */
+export function settle(catalog: Catalog, input: Selection, requested: number): ConfiguratorState {
+  const tiers = sortedTiers(catalog).map((t) => t.quantity);
+  const known = tiers.find((q) => q >= requested) ?? tiers.at(-1)!;
+  const resolved = resolveSelection(catalog, input, known);
+  const quantity = nearestQuantity(catalog, resolved, known);
+  return { selection: quantity === known ? resolved : resolveSelection(catalog, resolved, quantity), quantity };
 }
 
 export function initialState(catalog: Catalog, defaults: { selection: Selection; quantity: number }): ConfiguratorState {
-  return {
-    selection: resolveSelection(catalog, defaults.selection, defaults.quantity),
-    quantity: defaults.quantity,
-    customSize: { ...INITIAL_CUSTOM_SIZE },
-  };
+  return settle(catalog, defaults.selection, defaults.quantity);
 }
 
 function diff(before: Selection, after: Selection, except: string): AutoChange[] {
@@ -64,15 +52,19 @@ function diff(before: Selection, after: Selection, except: string): AutoChange[]
     .map((group) => ({ group, from: before[group]!, to: after[group]! }));
 }
 
-/** Customer picked a value; dependent groups are fixed up by the rules. */
+function quantityChange(before: number, after: number): AutoChange[] {
+  return before === after ? [] : [{ group: QUANTITY_CHANGE, from: String(before), to: String(after) }];
+}
+
+/** Customer picked a value; dependent groups, and the quantity if need be, are fixed up. */
 export function changeOption(
   catalog: Catalog,
   state: ConfiguratorState,
   group: string,
   value: string,
 ): { state: ConfiguratorState; autoChanges: AutoChange[] } {
-  const selection = resolveSelection(catalog, { ...state.selection, [group]: value }, state.quantity);
-  return { state: { ...state, selection }, autoChanges: diff(state.selection, selection, group) };
+  const next = settle(catalog, { ...state.selection, [group]: value }, state.quantity);
+  return { state: next, autoChanges: [...diff(state.selection, next.selection, group), ...quantityChange(state.quantity, next.quantity)] };
 }
 
 /** Customer picked a quantity; a turnaround speed not offered there is switched (reported as an auto change). */
@@ -85,41 +77,13 @@ export function changeQuantity(
   return { state: { ...state, quantity, selection }, autoChanges: diff(state.selection, selection, '') };
 }
 
-/**
- * Customer changed custom width/height. If it exactly matches a preset, the size switches
- * to that preset (spec §2.1), reported as an auto change.
- */
-export function changeCustomSize(
-  catalog: Catalog,
-  state: ConfiguratorState,
-  customSize: CustomSize,
-): { state: ConfiguratorState; autoChanges: AutoChange[] } {
-  const next = { ...state, customSize };
-  const resolved = resolveSize(catalog, CUSTOM_SIZE_VALUE, customSize);
-  if (resolved.code === CUSTOM_SIZE_VALUE) return { state: next, autoChanges: [] };
-
-  const selection = { ...state.selection, [SIZE_GROUP]: resolved.code };
-  return {
-    state: { ...next, selection, customSize: { ...INITIAL_CUSTOM_SIZE } },
-    autoChanges: [{ group: SIZE_GROUP, from: CUSTOM_SIZE_VALUE, to: resolved.code }],
-  };
-}
-
-function configurationOf(state: ConfiguratorState, selection = state.selection, quantity = state.quantity) {
-  return {
-    selection,
-    quantity,
-    customSize: selection[SIZE_GROUP] === CUSTOM_SIZE_VALUE ? state.customSize : undefined,
-  };
-}
-
 export function priceOf(catalog: Catalog, state: ConfiguratorState): Quote {
-  return quote(catalog, configurationOf(state));
+  return quote(catalog, state);
 }
 
 /**
  * Price difference of picking each allowed value instead of the current one, for the
- * "$1.75" / "Save $2.50" hints. Works for upcharges and size multipliers alike. null = cannot be priced.
+ * "$1.75" / "Save $2.50" hints. null = cannot be priced at the current quantity.
  */
 export function optionDeltas(
   catalog: Catalog,
@@ -133,7 +97,7 @@ export function optionDeltas(
     for (const value of values) {
       try {
         const selection = resolveSelection(catalog, { ...state.selection, [group]: value }, state.quantity);
-        result[group][value] = quote(catalog, configurationOf(state, selection)).totalCents - current;
+        result[group][value] = quote(catalog, { selection, quantity: state.quantity }).totalCents - current;
       } catch {
         result[group][value] = null;
       }
@@ -143,14 +107,15 @@ export function optionDeltas(
 }
 
 /**
- * Total and per-card price at every quantity tier for the current options. Where the current speed is
- * not offered, the price is that of the speed the customer would be switched to.
+ * Total and per-card price at every quantity sold for the current options. Where the current speed
+ * is not offered, the price is that of the speed the customer would be switched to.
  */
 export function tierPrices(catalog: Catalog, state: ConfiguratorState) {
-  return sortedTiers(catalog).map((tier) => {
+  return sortedTiers(catalog).flatMap((tier) => {
+    if (!corePriceAt(catalog, state.selection, tier.quantity)) return [];
     const selection = resolveSelection(catalog, state.selection, tier.quantity);
-    const q = quote(catalog, configurationOf(state, selection, tier.quantity));
-    return { quantity: tier.quantity, isDefault: tier.isDefault, totalCents: q.totalCents, unitPriceCents: q.unitPriceCents };
+    const q = quote(catalog, { selection, quantity: tier.quantity });
+    return [{ quantity: tier.quantity, isDefault: tier.isDefault, totalCents: q.totalCents, unitPriceCents: q.unitPriceCents }];
   });
 }
 
@@ -184,9 +149,11 @@ export function speedChoices(catalog: Catalog, state: ConfiguratorState): SpeedC
 }
 
 export function valueLabel(catalog: Catalog, group: string, value: string): string {
+  if (group === QUANTITY_CHANGE) return count.format(Number(value));
   return catalog.groups.find((g) => g.code === group)?.values.find((v) => v.code === value)?.label ?? value;
 }
 
 export function groupLabel(catalog: Catalog, group: string): string {
+  if (group === QUANTITY_CHANGE) return 'Quantity';
   return catalog.groups.find((g) => g.code === group)?.label ?? group;
 }

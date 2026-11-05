@@ -29,7 +29,7 @@ Code đã có sẵn bản tạm cho từng phần; khi bạn chốt thì chỉ c
 | Hãng thanh toán (thẻ, PayPal, Apple Pay) | Thanh toán thủ công, admin bấm "Đã thanh toán" | Bạn | S6 |
 | Hãng ship và in nhãn | Bảng phí cố định, nhập tracking tay | Bạn | S1 |
 | Dịch vụ sales tax | Bảng thuế suất theo bang | Bạn | S7 |
-| Bảng giá in thật | Giá tạm suy ra từ đối thủ | Bạn | P1, P2 |
+| Bảng giá in thật | Giá tạm suy ra từ đối thủ | Bạn | P8, P9 |
 | Giá và quyền lợi các gói thiết kế, ai làm designer | $29 / $59 / $99 tạm | Bạn | P6 |
 | Nhà cung cấp email (SES, Postmark…) | Mailpit (không gửi ra ngoài) | Bạn + mình | T15 |
 | Tên thương hiệu, logo, domain | "Print Studio", sslip.io | Bạn | U1, I1 |

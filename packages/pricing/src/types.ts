@@ -7,8 +7,8 @@ export interface Catalog {
   groups: OptionGroup[];
   rules: OptionRule[];
   quantityTiers: QuantityTier[];
-  /** Upcharge per option value per quantity. Missing entries mean 0. Not used for turnaround. */
-  upcharges: Upcharge[];
+  /** Set price of each core combination (size, paper, printed sides) per quantity. A missing one is not sold. */
+  corePrices: CorePrice[];
   /** Quantity × speed table of the turnaround group. A missing pair means that speed is not offered at that quantity. */
   turnarounds: TurnaroundOption[];
 }
@@ -28,6 +28,8 @@ export interface OptionValue {
   sortOrder: number;
   isDefault: boolean;
   attributes: Record<string, unknown>;
+  /** Add-ons: percent of the core price added when picked; negative for a discount. 0 for other groups. */
+  addonPercent: number;
 }
 
 /** When `whenGroup` = `whenValue`, `targetGroup` may only use `allowed` values. */
@@ -40,16 +42,16 @@ export interface OptionRule {
 
 export interface QuantityTier {
   quantity: number;
-  basePriceCents: number;
   sortOrder: number;
   isDefault: boolean;
 }
 
-export interface Upcharge {
-  group: string;
-  value: string;
+export interface CorePrice {
+  size: string;
+  paper: string;
+  printedSide: string;
   quantity: number;
-  upchargeCents: number;
+  priceCents: number;
 }
 
 export interface TurnaroundOption {
@@ -58,41 +60,22 @@ export interface TurnaroundOption {
   quantity: number;
   /** Production days at this quantity. */
   businessDays: number;
-  /** Added to the printing price (base, upcharges and size) in percent; negative for a discount. */
+  /** Added to the printing price (core price and add-ons) in percent; negative for a discount. */
   percent: number;
 }
 
 /** Selected value code per group code, e.g. { paper: '14pt', coating: 'matte_both' }. */
 export type Selection = Record<string, string>;
 
-export interface CustomSize {
-  widthIn: number;
-  heightIn: number;
-}
-
 export interface Configuration {
   selection: Selection;
   quantity: number;
-  /** Required when selection.size is the custom size value. */
-  customSize?: CustomSize;
 }
 
 /** Size attributes stored on option values of the `size` group. */
-export interface PresetSizeAttributes {
+export interface SizeAttributes {
   trim_w_in: number;
   trim_h_in: number;
   bleed_in: number;
   safe_in: number;
-  price_multiplier: number;
-}
-
-export interface CustomSizeAttributes {
-  min_in: number;
-  max_in: number;
-  step_in: number;
-  bleed_in: number;
-  safe_in: number;
-  fit_box: { w_in: number; h_in: number };
-  fit_multiplier: number;
-  area_multiplier: number;
 }

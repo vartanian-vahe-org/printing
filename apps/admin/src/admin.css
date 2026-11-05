@@ -727,32 +727,31 @@ select {
   background: var(--bg);
 }
 
-.size-card {
+.price-section {
   padding: 16px 18px;
 }
 
-.size-card h2 {
+.price-section + .price-section {
+  margin-top: 16px;
+}
+
+.price-section h2 {
   margin: 0;
   font-size: 18px;
 }
 
-.size-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 14px;
+.price-section .muted {
+  margin: 4px 0 12px;
 }
 
-.size-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 14px;
-  flex-wrap: wrap;
+.addon-table {
+  width: auto;
 }
 
-.size-row strong {
-  width: 170px;
-  padding-bottom: 8px;
+.addon-percent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* ---------- Toast ---------- */

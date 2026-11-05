@@ -56,6 +56,8 @@ export interface AdminValue {
   isActive: boolean;
   isDefault: boolean;
   attributes: Record<string, unknown>;
+  /** Add-ons: percent of the core price. */
+  addonPercent: number;
 }
 
 export interface AdminGroup {
@@ -74,17 +76,18 @@ export interface AdminRule {
 
 export interface AdminTier {
   quantity: number;
-  basePriceCents: number;
   sortOrder: number;
   isActive: boolean;
   isDefault: boolean;
 }
 
-export interface AdminUpcharge {
-  group: string;
-  value: string;
+/** Set price of a size, paper and printed sides combination at a quantity. */
+export interface AdminCorePrice {
+  size: string;
+  paper: string;
+  printedSide: string;
   quantity: number;
-  upchargeCents: number;
+  priceCents: number;
 }
 
 /** One offered cell of the quantity × speed turnaround table. */
@@ -139,7 +142,7 @@ export interface AdminCatalog {
   groups: AdminGroup[];
   rules: AdminRule[];
   quantityTiers: AdminTier[];
-  upcharges: AdminUpcharge[];
+  corePrices: AdminCorePrice[];
   turnarounds: AdminTurnaround[];
   templates: AdminTemplate[];
   templateFacets: AdminFacet[];

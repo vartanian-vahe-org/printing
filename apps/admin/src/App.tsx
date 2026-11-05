@@ -80,7 +80,7 @@ const NAV: { section?: string; product?: true; items: { to: string; label: strin
     items: [
       { to: '/options', label: 'Options', hint: 'Sizes, papers, coatings…' },
       { to: '/rules', label: 'Rules', hint: 'Which options go together' },
-      { to: '/pricing', label: 'Pricing', hint: 'Base prices and upcharges' },
+      { to: '/pricing', label: 'Pricing', hint: 'Core prices and add-ons' },
       { to: '/turnaround', label: 'Turnaround', hint: 'Days and % per quantity' },
       { to: '/templates', label: 'Templates', hint: 'Designs and their filters' },
       { to: '/design-services', label: 'Design services', hint: 'Packages we design for you' },

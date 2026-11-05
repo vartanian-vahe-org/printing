@@ -43,8 +43,8 @@ describe('GET /products/:code/configurator', () => {
     expect(body.catalog.groups.map((g: any) => g.code)).toEqual([
       'size',
       'paper',
-      'coating',
       'printed_side',
+      'coating',
       'corners',
       'turnaround',
     ]);
@@ -75,16 +75,9 @@ describe('POST /quotes', () => {
     expect(res.body.totalCents).toBe(3948);
   });
 
-  it('prices a custom size with the formula', async () => {
-    const res = await post('/quotes', {
-      productCode: 'business-cards',
-      selection: { ...defaultSelection, size: 'custom' },
-      quantity: 500,
-      customSize: { widthIn: 3, heightIn: 3 },
-    });
-    expect(res.status).toBe(200);
-    expect(res.body.totalCents).toBe(10056);
-    expect(res.body.size.priceMultiplier).toBe(2.547);
+  it('refuses the custom size, which has no set price', async () => {
+    const res = await post('/quotes', { productCode: 'business-cards', selection: { ...defaultSelection, size: 'custom' }, quantity: 500 });
+    expect(res.status).toBe(400);
   });
 
   it('400 with issues for a configuration hidden by rules', async () => {

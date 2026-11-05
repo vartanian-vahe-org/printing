@@ -1,8 +1,8 @@
 import { Inject, Injectable, NotFoundException, Optional, type OnModuleInit } from '@nestjs/common';
 import {
+  corePrices,
   type Database,
   optionGroups,
-  optionValuePrices,
   optionValueRuleAllowed,
   optionValueRules,
   optionValues,
@@ -19,7 +19,7 @@ import { REDIS } from '../redis/redis.tokens.js';
 
 /** Catalog cache lifetime; admin edits clear it at once, so this only bounds a missed clear. */
 const CACHE_SECONDS = 300;
-const cacheKey = (productCode: string) => `catalog:v2:${productCode}`;
+const cacheKey = (productCode: string) => `catalog:v3:${productCode}`;
 
 /**
  * Reads a product's configurator data from the DB in the shape @printing/pricing expects.
@@ -68,6 +68,10 @@ export class CatalogService implements OnModuleInit {
       .limit(1);
     if (!product) throw new NotFoundException(`Product "${productCode}" not found`);
 
+    const sizeValue = alias(optionValues, 'size_value');
+    const paperValue = alias(optionValues, 'paper_value');
+    const sideValue = alias(optionValues, 'side_value');
+
     const [groupRows, valueRows, ruleRows, allowedRows, tierRows, priceRows, turnaroundRows] = await Promise.all([
       this.db
         .select()
@@ -89,20 +93,24 @@ export class CatalogService implements OnModuleInit {
         .orderBy(asc(productQuantityTiers.sortOrder)),
       this.db
         .select({
-          group: optionGroups.code,
-          value: optionValues.code,
+          size: sizeValue.code,
+          paper: paperValue.code,
+          printedSide: sideValue.code,
           quantity: productQuantityTiers.quantity,
-          upchargeCents: optionValuePrices.upchargeCents,
+          priceCents: corePrices.priceCents,
         })
-        .from(optionValuePrices)
-        .innerJoin(optionValues, eq(optionValues.id, optionValuePrices.optionValueId))
-        .innerJoin(optionGroups, eq(optionGroups.id, optionValues.groupId))
-        .innerJoin(productQuantityTiers, eq(productQuantityTiers.id, optionValuePrices.quantityTierId))
+        .from(corePrices)
+        .innerJoin(sizeValue, eq(sizeValue.id, corePrices.sizeValueId))
+        .innerJoin(paperValue, eq(paperValue.id, corePrices.paperValueId))
+        .innerJoin(sideValue, eq(sideValue.id, corePrices.printedSideValueId))
+        .innerJoin(productQuantityTiers, eq(productQuantityTiers.id, corePrices.quantityTierId))
         .where(
           and(
-            eq(optionGroups.productId, product.id),
-            eq(optionValues.isActive, true),
+            eq(productQuantityTiers.productId, product.id),
             eq(productQuantityTiers.isActive, true),
+            eq(sizeValue.isActive, true),
+            eq(paperValue.isActive, true),
+            eq(sideValue.isActive, true),
           ),
         ),
       this.db
@@ -138,6 +146,7 @@ export class CatalogService implements OnModuleInit {
           sortOrder: value.sortOrder,
           isDefault: value.isDefault,
           attributes: value.attributes,
+          addonPercent: value.addonPercent,
         })),
     }));
 
@@ -154,11 +163,10 @@ export class CatalogService implements OnModuleInit {
       rules,
       quantityTiers: tierRows.map((t) => ({
         quantity: t.quantity,
-        basePriceCents: t.basePriceCents,
         sortOrder: t.sortOrder,
         isDefault: t.isDefault,
       })),
-      upcharges: priceRows,
+      corePrices: priceRows,
       turnarounds: turnaroundRows,
     };
   }

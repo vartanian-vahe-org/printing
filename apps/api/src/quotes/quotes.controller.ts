@@ -8,12 +8,6 @@ const quoteRequestSchema = z.object({
   productCode: z.string().min(1).max(100),
   selection: z.record(z.string().max(100), z.string().max(100)),
   quantity: z.number().int().positive(),
-  customSize: z
-    .object({
-      widthIn: z.number().positive(),
-      heightIn: z.number().positive(),
-    })
-    .optional(),
 });
 
 type QuoteRequest = z.infer<typeof quoteRequestSchema>;
@@ -28,7 +22,7 @@ export class QuotesController {
   async create(@Body(new ZodValidationPipe(quoteRequestSchema)) body: QuoteRequest) {
     const catalog = await this.catalogs.loadCatalog(body.productCode);
     try {
-      return quote(catalog, { selection: body.selection, quantity: body.quantity, customSize: body.customSize });
+      return quote(catalog, { selection: body.selection, quantity: body.quantity });
     } catch (err) {
       if (err instanceof InvalidConfigurationError) {
         throw new BadRequestException({ message: 'Invalid configuration', issues: err.issues });

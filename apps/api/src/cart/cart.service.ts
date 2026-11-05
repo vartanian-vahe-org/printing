@@ -2,7 +2,6 @@ import { createHash, randomBytes } from 'node:crypto';
 import { BadRequestException, ConflictException, HttpException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { cartItems, carts, type Database } from '@printing/db';
 import {
-  CUSTOM_SIZE_VALUE,
   InvalidConfigurationError,
   latestDate,
   productionSchedule,
@@ -100,7 +99,6 @@ function attributes(catalog: Catalog, group: string, value: string | undefined) 
 }
 
 function sizeLabel(catalog: Catalog, q: Quote): string {
-  if (q.size.code === CUSTOM_SIZE_VALUE) return `Custom ${q.size.widthIn}" × ${q.size.heightIn}"`;
   return catalog.groups.find((g) => g.code === SIZE_GROUP)?.values.find((v) => v.code === q.size.code)?.label ?? q.size.code;
 }
 
@@ -301,12 +299,7 @@ export class CartService {
   async prepareItem(input: AddItemInput): Promise<PreparedItem> {
     const catalog = await this.catalogs.loadCatalog(input.productCode);
     const q = this.priced(catalog, input.configuration);
-    // Store what was actually priced (e.g. custom dimensions that match a preset become the preset).
-    const configuration: Configuration = {
-      selection: q.selection,
-      quantity: q.quantity,
-      ...(q.size.code === CUSTOM_SIZE_VALUE ? { customSize: input.configuration.customSize } : {}),
-    };
+    const configuration: Configuration = { selection: q.selection, quantity: q.quantity };
     const design = await this.validateDesign(catalog, q, input.design);
     const tier = await this.serviceTier(catalog.product.code, design);
     return { productCode: input.productCode, configuration, design, totalCents: q.totalCents + (tier?.priceCents ?? 0) };

@@ -47,11 +47,12 @@ export const optionGroups = pgTable(
 
 /**
  * attributes depend on the group:
- *   size preset: { trim_w_in, trim_h_in, bleed_in, safe_in, price_multiplier }
- *   size custom: { min_in, max_in, step_in, bleed_in, safe_in, fit_box: { w_in, h_in }, fit_multiplier, area_multiplier }
+ *   size:        { trim_w_in, trim_h_in, bleed_in, safe_in }
  *   paper:       { thickness_pt, tier }
  *   coating:     { front, back, laminated }
  *   turnaround:  {} (days and price per quantity live in turnaround_options)
+ * addon_percent: what an add-on adds to the core price. Core options are priced in core_prices and
+ * turnaround in turnaround_options, so it stays 0 for them.
  */
 export const optionValues = pgTable(
   'option_values',
@@ -67,12 +68,14 @@ export const optionValues = pgTable(
     isActive: boolean('is_active').notNull().default(true),
     isDefault: boolean('is_default').notNull().default(false),
     attributes: jsonb('attributes').$type<Record<string, unknown>>().notNull().default({}),
+    addonPercent: numeric('addon_percent', { precision: 6, scale: 2, mode: 'number' }).notNull().default(0),
     ...auditColumns,
     ...timestamps,
   },
   (t) => [
     unique('option_values_group_code_key').on(t.groupId, t.code),
     uniqueIndex('option_values_one_default_per_group').on(t.groupId).where(sql`${t.isDefault}`),
+    check('option_values_addon_percent_check', sql`${t.addonPercent} between -90 and 500`),
   ],
 );
 
@@ -117,7 +120,6 @@ export const productQuantityTiers = pgTable(
       .notNull()
       .references(() => products.id, { onDelete: 'cascade' }),
     quantity: integer('quantity').notNull(),
-    basePriceCents: integer('base_price_cents').notNull(),
     sortOrder: integer('sort_order').notNull().default(0),
     isActive: boolean('is_active').notNull().default(true),
     isDefault: boolean('is_default').notNull().default(false),
@@ -128,25 +130,36 @@ export const productQuantityTiers = pgTable(
     unique('product_quantity_tiers_product_quantity_key').on(t.productId, t.quantity),
     uniqueIndex('product_quantity_tiers_one_default_per_product').on(t.productId).where(sql`${t.isDefault}`),
     check('product_quantity_tiers_quantity_check', sql`${t.quantity} > 0`),
-    check('product_quantity_tiers_base_price_check', sql`${t.basePriceCents} >= 0`),
   ],
 );
 
-/** Upcharge of one option value at one quantity tier. May be negative. */
-export const optionValuePrices = pgTable(
-  'option_value_prices',
+/**
+ * Set price of a combination of the core options (size, paper, printed sides) at a quantity.
+ * No row = that combination is not sold at that quantity.
+ */
+export const corePrices = pgTable(
+  'core_prices',
   {
-    optionValueId: uuid('option_value_id')
+    sizeValueId: uuid('size_value_id')
+      .notNull()
+      .references(() => optionValues.id, { onDelete: 'cascade' }),
+    paperValueId: uuid('paper_value_id')
+      .notNull()
+      .references(() => optionValues.id, { onDelete: 'cascade' }),
+    printedSideValueId: uuid('printed_side_value_id')
       .notNull()
       .references(() => optionValues.id, { onDelete: 'cascade' }),
     quantityTierId: uuid('quantity_tier_id')
       .notNull()
       .references(() => productQuantityTiers.id, { onDelete: 'cascade' }),
-    upchargeCents: integer('upcharge_cents').notNull(),
+    priceCents: integer('price_cents').notNull(),
     ...auditColumns,
     ...timestamps,
   },
-  (t) => [primaryKey({ columns: [t.optionValueId, t.quantityTierId] })],
+  (t) => [
+    primaryKey({ name: 'core_prices_pk', columns: [t.sizeValueId, t.paperValueId, t.printedSideValueId, t.quantityTierId] }),
+    check('core_prices_price_check', sql`${t.priceCents} > 0`),
+  ],
 );
 
 /**

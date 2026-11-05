@@ -183,6 +183,27 @@
       "when": 1793704752638,
       "tag": "0025_seed_turnaround_options",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793871132052,
+      "tag": "0026_core_prices",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1793871132912,
+      "tag": "0027_seed_core_prices",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1793871135592,
+      "tag": "0028_drop_upcharges",
+      "breakpoints": true
     }
   ]
 }

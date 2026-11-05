@@ -11,6 +11,9 @@ const password = process.env.ADMIN_PASSWORD;
 if (!email || !password) throw new Error('ADMIN_EMAIL and ADMIN_PASSWORD are required for admin e2e tests');
 
 const admin = `${base}/admin/products/business-cards`;
+const defaultSelection = { size: 'std_3_5x2', paper: '14pt', coating: 'matte_both', printed_side: 'front_back', corners: 'square', turnaround: 'standard' };
+const defaultCore = { size: 'std_3_5x2', paper: '14pt', printedSide: 'front_back' };
+const paper16 = { ...defaultCore, paper: '16pt' };
 let cookie = '';
 
 async function call(method: string, url: string, body?: unknown, withCookie = true) {
@@ -40,7 +43,7 @@ afterAll(async () => {
   // Safety net in case an assertion failed mid-test.
   await call('PATCH', `${admin}/groups/paper/values/16pt`, { label: 'Premium – 16pt Cardstock' });
   await call('PUT', `${admin}/rules`, { whenGroup: 'paper', whenValue: '14pt', targetGroup: 'turnaround', allowed: null });
-  await call('PUT', `${admin}/pricing`, { tiers: [{ quantity: 500, basePriceCents: 2499 }] });
+  await call('PUT', `${admin}/pricing`, { corePrices: [{ ...defaultCore, quantity: 500, priceCents: 3948 }, { ...paper16, quantity: 500, priceCents: 4573 }, { ...paper16, quantity: 250, priceCents: 3658 }], addons: [{ group: 'corners', value: 'rounded_quarter', percent: 30 }] });
   await call('PATCH', `${admin}/templates/minimal`, { isActive: true });
   await call('PUT', `${admin}/rules`, { whenGroup: 'paper', whenValue: '16pt', targetGroup: 'turnaround', allowed: null });
   await call('DELETE', `${admin}/design-services/e2e_pkg`);
@@ -79,9 +82,9 @@ describe('admin catalog', () => {
   it('returns everything, including hidden values and rules', async () => {
     const res = await call('GET', `${admin}/catalog`);
     expect(res.status).toBe(200);
-    expect(res.body.groups.map((g: any) => g.code)).toEqual(['size', 'paper', 'coating', 'printed_side', 'corners', 'turnaround']);
+    expect(res.body.groups.map((g: any) => g.code)).toEqual(['size', 'paper', 'printed_side', 'coating', 'corners', 'turnaround']);
     expect(res.body.rules).toHaveLength(7);
-    expect(res.body.upcharges).toHaveLength(96);
+    expect(res.body.corePrices).toHaveLength(216);
     expect(res.body.turnarounds).toHaveLength(31);
     expect(res.body.templates).toHaveLength(5);
   });
@@ -124,12 +127,38 @@ describe('admin catalog', () => {
     expect(rules.find((r: any) => r.whenValue === '14pt' && r.targetGroup === 'coating').allowed).toHaveLength(6);
   });
 
-  it('updates a base price; quotes follow', async () => {
-    expect((await call('PUT', `${admin}/pricing`, { tiers: [{ quantity: 500, basePriceCents: 2999 }] })).status).toBe(204);
-    const selection = { size: 'std_3_5x2', paper: '14pt', coating: 'matte_both', printed_side: 'front_back', corners: 'square', turnaround: 'standard' };
-    const quote = await call('POST', `${base}/quotes`, { productCode: 'business-cards', selection, quantity: 500 }, false);
-    expect(quote.body.totalCents).toBe(2999 + 1449);
-    await call('PUT', `${admin}/pricing`, { tiers: [{ quantity: 500, basePriceCents: 2499 }] });
+  it('sets the price of a combination; quotes follow', async () => {
+    const quote = (paper: string, corners = 'square', quantity = 500) =>
+      call('POST', `${base}/quotes`, { productCode: 'business-cards', selection: { ...defaultSelection, paper, corners, coating: 'matte_both' }, quantity }, false);
+    expect((await call('PUT', `${admin}/pricing`, { corePrices: [{ ...paper16, quantity: 500, priceCents: 2660 }] })).status).toBe(204);
+    expect((await quote('16pt')).body.totalCents).toBe(2660);
+    expect((await quote('14pt')).body.totalCents).toBe(3948);
+
+    expect((await call('PUT', `${admin}/pricing`, { addons: [{ group: 'corners', value: 'rounded_quarter', percent: 50 }] })).status).toBe(204);
+    expect((await quote('16pt', 'rounded_quarter')).body.totalCents).toBe(3990);
+    await call('PUT', `${admin}/pricing`, { corePrices: [{ ...paper16, quantity: 500, priceCents: 4573 }], addons: [{ group: 'corners', value: 'rounded_quarter', percent: 30 }] });
+  });
+
+  it('takes a combination off sale at one quantity', async () => {
+    expect((await call('PUT', `${admin}/pricing`, { corePrices: [{ ...paper16, quantity: 250, priceCents: null }] })).status).toBe(204);
+    const res = await call('POST', `${base}/quotes`, { productCode: 'business-cards', selection: { ...defaultSelection, paper: '16pt' }, quantity: 250 }, false);
+    expect(res.status).toBe(400);
+    expect(res.body.issues).toEqual(['Quantity 250 is not available with these options']);
+    expect((await storefront()).catalog.corePrices).toHaveLength(215);
+    await call('PUT', `${admin}/pricing`, { corePrices: [{ ...paper16, quantity: 250, priceCents: 3658 }] });
+  });
+
+  it('refuses to leave the default options without a price', async () => {
+    const res = await call('PUT', `${admin}/pricing`, { corePrices: [{ ...defaultCore, quantity: 500, priceCents: null }] });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/default options need a price/);
+    expect((await storefront()).catalog.corePrices).toHaveLength(216);
+  });
+
+  it('refuses a percent on a core option', async () => {
+    const res = await call('PUT', `${admin}/pricing`, { addons: [{ group: 'paper', value: '16pt', percent: 10 }] });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/set prices/);
   });
 
   it('refuses to hide the default quantity tier', async () => {
@@ -192,8 +221,8 @@ describe('admin catalog: turnaround table', () => {
     expect(unknown.status).toBe(400);
   });
 
-  it('refuses turnaround upcharges in the pricing table', async () => {
-    const res = await call('PUT', `${admin}/pricing`, { upcharges: [{ group: 'turnaround', value: 'rush', quantity: 500, upchargeCents: 100 }] });
+  it('refuses a turnaround percent in the add-ons', async () => {
+    const res = await call('PUT', `${admin}/pricing`, { addons: [{ group: 'turnaround', value: 'rush', percent: 10 }] });
     expect(res.status).toBe(400);
   });
 
@@ -271,7 +300,7 @@ describe('admin catalog: adding and deleting options', () => {
 
   it('offers every template in a new size and takes it away on delete', async () => {
     const templates = async () => (await call('GET', `${base}/products/business-cards/templates`, undefined, false)).body.templates;
-    const attributes = { trim_w_in: 3, trim_h_in: 2, bleed_in: 0.125, safe_in: 0.125, price_multiplier: 1 };
+    const attributes = { trim_w_in: 3, trim_h_in: 2, bleed_in: 0.125, safe_in: 0.125 };
     expect((await call('POST', `${admin}/groups/size/values`, { code: 'e2e_size', label: 'E2E 3" x 2"', attributes })).status).toBe(201);
     expect((await templates()).every((t: any) => t.supportedSizeCodes.includes('e2e_size'))).toBe(true);
 

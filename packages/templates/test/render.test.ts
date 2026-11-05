@@ -7,8 +7,6 @@ const SIZES: Record<string, CardGeometry> = {
   std_3_5x2: { widthIn: 3.5, heightIn: 2, bleedIn: 0.125, safeIn: 0.125 },
   square_2_5: { widthIn: 2.5, heightIn: 2.5, bleedIn: 0.125, safeIn: 0.125 },
   slim_3_5x1_75: { widthIn: 3.5, heightIn: 1.75, bleedIn: 0.125, safeIn: 0.125 },
-  // Extreme custom sizes from the 2"-4" range.
-  custom: { widthIn: 2, heightIn: 4, bleedIn: 0.125, safeIn: 0.125 },
 };
 
 const layouts = seed.templates.map((t) => ({ ...t, layout: parseLayout(t.layout) }));

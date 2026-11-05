@@ -1,5 +1,12 @@
-import { TURNAROUND_GROUP } from './constants.js';
-import type { Catalog, OptionGroup, Selection, TurnaroundOption } from './types.js';
+import { PAPER_GROUP, PRINTED_SIDE_GROUP, SIZE_GROUP, TURNAROUND_GROUP } from './constants.js';
+import type { Catalog, CorePrice, OptionGroup, Selection, TurnaroundOption } from './types.js';
+
+/** Core groups in narrowing order, with the CorePrice field holding each one's value. */
+const CORE_FIELDS = [
+  [SIZE_GROUP, 'size'],
+  [PAPER_GROUP, 'paper'],
+  [PRINTED_SIDE_GROUP, 'printedSide'],
+] as const satisfies readonly (readonly [string, keyof CorePrice])[];
 
 export function sortedGroups(catalog: Catalog): OptionGroup[] {
   return [...catalog.groups].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -12,6 +19,27 @@ function sortedValueCodes(group: OptionGroup): string[] {
 /** Days and price of a turnaround speed at a quantity; undefined when that speed is not offered there. */
 export function turnaroundAt(catalog: Catalog, value: string, quantity: number): TurnaroundOption | undefined {
   return catalog.turnarounds.find((t) => t.value === value && t.quantity === quantity);
+}
+
+/** Set price of the selected core options at a quantity; undefined when not sold there. */
+export function corePriceAt(catalog: Catalog, selection: Selection, quantity: number): CorePrice | undefined {
+  return catalog.corePrices.find(
+    (p) => p.quantity === quantity && CORE_FIELDS.every(([group, field]) => p[field] === selection[group]),
+  );
+}
+
+/** Quantities sold for the selected core options, in display order. */
+export function offeredQuantities(catalog: Catalog, selection: Selection): number[] {
+  return [...catalog.quantityTiers]
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((t) => t.quantity)
+    .filter((quantity) => corePriceAt(catalog, selection, quantity));
+}
+
+/** `quantity` when it is sold for these options, otherwise the next one up, otherwise the largest sold. */
+export function nearestQuantity(catalog: Catalog, selection: Selection, quantity: number): number {
+  const offered = offeredQuantities(catalog, selection);
+  return offered.find((q) => q >= quantity) ?? offered.at(-1) ?? quantity;
 }
 
 /**
@@ -34,9 +62,20 @@ export function ruleAllowedValues(catalog: Catalog, selection: Selection): Recor
   return allowed;
 }
 
-/** What the customer can pick: the rules, plus turnaround keeps only the speeds offered at `quantity`. */
+/**
+ * What the customer can pick: the rules, plus
+ *  - each core group keeps the values with a price under the core options before it (size narrows
+ *    paper, and both narrow printed sides, so picking a size is never undone by the paper);
+ *  - turnaround keeps only the speeds offered at `quantity`.
+ */
 export function getAllowedValues(catalog: Catalog, selection: Selection, quantity: number): Record<string, string[]> {
   const allowed = ruleAllowedValues(catalog, selection);
+  let priced = catalog.corePrices;
+  for (const [group, field] of CORE_FIELDS) {
+    const codes = allowed[group];
+    if (codes) allowed[group] = codes.filter((code) => priced.some((p) => p[field] === code));
+    priced = priced.filter((p) => p[field] === selection[group]);
+  }
   const speeds = allowed[TURNAROUND_GROUP];
   if (speeds) allowed[TURNAROUND_GROUP] = speeds.filter((code) => turnaroundAt(catalog, code, quantity));
   return allowed;

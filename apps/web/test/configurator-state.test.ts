@@ -2,15 +2,16 @@ import { getAllowedValues } from '@printing/pricing';
 import { describe, expect, it } from 'vitest';
 import { businessCards, defaultSelection } from '../../../packages/pricing/test/fixtures/business-cards.js';
 import {
-  changeCustomSize,
   changeOption,
   changeQuantity,
-  customSizeSteps,
   initialState,
   optionDeltas,
   priceOf,
+  settle,
   speedChoices,
   tierPrices,
+  valueLabel,
+  groupLabel,
   type ConfiguratorState,
 } from '../lib/configurator-state.js';
 
@@ -31,40 +32,27 @@ describe('configurator state', () => {
     ]);
   });
 
-  it('switches a custom size that matches a preset to the preset', () => {
-    const custom = changeOption(businessCards, start(), 'size', 'custom').state;
-    const { state, autoChanges } = changeCustomSize(businessCards, custom, { widthIn: 2.5, heightIn: 2.5 });
-    expect(state.selection.size).toBe('square_2_5');
-    expect(autoChanges).toEqual([{ group: 'size', from: 'custom', to: 'square_2_5' }]);
+  it('moves the quantity when the new options are not sold at it, and says so', () => {
+    const catalog = { ...businessCards, corePrices: businessCards.corePrices.filter((p) => !(p.paper === '16pt' && p.quantity === 500)) };
+    const initial = initialState(catalog, { selection: defaultSelection, quantity: 500 });
+    const { state, autoChanges } = changeOption(catalog, initial, 'paper', '16pt');
+    expect(state.quantity).toBe(1000);
+    expect(autoChanges).toContainEqual({ group: 'quantity', from: '500', to: '1000' });
+    expect(`${groupLabel(catalog, 'quantity')} ${valueLabel(catalog, 'quantity', '1000')}`).toBe('Quantity 1,000');
+    expect(tierPrices(catalog, state).map((t) => t.quantity)).not.toContain(500);
   });
 
-  it('keeps a non-preset custom size and prices it with the formula', () => {
-    const custom = changeOption(businessCards, start(), 'size', 'custom').state;
-    const { state } = changeCustomSize(businessCards, custom, { widthIn: 3, heightIn: 3 });
-    expect(state.selection.size).toBe('custom');
-    expect(priceOf(businessCards, state).totalCents).toBe(10056);
-  });
-
-  it('builds 2"-4" custom steps of 0.25"', () => {
-    const steps = customSizeSteps({
-      min_in: 2,
-      max_in: 4,
-      step_in: 0.25,
-      bleed_in: 0.125,
-      safe_in: 0.125,
-      fit_box: { w_in: 3.5, h_in: 2 },
-      fit_multiplier: 1.25,
-      area_multiplier: 0.283,
-    });
-    expect(steps).toEqual([2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75, 4]);
+  it('settles a stale draft: unknown size, and a quantity no longer sold', () => {
+    expect(settle(businessCards, { ...defaultSelection, size: 'custom' }, 300)).toMatchObject({ selection: { size: 'std_3_5x2' }, quantity: 500 });
   });
 });
 
 describe('option price hints', () => {
-  it('shows upcharges relative to the current selection', () => {
+  it('shows differences relative to the current selection', () => {
     const state = start();
     const deltas = optionDeltas(businessCards, state, getAllowedValues(businessCards, state.selection, state.quantity));
-    expect(deltas.paper).toEqual({ '14pt': 0, '16pt': 625, '17pt_uncoated': 4148 + 175 });
+    // 17pt moves the coating to uncoated (+4%) too.
+    expect(deltas.paper).toEqual({ '14pt': 0, '16pt': 625, '17pt_uncoated': 4148 + 324 });
     expect(deltas.printed_side!.front_only).toBe(-1449);
     expect(deltas.size!.square_2_5).toBe(Math.round(3948 * 1.96) - 3948);
   });

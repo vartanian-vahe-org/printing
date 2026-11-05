@@ -7,7 +7,6 @@ export const configurationSchema = z
   .object({
     selection: z.record(z.string().max(100), z.string().max(100)),
     quantity: z.number().int().positive(),
-    customSize: z.object({ widthIn: z.number().positive(), heightIn: z.number().positive() }).strict().optional(),
   })
   .strict();
 

@@ -9,7 +9,7 @@ Dựa trên: [research/02-business-card-competitors.md](../research/02-business-
 ## 1. Phạm vi
 
 **Có trong MVP:**
-- Sản phẩm `business-cards` với 7 nhóm option: Size (có Custom Size), Paper, Coating, Printed Side, Corners, Quantity, Turnaround
+- Sản phẩm `business-cards` với 7 nhóm option: Size, Paper, Coating, Printed Side, Corners, Quantity, Turnaround
 - Ràng buộc giữa các option, option không hợp lệ bị ẩn
 - Tính giá: kiểu Vistaprint cho option, kiểu UPrinting cho size
 - Đặt hàng không cần tài khoản (guest checkout)
@@ -25,7 +25,7 @@ Dựa trên: [research/02-business-card-competitors.md](../research/02-business-
 
 ## 2. Option và giá trị mặc định
 
-Thứ tự hiển thị lấy theo 48HourPrint: Size → Paper → Coating → Printed Side → Corners → Quantity → Turnaround.
+Mọi sản phẩm có 3 **option gốc** làm nên sản phẩm, theo thứ tự: **Size → Paper → Printed Side**. Các option còn lại là **add-on**: Coating, Corners, Turnaround. Add-on có thể phụ thuộc option gốc qua rule (mục 3). Storefront chia thành 2 khối "Your card" và "Add-ons".
 
 ### 2.1 Size
 
@@ -34,17 +34,10 @@ Thứ tự hiển thị lấy theo 48HourPrint: Size → Paper → Coating → P
 | `std_3_5x2` (mặc định) | Standard 3.5" × 2" | 3.5" × 2" | 3.75" × 2.25" | 3.25" × 1.75" |
 | `square_2_5` | Square 2.5" × 2.5" | 2.5" × 2.5" | 2.75" × 2.75" | 2.25" × 2.25" |
 | `slim_3_5x1_75` | Slim 3.5" × 1.75" | 3.5" × 1.75" | 3.75" × 2.0" | 3.25" × 1.5" |
-| `custom` | Custom Size | W × H do khách chọn | (W+0.25") × (H+0.25") | (W−0.25") × (H−0.25") |
 
 Bleed 0.125"/cạnh, safe zone lùi vào 0.125" tính từ đường cắt (chuẩn của UPrinting, PrintPlace, FedEx Office).
 
-**Custom Size** (clone UPrinting):
-- Width và Height chọn từ **2" đến 4"**, bước **0.25"**.
-- Min, max và bước lưu trong `attributes` của value `custom`, admin sửa được.
-- Nếu khách chọn **đúng** kích thước một size có sẵn thì hệ thống tự chuyển sang size có sẵn đó (UPrinting làm vậy, giá cũng theo size có sẵn).
-- Nếu khách chọn kích thước của một size có sẵn nhưng **xoay ngang/dọc** (vd. 2" × 3.5" dọc) thì giữ là Custom vì hướng card ảnh hưởng thiết kế, nhưng **tính giá như size có sẵn** đó.
-- Lưu ý: Slim (3.5" × 1.75") có cạnh 1.75" nhỏ hơn mức tối thiểu 2" của Custom, nên chỉ chọn được qua option Slim, không nhập qua Custom được.
-- Kích thước khách chọn được lưu vào order item. Preflight và file in tính theo kích thước đó.
+Không có Custom Size: kích thước khách tự nhập không có giá cố định. Cần size mới thì admin thêm thành một option.
 
 ### 2.2 Paper
 
@@ -139,77 +132,28 @@ R7 là phần mình suy ra từ quy tắc của GotPrint, GotPrint không công 
 ## 4. Tính giá
 
 ```
-giá = (base_price[quantity] + Σ upcharge[option_value][quantity]) × size_multiplier
+giá in   = core_price[size, paper, printed side, số lượng] + Σ core_price × addon_percent
+tổng     = giá in + giá in × turnaround_percent[tốc độ, số lượng]
 ```
 
-- `base_price` là giá của **cấu hình gốc**: Standard 3.5" × 2", 14pt, Matte Both, Front Only, Square corners, 3 ngày.
-- **Option (trừ Size):** mỗi giá trị có phụ phí riêng **theo từng mức số lượng**, kiểu Vistaprint. Phụ phí có thể âm. Giao diện hiện phụ phí cạnh từng option ("+$1.00").
-- **Size:** dùng **hệ số nhân** lên toàn bộ giá, kiểu UPrinting (mục 4.3).
-- Tiền lưu bằng **số nguyên cent**. Làm tròn tới cent ở bước cuối cùng.
+- **Option gốc (Size, Paper, Printed Side):** mỗi tổ hợp có **giá cố định theo từng số lượng** do admin nhập (bảng `core_prices`), không cộng dồn, không có hệ số size. Ô trống nghĩa là tổ hợp đó không bán ở số lượng đó, nên mỗi giấy có thể có bộ số lượng riêng.
+- **Thu hẹp lựa chọn:** Size trước, rồi Paper, rồi Printed Side. Mỗi nhóm chỉ hiện giá trị có giá với các option gốc phía trước. Đổi option gốc mà số lượng đang chọn không bán thì tự chuyển sang số lượng gần nhất và báo cho khách.
+- **Add-on (Coating, Corners):** một % của giá option gốc, giống nhau ở mọi số lượng (`option_values.addon_percent`). Có thể âm.
+- **Turnaround:** bảng Số lượng × Tốc độ (mục 2.7), % tính trên giá in.
+- Tiền lưu bằng **số nguyên cent**. Mỗi phần làm tròn tới cent.
 
-### 4.1 Giá gốc (seed): lấy đúng bảng giá Matte của Vistaprint
+### 4.1 Giá seed (giá tạm)
 
-| Qty | 50 | 100 | 250 | 500 | 1,000 | 2,500 | 5,000 | 10,000 |
-|---|---|---|---|---|---|---|---|---|
-| base | $10.00 | $14.99 | $19.99 | $24.99 | $37.99 | $80.99 | $127.99 | $222.99 |
+> **Đây là giá tạm** để admin có dữ liệu khởi đầu (open issue P8). Migration `0027` lấy giá của công thức cũ cho từng tổ hợp, nên khách thấy giá gần như không đổi.
 
-### 4.2 Phụ phí option (seed, giá tạm)
+Ví dụ 3.5" × 2", 14pt, in 2 mặt: 500 card = $39.48. 1 mặt = $24.99.
 
-> **Đây là giá tạm** để admin có dữ liệu khởi đầu. Toàn bộ bảng giá sẽ được thiết kế lại sau (decision B4).
-
-Phụ phí tính bằng **% của base_price ở cùng mức số lượng**, làm tròn tới cent, rồi lưu thành số cent cụ thể cho từng mức:
-
-| Option value | % base | Suy ra từ |
-|---|---|---|
-| Paper `16pt` | +25% | UPrinting: 16pt Gloss $46.74 so với 14pt Gloss $37.29 |
-| Paper `17pt_uncoated` | +166% | UPrinting: 17pt Uncoated $99.03 so với $37.29 |
-| Coating `gloss_both` | +7% | Vistaprint: Glossy +$1 trên $14.99 |
-| Coating `uncoated_both` | +7% | Vistaprint: Uncoated +$1 trên $14.99 |
-| Coating `uv_both` | +7% | Tạm coi như Gloss (chưa có dữ liệu) |
-| Coating `uv_front_uncoated_back` | +43% | UPrinting: $53.32 so với $37.29 |
-| Coating `uv_front_gloss_back` | +43% | Tạm coi như UV Front/Uncoated Back (chưa có dữ liệu) |
-| Coating `soft_touch_both` | +24% | UPrinting: 16pt Soft Touch $55.65 so với 16pt Gloss $46.74 |
-| Coating `silk_both` | +24% | UPrinting: Silk cùng giá Soft Touch |
-| Side `front_back` | +58% | UPrinting: in 2 mặt $37.29 so với 1 mặt $23.63 |
-| Side `same_both` | +58% | Như front_back |
-| Corners `rounded_quarter` | +47% | Vistaprint: Rounded +$7 trên $14.99 |
-| Turnaround `5d` | −10% | Chưa có dữ liệu (đã đồng ý dùng tạm) |
-| Turnaround `2d` | +30% | UPrinting: 2 ngày so với 3 ngày |
-| Turnaround `1d` | +80% | UPrinting: 1 ngày so với 3 ngày |
-
-Các giá trị mặc định (14pt, matte_both, front_only, square, 3d) có phụ phí 0.
-
-### 4.3 Hệ số size (seed, clone UPrinting)
-
-Số liệu gốc ở [research mục 2, Custom Size](../research/02-business-card-competitors.md). Hệ số đo ở mức 500 card.
-
-| Size | Hệ số | Nguồn |
-|---|---|---|
-| `std_3_5x2` | 1.00 | |
-| `slim_3_5x1_75` | 1.31 | UPrinting Slim $48.76 / $37.29 |
-| `square_2_5` | 1.96 | UPrinting Square $72.98 / $37.29 |
-| `custom` | công thức bên dưới | UPrinting custom size |
-
-**Công thức Custom Size** (W, H tính bằng inch, không phân biệt chiều ngang/dọc):
-
-```
-nếu card lọt trong khung 2" × 3.5":   hệ số = fit_multiplier            (seed: 1.25)
-ngược lại:                             hệ số = max(fit_multiplier, W × H × area_multiplier)   (seed: 0.283)
-```
-
-Kiểm tra với dữ liệu UPrinting ở 500 card:
-
-| Kích thước | Công thức | UPrinting thực tế |
-|---|---|---|
-| 2" × 2" | 1.25 | 1.22 |
-| 2" × 3" | 1.25 | 1.30 |
-| 2" × 4" | 2.26 | 2.08 |
-| 2.5" × 3.5" | 2.48 | 2.43 |
-| 3" × 3" | 2.55 | 2.55 |
-| 3" × 4" | 3.40 | 3.40 |
-| 4" × 4" | 4.53 | 4.53 |
-
-`fit_box`, `fit_multiplier` và `area_multiplier` lưu trong `attributes` của value `custom`, admin sửa được. Hệ số thật của UPrinting **thay đổi theo số lượng** (1.6–2.6 lần ở size 3" × 3"). MVP dùng một hệ số cho mọi mức số lượng, sẽ xem lại khi thiết kế lại bảng giá.
+| Add-on | % |
+|---|---|
+| Coating `gloss_both`, `uncoated_both`, `uv_both` | 4 |
+| Coating `soft_touch_both`, `silk_both` | 15 |
+| Coating `uv_front_uncoated_back`, `uv_front_gloss_back` | 27 |
+| Corners `rounded_quarter` | 30 |
 
 ---
 
@@ -315,14 +259,13 @@ option_groups
 option_values
   id, group_id, code, label, description, sort_order, is_active, is_default,
   attributes JSONB,
-    -- size preset: {trim_w_in, trim_h_in, bleed_in, safe_in, price_multiplier}
-    -- size custom: {min_in, max_in, step_in, bleed_in, safe_in,
-    --               fit_box: {w_in, h_in}, fit_multiplier, area_multiplier}
+    -- size:        {trim_w_in, trim_h_in, bleed_in, safe_in}
     -- paper:       {thickness_pt, tier}
     -- coating:     {front, back, laminated}
     -- printed_side:{back: 'separate' | 'blank' | 'same_as_front'}
     -- corners:     {radius_in}
     -- turnaround:  {} (ngày và % nằm trong turnaround_options)
+  addon_percent NUMERIC(6,2) DEFAULT 0,   -- add-on: % của giá option gốc
   created_at, updated_at
   UNIQUE (group_id, code)
   -- mỗi group có đúng 1 value is_default = true (partial unique index)
@@ -339,13 +282,14 @@ option_value_rule_allowed
   PRIMARY KEY (rule_id, value_id)
 
 product_quantity_tiers
-  id, product_id, quantity, base_price_cents, sort_order, is_active, is_default
+  id, product_id, quantity, sort_order, is_active, is_default
   UNIQUE (product_id, quantity)
 
-option_value_prices
-  option_value_id → option_values.id, quantity_tier_id → product_quantity_tiers.id,
-  upcharge_cents (có thể âm)
-  PRIMARY KEY (option_value_id, quantity_tier_id)
+core_prices                              -- không có dòng = không bán
+  size_value_id, paper_value_id, printed_side_value_id → option_values.id,
+  quantity_tier_id → product_quantity_tiers.id,
+  price_cents (> 0)
+  PRIMARY KEY (size_value_id, paper_value_id, printed_side_value_id, quantity_tier_id)
 
 production_settings                      -- 1 dòng
   timezone, cutoff_time, working_days (int[] 1–5), updated_at
@@ -371,7 +315,7 @@ staff_users                              -- tài khoản admin
 Schema thật nằm ở `packages/db/src/schema/`, migration ở `packages/db/migrations/`.
 
 - Quantity không nằm trong `option_groups` vì giá gốc gắn với nó.
-- Order item lưu **toàn bộ cấu hình và giá tại thời điểm đặt** (snapshot), gồm cả W × H của custom size. Đổi cấu hình hay bảng giá sau đó không ảnh hưởng đơn cũ.
+- Order item lưu **toàn bộ cấu hình và giá tại thời điểm đặt** (snapshot). Đổi cấu hình hay bảng giá sau đó không ảnh hưởng đơn cũ.
 - Mọi bảng cấu hình đều được ghi audit log khi admin sửa.
 
 ---
@@ -403,7 +347,7 @@ packages/db/migrations/
   0000_init_schema.sql                         -- schema mục 9
   0001_seed_business_cards_catalog.sql         -- product, 6 groups, values, mặc định, attributes
   0002_seed_business_cards_rules.sql           -- R1–R7
-  0003_seed_business_cards_pricing.sql         -- base price + upcharge (mục 4.1, 4.2)
+  0003_seed_business_cards_pricing.sql         -- giá ban đầu, 0026–0028 đổi sang core_prices (mục 4)
   0004_seed_production_settings.sql            -- 2pm PT, Thứ Hai–Thứ Sáu, ngày lễ 2026–2027
   0005_seed_shipping_methods.sql               -- 3 phương thức ship mẫu (mục 7)
 ```
@@ -420,9 +364,9 @@ Phụ phí trong `0003` được tính sẵn ra cent cho từng mức số lư�
 | Option group → Values | Thêm/sửa/ẩn value, chọn mặc định, sửa attributes (form theo loại nhóm) |
 | **Paper detail** | Tab "Coatings available" (checkbox), tab "Turnaround available". Lưu vào `option_value_rules`. |
 | Coating detail | Tab "Turnaround available" |
-| Size detail | Kích thước, bleed, safe zone, hệ số giá. Riêng Custom: min/max/bước, khung, các hệ số. |
+| Size detail | Kích thước, bleed, safe zone. |
 | Rules | Xem toàn bộ ràng buộc dạng bảng |
-| Pricing | Bảng giá gốc theo số lượng. Ma trận phụ phí: value × số lượng, sửa trực tiếp. |
+| Pricing | Trên cùng: bảng giá option gốc (tổ hợp Size × Paper × Printed Side theo số lượng), sửa trực tiếp, ô trống là không bán. Dưới: % của từng add-on. |
 | Production settings | Giờ chốt đơn, ngày làm việc, danh sách ngày lễ |
 | Shipping methods | Phương thức, thời gian vận chuyển, giá, ngưỡng miễn phí |
 | Preview | Configurator chạy thử với cấu hình hiện tại, hiện giá và ngày giao |
@@ -446,9 +390,8 @@ Logic kiểm tra rule, tính giá và tính ngày làm việc viết một lần
 ## 13. Đã chốt / còn mở
 
 **Đã chốt (2026-10-19):**
-- [x] Phụ phí seed ở mục 4.2 dùng làm giá tạm, kể cả Turnaround 5 ngày −10%
+- [x] Giá seed ở mục 4.1 dùng làm giá tạm
 - [x] Số lượng bắt đầu từ 50
-- [x] Custom Size: 2"–4", bước 0.25", tính giá theo UPrinting (mục 4.3)
 - [x] Mặt sau trống thì không phủ UV mặt sau (mục 3.1)
 - [x] Giờ chốt đơn 2:00 PM Pacific Time, Thứ Hai – Thứ Sáu
 - [x] Sample pack: để sau

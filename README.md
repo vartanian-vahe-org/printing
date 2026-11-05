@@ -34,7 +34,7 @@ On startup the `migrate` service applies all database migrations (schema + defau
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/health` | Database, Redis, storage status |
-| GET | `/products/:code/configurator` | Catalog (options, rules, tiers, upcharges) + default selection |
+| GET | `/products/:code/configurator` | Catalog (options, rules, tiers, core prices) + default selection |
 | GET | `/products/:code/templates` | Active templates with validated layouts |
 | POST | `/quotes` | Official price; 400 with `issues` if the configuration is invalid |
 | POST | `/uploads/presign` | Presigned PUT URL (exact size and content type, 15 min); `kind`: `artwork` (PDF, default) or `logo` (PNG/JPG/WebP/SVG, 5 MB) |
@@ -72,7 +72,7 @@ On startup the `migrate` service applies all database migrations (schema + defau
 | GET | `/admin/products/:code/catalog` | Full configuration incl. hidden values (admin) |
 | PATCH | `/admin/products/:code/groups/:group/values/:value` | Edit label, description, order, active, default, attributes (admin) |
 | PUT | `/admin/products/:code/rules` | Set or remove a rule (admin) |
-| PUT | `/admin/products/:code/pricing` | Base prices, tier visibility/default, upcharges (admin) |
+| PUT | `/admin/products/:code/pricing` | Core prices, add-on percents, tier visibility/default (admin) |
 | PATCH | `/admin/products/:code/templates/:template` | Show or hide a template (admin) |
 
 Admin writes run in a transaction and are rejected if the storefront could no longer build and price a default configuration.
@@ -100,7 +100,7 @@ Schema lives in `packages/db/src/schema/`, migrations in `packages/db/migrations
 | `0000_init_schema` | All tables |
 | `0001_seed_business_cards_catalog` | Business card product, option groups and values |
 | `0002_seed_business_cards_rules` | Option rules R1–R7 |
-| `0003_seed_business_cards_pricing` | Quantity tiers, base prices, upcharges (placeholder prices) |
+| `0003_seed_business_cards_pricing` | Quantity tiers and first prices (replaced by `core_prices` in 0026–0028) |
 | `0004_seed_production_settings` | 2 PM Pacific cutoff, Mon–Fri, US holidays 2026–2027 |
 | `0005_seed_shipping_methods` | Sample shipping methods |
 | `0006_seed_business_card_templates` | 5 card templates (source: `packages/templates/seed/`) |

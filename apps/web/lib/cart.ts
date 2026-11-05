@@ -7,7 +7,6 @@ export interface CartItem {
   configuration: {
     selection: Record<string, string>;
     quantity: number;
-    customSize?: { widthIn: number; heightIn: number };
   };
   design:
     | { mode: 'template'; templateCode: string; values: Record<string, string>; logoKey?: string; reviewed?: true }

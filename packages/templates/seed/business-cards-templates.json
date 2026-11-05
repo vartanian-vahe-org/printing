@@ -9,8 +9,7 @@
       "supportedSizeCodes": [
         "std_3_5x2",
         "square_2_5",
-        "slim_3_5x1_75",
-        "custom"
+        "slim_3_5x1_75"
       ],
       "layout": {
         "version": 1,
@@ -199,8 +198,7 @@
       "supportedSizeCodes": [
         "std_3_5x2",
         "square_2_5",
-        "slim_3_5x1_75",
-        "custom"
+        "slim_3_5x1_75"
       ],
       "layout": {
         "version": 1,
@@ -366,8 +364,7 @@
       "sortOrder": 3,
       "supportedSizeCodes": [
         "std_3_5x2",
-        "slim_3_5x1_75",
-        "custom"
+        "slim_3_5x1_75"
       ],
       "layout": {
         "version": 1,
@@ -551,8 +548,7 @@
       "sortOrder": 4,
       "supportedSizeCodes": [
         "std_3_5x2",
-        "slim_3_5x1_75",
-        "custom"
+        "slim_3_5x1_75"
       ],
       "layout": {
         "version": 1,
@@ -731,8 +727,7 @@
       "supportedSizeCodes": [
         "std_3_5x2",
         "square_2_5",
-        "slim_3_5x1_75",
-        "custom"
+        "slim_3_5x1_75"
       ],
       "layout": {
         "version": 1,

@@ -26,26 +26,23 @@ Cập nhật: 2026-10-20. Khi giải quyết xong một mục: ghi quyết đị
 
 | # | Vấn đề | Hiện tại | Cần quyết | Mức |
 |---|---|---|---|---|
-| P1 | **Toàn bộ phụ phí là giá tạm**, suy ra từ tỷ lệ của UPrinting/Vistaprint | Seed trong `0003_seed_business_cards_pricing` | Thiết kế lại bảng giá theo giá vốn thật của xưởng (decision B4) | Cao |
-| P2 | Phụ phí không có dữ liệu gốc: giao 5 ngày −10%, `uv_both` (+7%, coi như gloss), `uv_front_gloss_back` (+43%) | Số tự đặt | Giá thật | Cao |
-| P3 | Hệ số custom size dùng một con số cho mọi mức số lượng; UPrinting thực tế thay đổi 1.6–2.6 lần theo số lượng | Một hệ số | Có tính hệ số theo từng mức số lượng không | Thấp |
-| P4 | Trộn hai kiểu tính giá: phụ phí cộng thêm (Vistaprint) cho option, hệ số nhân (UPrinting) cho size | Theo spec mục 4 | Giữ hay thống nhất một kiểu khi thiết kế lại bảng giá | Thấp |
 | P5 | Giá hiển thị mặc định là **$39.48** cho 500 card vì mặc định in 2 mặt. Vistaprint quảng cáo $24.99 vì mặc định in 1 mặt. | Mặc định `front_back` | Đổi mặc định sang in 1 mặt để giá "từ" thấp hơn không | Cao |
 | P6 | **Giá và quyền lợi các gói thiết kế là tạm**: Standard $29 (2 lần sửa, 2 ngày), Premium $59 (4 lần sửa), Elite $99 (sửa không giới hạn, 1 ngày) | Seed trong `0023_seed_design_choices`, admin sửa được ở Design services | Giá thật, số lần sửa, ai là designer và năng lực làm bao nhiêu đơn mỗi ngày | Cao |
 | P7 | **Bảng turnaround Số lượng × Tốc độ là số tạm.** Economy 5 ngày −10%, Standard 3 ngày, Express 2 ngày +30%, Rush 1 ngày +80% (đến 1,000 card); 2,500–5,000 thêm 1 ngày; 10,000 thêm 2 ngày và không có Rush. % tính trên giá in (đã gồm option và size), không tính trên phí gói thiết kế | Seed trong `0025_seed_turnaround_options`, admin sửa ở trang Turnaround. Mức không bán ở một số lượng: storefront làm mờ ô kèm lý do, và tự chuyển mức nếu khách đổi số lượng | Số ngày và % thật theo năng lực xưởng; tên các mức; % tính trên giá in hay chỉ trên giá gốc; trên mức số lượng cao nhất (vd 50,000) có cần nút "Request a quote" không | Cao |
+| P8 | **Giá option gốc và % add-on là giá tạm.** Migration `0027` lấy giá theo công thức cũ cho từng tổ hợp Size × Paper × Printed Side; % add-on là phụ phí cũ chia cho giá card mặc định (gloss 4, soft touch/silk 15, UV 2 loại 27, bo góc 30) | Seed trong `0027_seed_core_prices` | Alex nhập giá thật trong admin | Cao |
+| P9 | **T tự chọn:** add-on tính một % cho mọi số lượng. Alex chưa nói rõ, có thể muốn coating có giá riêng theo số lượng | Một % trên mỗi lựa chọn | Hỏi Alex | Cao |
 
 ## Sản phẩm & option
 
 | # | Vấn đề | Hiện tại | Cần quyết | Mức |
 |---|---|---|---|---|
-| O1 | Slim (3.5" × 1.75") không nhập được qua Custom vì cạnh 1.75" nhỏ hơn mức tối thiểu 2" | Chỉ chọn qua option Slim | Có hạ mức tối thiểu Custom xuống 1.75" không | Thấp |
-| O2 | Size có sẵn bị xoay dọc (vd. 2" × 3.5"): giữ là Custom nhưng tính giá như size có sẵn | Đã làm trong `packages/pricing` | Xác nhận cách này | Thấp |
 | O3 | Rule R7 (in một mặt thì ẩn 2 lựa chọn "UV Front, ... Back") là suy ra từ GotPrint, GotPrint không công bố trực tiếp | Đã seed | Xác nhận với xưởng | Thấp |
 | O4 | Ngày lễ: đang seed đủ 11 ngày lễ liên bang, gồm cả Columbus Day và Veterans Day | Seed 2026–2027 | Xưởng có nghỉ những ngày này không; ngày lễ 2028 trở đi admin tự thêm ở trang Settings | Cao |
 | O5 | Template tự thiết kế (bước 7) | Chưa làm | Ai duyệt nội dung và mẫu mã template | Thấp |
 | O6 | File khách upload **bắt buộc CMYK**. File template vẽ CMYK bằng công thức đơn giản (đen/xám chỉ dùng mực K), logo đổi bằng profile CMYK mặc định của sharp; chưa gắn color profile chuẩn (GRACoL/SWOP), chưa xuất PDF/X | Chặn RGB/Pantone ở bước upload; template tự đổi | Hỏi xưởng: profile màu nào (GRACoL 2013, SWOP…), có cần PDF/X, có cần crop marks trong file in không, có in được màu pha không | Trung bình (trước khi in thật) |
 | O7 | **Chưa nhận EPS** (và AI lưu không bật PDF Compatible): đọc EPS cần Ghostscript, từng có lỗi chạy mã độc từ file EPS | Báo lỗi, hướng dẫn xuất PDF | Có cần nhận EPS không; nếu có thì chạy Ghostscript `-dSAFER` trong container riêng, cập nhật thường xuyên | Thấp |
 | O8 | Chặn chặt: dưới 300 DPI, RGB, Pantone đều là **lỗi**. File từ Canva bản free, Word, điện thoại gần như luôn là RGB nên sẽ bị chặn | Hướng dẫn xuất CMYK ngay ở bước upload, gợi ý dùng template hoặc gói thiết kế | Theo dõi tỉ lệ khách bỏ ở bước upload sau khi chạy thật; cân nhắc tự đổi RGB sang CMYK thay vì chặn | Trung bình |
+| O9 | **T tự chọn: bỏ Custom Size**, vì giá cố định theo tổ hợp không tính được cho kích thước tự nhập. Cần size mới thì admin thêm thành option | Đã xoá khỏi data và code | Hỏi Alex có cần size theo yêu cầu không (vd. báo giá riêng) | Cao |
 | O7 | Kiểm tra file chưa có: chữ quá nhỏ (dưới 6pt), màu đen 4 lớp (rich black) cho chữ nhỏ, tổng mực quá cao | Chỉ các mục trong spec 6.3 | Hỏi xưởng các ngưỡng thường dùng rồi thêm vào `preflight.py` | Thấp |
 
 ## Giao diện (storefront)

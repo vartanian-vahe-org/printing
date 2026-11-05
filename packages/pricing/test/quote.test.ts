@@ -4,67 +4,50 @@ import {
   InvalidConfigurationError,
   quote,
   resolveAndQuote,
-  upchargeFor,
   validateConfiguration,
 } from '../src/quote.js';
 import { businessCards, defaultSelection } from './fixtures/business-cards.js';
-
-describe('upcharges match the seeded values in packages/db (checked in psql)', () => {
-  it.each([
-    ['paper', '16pt', 500, 625],
-    ['printed_side', 'front_back', 500, 1449],
-    ['corners', 'rounded_quarter', 500, 1175],
-    ['printed_side', 'front_back', 50, 580],
-  ])('%s.%s @ %i = %i cents', (group, value, quantity, cents) => {
-    expect(upchargeFor(businessCards, group, value, quantity)).toBe(cents);
-  });
-
-  it('has no upcharge for default values', () => {
-    expect(upchargeFor(businessCards, 'paper', '14pt', 500)).toBe(0);
-  });
-});
 
 describe('quote', () => {
   it('default quantity is 500', () => {
     expect(defaultQuantity(businessCards)).toBe(500);
   });
 
-  it('base configuration (front only) equals the Vistaprint base price', () => {
-    const q = quote(businessCards, {
-      selection: { ...defaultSelection, printed_side: 'front_only' },
-      quantity: 500,
-    });
-    expect(q.totalCents).toBe(2499);
-    expect(q.unitPriceCents).toBe(5);
-  });
-
-  it('default configuration = base + front & back upcharge', () => {
+  it('charges the set price of the core options', () => {
     const q = quote(businessCards, { selection: defaultSelection, quantity: 500 });
-    expect(q.basePriceCents).toBe(2499);
-    expect(q.subtotalCents).toBe(2499 + 1449);
+    expect(q.corePriceCents).toBe(3948);
+    expect(q.printingCents).toBe(3948);
     expect(q.totalCents).toBe(3948);
-    expect(q.lines.map((l) => l.group)).toEqual(['paper', 'coating', 'printed_side', 'corners', 'turnaround']);
+    expect(q.unitPriceCents).toBe(8);
+    expect(q.lines.map((l) => l.group)).toEqual(['paper', 'printed_side', 'coating', 'corners', 'turnaround']);
   });
 
-  it('adds every upcharge, then the rush percent on the printing price', () => {
+  it('has a set price per combination, not a sum of its parts', () => {
+    const price = (selection: Record<string, string>, quantity = 500) =>
+      quote(businessCards, { selection: { ...defaultSelection, ...selection }, quantity }).totalCents;
+    expect(price({ printed_side: 'front_only' })).toBe(2499);
+    expect(price({ size: 'square_2_5', printed_side: 'front_only' })).toBe(4898);
+    const custom = {
+      ...businessCards,
+      corePrices: businessCards.corePrices.map((p) =>
+        p.size === 'std_3_5x2' && p.paper === '16pt' && p.printedSide === 'front_back' && p.quantity === 500 ? { ...p, priceCents: 2660 } : p,
+      ),
+    };
+    expect(quote(custom, { selection: { ...defaultSelection, paper: '16pt' }, quantity: 500 }).totalCents).toBe(2660);
+  });
+
+  it('adds add-ons as a percent of the core price, then the rush percent on the printing price', () => {
     const q = quote(businessCards, {
-      selection: { ...defaultSelection, paper: '16pt', coating: 'gloss_both', corners: 'rounded_quarter', turnaround: 'rush' },
+      selection: { ...defaultSelection, coating: 'gloss_both', corners: 'rounded_quarter', turnaround: 'rush' },
       quantity: 500,
     });
-    // printing 2499 + 625 + 175 + 1449 + 1175 = 5923; rush +80% = 4738
-    expect(q.subtotalCents).toBe(5923);
-    expect(q.lines.find((l) => l.group === 'turnaround')).toMatchObject({ upchargeCents: 4738, percent: 80 });
-    expect(q.totalCents).toBe(5923 + 4738);
+    // core 3948; gloss 4% = 158, rounded 30% = 1184
+    expect(q.lines.find((l) => l.group === 'coating')).toMatchObject({ upchargeCents: 158, percent: 4 });
+    expect(q.lines.find((l) => l.group === 'corners')).toMatchObject({ upchargeCents: 1184, percent: 30 });
+    expect(q.printingCents).toBe(3948 + 158 + 1184);
+    expect(q.lines.find((l) => l.group === 'turnaround')).toMatchObject({ upchargeCents: 4232, percent: 80 });
+    expect(q.totalCents).toBe(5290 + 4232);
     expect(q.businessDays).toBe(1);
-  });
-
-  it('applies the size multiplier before the turnaround percent', () => {
-    const q = quote(businessCards, {
-      selection: { ...defaultSelection, size: 'square_2_5', paper: '16pt', coating: 'gloss_both', corners: 'rounded_quarter', turnaround: 'rush' },
-      quantity: 500,
-    });
-    const printing = Math.round(5923 * 1.96); // 11609
-    expect(q.totalCents).toBe(printing + Math.round(printing * 0.8)); // 20896
   });
 
   it('takes a negative percent off for the slowest speed', () => {
@@ -84,26 +67,6 @@ describe('quote', () => {
     );
   });
 
-  it('applies the custom size formula', () => {
-    const q = quote(businessCards, {
-      selection: { ...defaultSelection, size: 'custom' },
-      quantity: 500,
-      customSize: { widthIn: 3, heightIn: 3 },
-    });
-    expect(q.totalCents).toBe(Math.round(3948 * 2.547)); // 10056
-    expect(q.size).toMatchObject({ code: 'custom', widthIn: 3, heightIn: 3 });
-  });
-
-  it('stores the preset code when custom dimensions match a preset', () => {
-    const q = quote(businessCards, {
-      selection: { ...defaultSelection, size: 'custom' },
-      quantity: 500,
-      customSize: { widthIn: 2.5, heightIn: 2.5 },
-    });
-    expect(q.selection.size).toBe('square_2_5');
-    expect(q.totalCents).toBe(Math.round(3948 * 1.96));
-  });
-
   it('rejects a value hidden by a rule', () => {
     expect(() =>
       quote(businessCards, { selection: { ...defaultSelection, paper: '17pt_uncoated' }, quantity: 500 }),
@@ -114,9 +77,10 @@ describe('quote', () => {
     expect(() => quote(businessCards, { selection: defaultSelection, quantity: 300 })).toThrow('Quantity 300');
   });
 
-  it('rejects a missing custom size', () => {
-    expect(() => quote(businessCards, { selection: { ...defaultSelection, size: 'custom' }, quantity: 500 })).toThrow(
-      'Width and height are required',
+  it('rejects a combination with no price at the quantity', () => {
+    const catalog = { ...businessCards, corePrices: businessCards.corePrices.filter((p) => !(p.paper === '16pt' && p.quantity === 500)) };
+    expect(() => quote(catalog, { selection: { ...defaultSelection, paper: '16pt' }, quantity: 500 })).toThrow(
+      'Quantity 500 is not available with these options',
     );
   });
 });
@@ -147,7 +111,7 @@ describe('resolveAndQuote', () => {
       quantity: 1000,
     });
     expect(q.selection).toMatchObject({ coating: 'uncoated_both', turnaround: 'standard' });
-    // 3799 + 17pt 6306 + uncoated 266 + front & back 2203
-    expect(q.totalCents).toBe(3799 + 6306 + 266 + 2203);
+    // core 3799 + 17pt 6306 + front & back 2203 = 12308; uncoated +4% = 492
+    expect(q.totalCents).toBe(12308 + 492);
   });
 });

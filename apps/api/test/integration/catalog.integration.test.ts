@@ -25,15 +25,15 @@ function pricingShape(catalog: Catalog) {
     groups: catalog.groups.map((g) => ({
       code: g.code,
       sortOrder: g.sortOrder,
-      values: g.values.map((v) => ({ code: v.code, sortOrder: v.sortOrder, isDefault: v.isDefault })),
+      values: g.values.map((v) => ({ code: v.code, sortOrder: v.sortOrder, isDefault: v.isDefault, addonPercent: v.addonPercent })),
     })),
     rules: [...catalog.rules]
       .map((r) => ({ ...r, allowed: [...r.allowed] }))
       .sort((a, b) => `${a.whenGroup}.${a.whenValue}.${a.targetGroup}`.localeCompare(`${b.whenGroup}.${b.whenValue}.${b.targetGroup}`)),
     quantityTiers: catalog.quantityTiers,
-    upcharges: [...catalog.upcharges].sort((a, b) =>
-      `${a.group}.${a.value}.${String(a.quantity).padStart(6, '0')}`.localeCompare(
-        `${b.group}.${b.value}.${String(b.quantity).padStart(6, '0')}`,
+    corePrices: [...catalog.corePrices].sort((a, b) =>
+      `${a.size}.${a.paper}.${a.printedSide}.${String(a.quantity).padStart(6, '0')}`.localeCompare(
+        `${b.size}.${b.paper}.${b.printedSide}.${String(b.quantity).padStart(6, '0')}`,
       ),
     ),
     turnarounds: [...catalog.turnarounds].sort((a, b) =>
@@ -47,7 +47,7 @@ function attributesOf(catalog: Catalog, group: string) {
 }
 
 describe('CatalogService.loadCatalog (real DB)', () => {
-  it('matches the pricing fixture: groups, defaults, rules, tiers, upcharges, turnarounds', async () => {
+  it('matches the pricing fixture: groups, defaults, rules, tiers, core prices, turnarounds', async () => {
     const catalog = await service.loadCatalog('business-cards');
     expect(pricingShape(catalog)).toEqual(pricingShape(businessCards));
   });

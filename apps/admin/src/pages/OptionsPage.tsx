@@ -197,7 +197,7 @@ function ValueRow({
           {confirmDelete && (
             <div className="confirm-box" role="alert">
               <p>
-                Delete <strong>{value.label}</strong>? Its upcharges and rules are deleted too. Carts holding it ask the customer to choose
+                Delete <strong>{value.label}</strong>? Its prices and rules are deleted too. Carts holding it ask the customer to choose
                 again; placed orders are not affected. To take it off the storefront for a while, use Hide instead.
               </p>
               <div className="form-actions">
@@ -222,17 +222,13 @@ function ValueRow({
 }
 
 /** Options a new one can start from: the custom size takes different details than the fixed sizes. */
-function startOptions(group: AdminGroup): AdminValue[] {
-  return group.values.filter((v) => !(group.code === 'size' && v.code === 'custom'));
-}
-
 /**
  * "Add option": starts from an existing option of the group (its details, and if ticked its
- * upcharges and rules), so nothing new has to be invented and the storefront keeps working.
+ * prices and rules), so nothing new has to be invented and the storefront keeps working.
  */
 function AddValue({ group, saver }: { group: AdminGroup; saver: ReturnType<typeof useSaver> }) {
   const { path: productPath } = useCatalog();
-  const sources = startOptions(group);
+  const sources = group.values;
   const initial = sources.find((v) => v.isDefault) ?? sources[0];
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState('');
@@ -335,8 +331,8 @@ function AddValue({ group, saver }: { group: AdminGroup; saver: ReturnType<typeo
         <label className="field field-inline">
           <input type="checkbox" checked={copy} onChange={(e) => setCopy(e.target.checked)} />
           <span>
-            Copy the upcharges and rules of {source?.label ?? 'that option'}
-            {!copy && ' (otherwise: $0 upcharge, and rules that limit this group leave the new option out)'}
+            Copy the prices and rules of {source?.label ?? 'that option'}
+            {!copy && ' (otherwise: no price yet, and rules that limit this group leave the new option out)'}
           </span>
         </label>
         <h3 className="form-subtitle">Details</h3>

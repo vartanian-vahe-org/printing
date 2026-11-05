@@ -1,9 +1,9 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  corePrices,
   type Database,
   designServiceTiers,
   optionGroups,
-  optionValuePrices,
   optionValueRuleAllowed,
   optionValueRules,
   optionValues,
@@ -14,7 +14,11 @@ import {
   turnaroundOptions,
 } from '@printing/db';
 import {
+  CORE_GROUPS,
+  corePriceAt,
   InvalidConfigurationError,
+  PAPER_GROUP,
+  PRINTED_SIDE_GROUP,
   quote,
   resolveSelection,
   SIZE_GROUP,
@@ -111,9 +115,20 @@ export interface TurnaroundCell {
 }
 
 export interface PricingInput {
-  tiers?: { quantity: number; basePriceCents?: number; isActive?: boolean; isDefault?: boolean }[];
-  upcharges?: { group: string; value: string; quantity: number; upchargeCents: number }[];
+  tiers?: { quantity: number; isActive?: boolean; isDefault?: boolean }[];
+  /** A null price takes that combination off sale at that quantity. */
+  corePrices?: { size: string; paper: string; printedSide: string; quantity: number; priceCents: number | null }[];
+  addons?: { group: string; value: string; percent: number }[];
 }
+
+const isCoreGroup = (code: string) => (CORE_GROUPS as readonly string[]).includes(code);
+
+/** core_prices column holding the value of each core group. */
+const CORE_COLUMN = {
+  [SIZE_GROUP]: 'sizeValueId',
+  [PAPER_GROUP]: 'paperValueId',
+  [PRINTED_SIDE_GROUP]: 'printedSideValueId',
+} as const;
 
 /**
  * Admin reads and writes of a product's configuration. Every write runs in a transaction and is
@@ -151,8 +166,8 @@ export class AdminCatalogService {
   }
 
   /**
-   * Fails the transaction if the storefront could no longer show a priced default configuration at
-   * every quantity (each quantity needs at least one turnaround speed).
+   * Fails the transaction if the storefront could no longer open: the default options need a price at
+   * the default quantity, and each quantity at least one turnaround speed.
    */
   private async assertStorefrontStillWorks(tx: Tx, productCode: string) {
     let quantity: number | null = null;
@@ -162,7 +177,9 @@ export class AdminCatalogService {
       if (tiers.length === 0) throw new BadRequestException('At least one quantity tier must stay active.');
       for (const tier of tiers) {
         quantity = tier.quantity;
-        quote(catalog, { selection: resolveSelection(catalog, {}, tier.quantity), quantity: tier.quantity });
+        const selection = resolveSelection(catalog, {}, tier.quantity);
+        if (corePriceAt(catalog, selection, tier.quantity)) quote(catalog, { selection, quantity: tier.quantity });
+        else if (tier.isDefault) throw new BadRequestException(`The default options need a price at the default quantity (${tier.quantity.toLocaleString('en-US')}).`);
       }
     } catch (err) {
       if (err instanceof UnsatisfiableSelectionError) {
@@ -194,6 +211,9 @@ export class AdminCatalogService {
     const whenGroup = alias(optionGroups, 'when_group');
     const targetGroup = alias(optionGroups, 'target_group');
     const allowedValue = alias(optionValues, 'allowed_value');
+    const sizeValue = alias(optionValues, 'size_value');
+    const paperValue = alias(optionValues, 'paper_value');
+    const sideValue = alias(optionValues, 'side_value');
 
     const [groups, values, rules, allowed, tiers, prices, turnaroundRows, templateRows, facetRows, designRows] = await Promise.all([
       this.db.select().from(optionGroups).where(eq(optionGroups.productId, productId)).orderBy(asc(optionGroups.sortOrder)),
@@ -224,16 +244,18 @@ export class AdminCatalogService {
         .orderBy(asc(productQuantityTiers.sortOrder)),
       this.db
         .select({
-          group: optionGroups.code,
-          value: optionValues.code,
+          size: sizeValue.code,
+          paper: paperValue.code,
+          printedSide: sideValue.code,
           quantity: productQuantityTiers.quantity,
-          upchargeCents: optionValuePrices.upchargeCents,
+          priceCents: corePrices.priceCents,
         })
-        .from(optionValuePrices)
-        .innerJoin(optionValues, eq(optionValues.id, optionValuePrices.optionValueId))
-        .innerJoin(optionGroups, eq(optionGroups.id, optionValues.groupId))
-        .innerJoin(productQuantityTiers, eq(productQuantityTiers.id, optionValuePrices.quantityTierId))
-        .where(eq(optionGroups.productId, productId)),
+        .from(corePrices)
+        .innerJoin(sizeValue, eq(sizeValue.id, corePrices.sizeValueId))
+        .innerJoin(paperValue, eq(paperValue.id, corePrices.paperValueId))
+        .innerJoin(sideValue, eq(sideValue.id, corePrices.printedSideValueId))
+        .innerJoin(productQuantityTiers, eq(productQuantityTiers.id, corePrices.quantityTierId))
+        .where(eq(productQuantityTiers.productId, productId)),
       this.db
         .select({
           value: optionValues.code,
@@ -267,6 +289,7 @@ export class AdminCatalogService {
             isActive: v.isActive,
             isDefault: v.isDefault,
             attributes: v.attributes,
+            addonPercent: v.addonPercent,
             updatedAt: v.updatedAt,
           })),
       })),
@@ -278,12 +301,11 @@ export class AdminCatalogService {
       })),
       quantityTiers: tiers.map((t) => ({
         quantity: t.quantity,
-        basePriceCents: t.basePriceCents,
         sortOrder: t.sortOrder,
         isActive: t.isActive,
         isDefault: t.isDefault,
       })),
-      upcharges: prices,
+      corePrices: prices,
       turnarounds: turnaroundRows,
       templates: templateRows.map((t) => ({
         code: t.code,
@@ -318,7 +340,7 @@ export class AdminCatalogService {
       const existing = (await this.valueIds(tx, groupId)).get(valueCode);
       if (!existing) throw new NotFoundException(`Value "${valueCode}" not found in "${groupCode}"`);
 
-      if (patch.attributes) this.parseAttributes(groupCode, valueCode, patch.attributes);
+      if (patch.attributes) this.parseAttributes(groupCode, patch.attributes);
       const willBeActive = patch.isActive ?? existing.isActive;
       const willBeDefault = patch.isDefault ?? existing.isDefault;
       if (willBeDefault && !willBeActive) {
@@ -361,8 +383,8 @@ export class AdminCatalogService {
     });
   }
 
-  private parseAttributes(groupCode: string, valueCode: string, attributes: Record<string, unknown>) {
-    const parsed = attributeSchema(groupCode, valueCode).safeParse(attributes);
+  private parseAttributes(groupCode: string, attributes: Record<string, unknown>) {
+    const parsed = attributeSchema(groupCode).safeParse(attributes);
     if (!parsed.success) {
       throw new BadRequestException({
         message: 'Invalid attributes',
@@ -373,9 +395,10 @@ export class AdminCatalogService {
 
   /**
    * Adds an option at the end of its group, active and not the default. With `copyFrom` it starts with
-   * that option's upcharges, turnaround days and rules (and, for sizes, its templates); otherwise upcharges
-   * are $0, a new turnaround speed is offered at no quantity until set in the table, rules that limit its
-   * group leave it out, and every template supports a new size (layouts adapt to any size).
+   * that option's prices, turnaround days and rules (and, for sizes, its templates). Otherwise a new add-on
+   * is 0%, a new core option is not sold until it has prices, a new turnaround speed is offered at no
+   * quantity until set in the table, rules that limit its group leave it out, and every template supports
+   * a new size (layouts adapt to any size).
    */
   async createValue(productCode: string, groupCode: string, input: ValueInput, staffId: string): Promise<{ code: string }> {
     return this.db.transaction(async (tx) => {
@@ -390,7 +413,7 @@ export class AdminCatalogService {
         const stem = code;
         for (let n = 2; existing.has(code); n++) code = `${stem}_${n}`;
       }
-      this.parseAttributes(groupCode, code, input.attributes);
+      this.parseAttributes(groupCode, input.attributes);
 
       const source = input.copyFrom ? existing.get(input.copyFrom) : undefined;
       if (input.copyFrom && !source) throw new BadRequestException(`Option "${input.copyFrom}" not found in "${groupCode}"`);
@@ -417,11 +440,28 @@ export class AdminCatalogService {
       const id = created!.id;
 
       if (source) {
-        const prices = await tx.select().from(optionValuePrices).where(eq(optionValuePrices.optionValueId, source.id));
-        if (prices.length) {
-          await tx.insert(optionValuePrices).values(
-            prices.map((p) => ({ optionValueId: id, quantityTierId: p.quantityTierId, upchargeCents: p.upchargeCents, createdBy: staffId, updatedBy: staffId })),
-          );
+        const [{ addonPercent } = { addonPercent: 0 }] = await tx
+          .select({ addonPercent: optionValues.addonPercent })
+          .from(optionValues)
+          .where(eq(optionValues.id, source.id));
+        await tx.update(optionValues).set({ addonPercent }).where(eq(optionValues.id, id));
+        if (isCoreGroup(groupCode)) {
+          const column = CORE_COLUMN[groupCode as keyof typeof CORE_COLUMN];
+          const prices = await tx.select().from(corePrices).where(eq(corePrices[column], source.id));
+          if (prices.length) {
+            await tx.insert(corePrices).values(
+              prices.map(({ sizeValueId, paperValueId, printedSideValueId, quantityTierId, priceCents }) => ({
+                sizeValueId,
+                paperValueId,
+                printedSideValueId,
+                quantityTierId,
+                priceCents,
+                [column]: id,
+                createdBy: staffId,
+                updatedBy: staffId,
+              })),
+            );
+          }
         }
         const cells = await tx.select().from(turnaroundOptions).where(eq(turnaroundOptions.optionValueId, source.id));
         if (cells.length) {
@@ -467,7 +507,7 @@ export class AdminCatalogService {
   }
 
   /**
-   * Deletes an option with its upcharges and rules. Carts holding it ask the customer to choose again;
+   * Deletes an option with its prices and rules. Carts holding it ask the customer to choose again;
    * placed orders keep their own copy of the configuration. Refused for the default, and when a rule
    * would be left allowing nothing.
    */
@@ -503,11 +543,6 @@ export class AdminCatalogService {
         );
       }
 
-      const prices = await tx
-        .select({ quantity: productQuantityTiers.quantity, upchargeCents: optionValuePrices.upchargeCents })
-        .from(optionValuePrices)
-        .innerJoin(productQuantityTiers, eq(productQuantityTiers.id, optionValuePrices.quantityTierId))
-        .where(eq(optionValuePrices.optionValueId, value.id));
       await tx.delete(optionValues).where(eq(optionValues.id, value.id));
 
       if (groupCode === SIZE_GROUP) {
@@ -523,7 +558,7 @@ export class AdminCatalogService {
         target: `${productCode} · ${groupCode} / ${valueCode}`,
         summary: `Deleted ${value.label}`,
         changes: {
-          before: { code: value.code, label: value.label, description: value.description, isActive: value.isActive, attributes: value.attributes, upcharges: prices },
+          before: { code: value.code, label: value.label, description: value.description, isActive: value.isActive, attributes: value.attributes, addonPercent: value.addonPercent },
           after: null,
         },
       });
@@ -578,16 +613,11 @@ export class AdminCatalogService {
   async updatePricing(productCode: string, input: PricingInput, staffId: string) {
     await this.db.transaction(async (tx) => {
       const productId = await this.productId(tx, productCode);
-      const tiers = await tx
-        .select({ id: productQuantityTiers.id, quantity: productQuantityTiers.quantity })
-        .from(productQuantityTiers)
-        .where(eq(productQuantityTiers.productId, productId));
-      const tierByQty = new Map(tiers.map((t) => [t.quantity, t.id]));
       const tiersBefore = await tx
-        .select({ quantity: productQuantityTiers.quantity, basePriceCents: productQuantityTiers.basePriceCents, isActive: productQuantityTiers.isActive, isDefault: productQuantityTiers.isDefault })
+        .select({ id: productQuantityTiers.id, quantity: productQuantityTiers.quantity, isActive: productQuantityTiers.isActive, isDefault: productQuantityTiers.isDefault })
         .from(productQuantityTiers)
         .where(eq(productQuantityTiers.productId, productId));
-      const upchargesBefore = new Map<string, number>();
+      const tierByQty = new Map(tiersBefore.map((t) => [t.quantity, t.id]));
 
       for (const tier of input.tiers ?? []) {
         const id = tierByQty.get(tier.quantity);
@@ -602,36 +632,55 @@ export class AdminCatalogService {
         await tx.update(productQuantityTiers).set({ ...changes, updatedBy: staffId }).where(eq(productQuantityTiers.id, id));
       }
 
-      if (input.upcharges?.length) {
-        const groupCodes = [...new Set(input.upcharges.map((u) => u.group))];
-        const valueRows = await tx
-          .select({ id: optionValues.id, code: optionValues.code, group: optionGroups.code })
-          .from(optionValues)
-          .innerJoin(optionGroups, eq(optionGroups.id, optionValues.groupId))
-          .where(and(eq(optionGroups.productId, productId), inArray(optionGroups.code, groupCodes)));
-        const valueId = new Map(valueRows.map((v) => [`${v.group}.${v.code}`, v.id]));
-        if (groupCodes.includes(TURNAROUND_GROUP)) {
-          throw new BadRequestException('Turnaround is priced by percent in the turnaround table, not with upcharges.');
-        }
+      const valueRows = await tx
+        .select({ id: optionValues.id, code: optionValues.code, group: optionGroups.code, addonPercent: optionValues.addonPercent })
+        .from(optionValues)
+        .innerJoin(optionGroups, eq(optionGroups.id, optionValues.groupId))
+        .where(eq(optionGroups.productId, productId));
+      const valueOf = (group: string, code: string) => {
+        const value = valueRows.find((v) => v.group === group && v.code === code);
+        if (!value) throw new BadRequestException(`Option "${group}.${code}" does not exist`);
+        return value;
+      };
 
-        for (const u of input.upcharges) {
-          const optionValueId = valueId.get(`${u.group}.${u.value}`);
-          const quantityTierId = tierByQty.get(u.quantity);
-          if (!optionValueId) throw new BadRequestException(`Option "${u.group}.${u.value}" does not exist`);
-          if (!quantityTierId) throw new BadRequestException(`Quantity tier ${u.quantity} does not exist`);
-          const [old] = await tx
-            .select({ cents: optionValuePrices.upchargeCents })
-            .from(optionValuePrices)
-            .where(and(eq(optionValuePrices.optionValueId, optionValueId), eq(optionValuePrices.quantityTierId, quantityTierId)));
-          upchargesBefore.set(`${u.group}.${u.value}@${u.quantity}`, old?.cents ?? 0);
+      const coreChanges: { key: string; before: number | null; after: number | null }[] = [];
+      for (const cell of input.corePrices ?? []) {
+        const quantityTierId = tierByQty.get(cell.quantity);
+        if (!quantityTierId) throw new BadRequestException(`Quantity tier ${cell.quantity} does not exist`);
+        const key = {
+          sizeValueId: valueOf(SIZE_GROUP, cell.size).id,
+          paperValueId: valueOf(PAPER_GROUP, cell.paper).id,
+          printedSideValueId: valueOf(PRINTED_SIDE_GROUP, cell.printedSide).id,
+          quantityTierId,
+        };
+        const where = and(
+          eq(corePrices.sizeValueId, key.sizeValueId),
+          eq(corePrices.paperValueId, key.paperValueId),
+          eq(corePrices.printedSideValueId, key.printedSideValueId),
+          eq(corePrices.quantityTierId, quantityTierId),
+        );
+        const [old] = await tx.select({ cents: corePrices.priceCents }).from(corePrices).where(where);
+        coreChanges.push({ key: `${cell.size} / ${cell.paper} / ${cell.printedSide} @ ${cell.quantity}`, before: old?.cents ?? null, after: cell.priceCents });
+        if (cell.priceCents === null) {
+          await tx.delete(corePrices).where(where);
+        } else {
           await tx
-            .insert(optionValuePrices)
-            .values({ optionValueId, quantityTierId, upchargeCents: u.upchargeCents, createdBy: staffId, updatedBy: staffId })
+            .insert(corePrices)
+            .values({ ...key, priceCents: cell.priceCents, createdBy: staffId, updatedBy: staffId })
             .onConflictDoUpdate({
-              target: [optionValuePrices.optionValueId, optionValuePrices.quantityTierId],
-              set: { upchargeCents: u.upchargeCents, updatedBy: staffId, updatedAt: new Date() },
+              target: [corePrices.sizeValueId, corePrices.paperValueId, corePrices.printedSideValueId, corePrices.quantityTierId],
+              set: { priceCents: cell.priceCents, updatedBy: staffId, updatedAt: new Date() },
             });
         }
+      }
+
+      const addonChanges: { key: string; before: number; after: number }[] = [];
+      for (const addon of input.addons ?? []) {
+        if (isCoreGroup(addon.group)) throw new BadRequestException('Size, paper and printed sides have set prices, not a percent.');
+        if (addon.group === TURNAROUND_GROUP) throw new BadRequestException('Turnaround is priced in the turnaround table.');
+        const value = valueOf(addon.group, addon.value);
+        addonChanges.push({ key: `${addon.group}.${addon.value}`, before: value.addonPercent, after: addon.percent });
+        await tx.update(optionValues).set({ addonPercent: addon.percent, updatedBy: staffId }).where(eq(optionValues.id, value.id));
       }
 
       const [defaultTier] = await tx
@@ -643,15 +692,17 @@ export class AdminCatalogService {
       }
 
       await this.assertStorefrontStillWorks(tx, productCode);
-      const tierChanges = (input.tiers ?? []).map((t) => ({ before: tiersBefore.find((b) => b.quantity === t.quantity), after: t }));
-      const upchargeChanges = (input.upcharges ?? [])
-        .map((u) => ({ key: `${u.group}.${u.value}@${u.quantity}`, before: upchargesBefore.get(`${u.group}.${u.value}@${u.quantity}`), after: u.upchargeCents }))
-        .filter((c) => c.before !== c.after);
+      const tierChanges = (input.tiers ?? []).map((t) => {
+        const { id: _id, ...before } = tiersBefore.find((b) => b.quantity === t.quantity)!;
+        return { before, after: t };
+      });
+      const changedCore = coreChanges.filter((c) => c.before !== c.after);
+      const changedAddons = addonChanges.filter((c) => c.before !== c.after);
       await this.audit.record(tx, staffId, {
         action: 'catalog.pricing.update',
         target: `${productCode} · pricing`,
-        summary: `Updated ${tierChanges.length} quantity tier(s) and ${upchargeChanges.length} upcharge(s)`,
-        changes: { tiers: tierChanges, upcharges: upchargeChanges },
+        summary: `Updated ${tierChanges.length} quantity tier(s), ${changedCore.length} core price(s) and ${changedAddons.length} add-on(s)`,
+        changes: { tiers: tierChanges, corePrices: changedCore, addons: changedAddons },
       });
     });
   }

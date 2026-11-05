@@ -113,8 +113,8 @@ export function TurnaroundPage() {
         <div>
           <h1>Turnaround · {productName}</h1>
           <p className="muted">
-            Production days and price of each speed at each quantity. The percent is added to the printing price (base price, options
-            and size); use a negative percent for a discount. Untick a cell to stop offering that speed at that quantity. Every
+            Production days and price of each speed at each quantity. The percent is added to the printing price (core price and
+            add-ons); use a negative percent for a discount. Untick a cell to stop offering that speed at that quantity. Every
             quantity needs at least one speed. Add, rename or reorder speeds on the <Link to="/options">Options</Link> page.
           </p>
         </div>
