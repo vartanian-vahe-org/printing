@@ -106,7 +106,7 @@ export default function CardScene({ spec, artwork, blank, turnRequest, autoRotat
       camera={{ fov: FOV, position: [0, 0, distance], near: 0.1, far: 100 }}
       // Neutral tone mapping keeps white paper white (the default ACES curve greys it out).
       gl={{ antialias: true, alpha: true, toneMapping: NeutralToneMapping, toneMappingExposure: 1 }}
-      aria-label="3D preview of your business card. Drag to rotate."
+      aria-label="3D preview of your design. Drag to rotate."
     >
       <ambientLight intensity={0.6} />
       <directionalLight position={[3, 4, 6]} intensity={1.8} />

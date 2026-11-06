@@ -3,7 +3,8 @@
  * Everything is identified by stable `code`s, never database ids.
  */
 export interface Catalog {
-  product: { code: string; name: string };
+  /** unitName / unitNamePlural: what customers call it, e.g. "flyer" and "flyers". */
+  product: { code: string; name: string; unitName: string; unitNamePlural: string };
   groups: OptionGroup[];
   rules: OptionRule[];
   quantityTiers: QuantityTier[];

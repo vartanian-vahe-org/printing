@@ -63,7 +63,7 @@ const serviceDesignSchema = z
       })
       .strict()
       .transform((brief) => (brief.fields?.length ? { ...brief, content: brief.fields.map((f) => `${f.label}: ${f.value}`).join('\n') } : brief))
-      .refine((brief) => brief.content.length > 0, { message: 'Tell us what to put on your card', path: ['content'] }),
+      .refine((brief) => brief.content.length > 0, { message: 'Tell us what to print', path: ['content'] }),
   })
   .strict();
 

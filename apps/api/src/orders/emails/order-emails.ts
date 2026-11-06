@@ -183,7 +183,7 @@ export function proofReadyEmail(order: OrderView, store: StoreIdentity, orderUrl
   const subject = `Your proof for order #${order.number} is ready – ${store.storeName}`;
   const notes = order.items.flatMap((item) => item.proof.issues.filter((i) => i.level === 'warning'));
   const waitingForPayment = order.paymentStatus === 'unpaid';
-  const intro = `Check how your cards will print and approve the proof. We start printing once it is approved${waitingForPayment ? ' and payment is received' : ''}.`;
+  const intro = `Check how your order will print and approve the proof. We start printing once it is approved${waitingForPayment ? ' and payment is received' : ''}.`;
   const notesText = notes.length ? `Our file check left ${notes.length} note(s) for you to read before approving.` : '';
   const html = layout(
     store,

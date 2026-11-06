@@ -64,7 +64,7 @@ const COATING_14 = ['matte_both', 'gloss_both', 'uncoated_both', 'uv_both', 'uv_
 const NO_RUSH = ['economy', 'standard', 'express'];
 
 export const businessCards: Catalog = {
-  product: { code: 'business-cards', name: 'Business Cards' },
+  product: { code: 'business-cards', name: 'Business Cards', unitName: 'card', unitNamePlural: 'cards' },
   groups: [
     g('size', 1, [
       v('std_3_5x2', 1, { trim_w_in: 3.5, trim_h_in: 2, bleed_in: B, safe_in: B }, true),

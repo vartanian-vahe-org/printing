@@ -113,7 +113,7 @@ def image_to_pdf(data: bytes, geometry: Geometry, kind: str) -> Normalized:
             source.load()  # the first page of a multi-page TIFF; the merged image of a PSD
             image = source.copy()
     except Image.DecompressionBombError:
-        return Normalized(None, kind, [Issue("image-too-large", "error", f"The {name} image is too large to process. Export it at the card size, 300 DPI.")])
+        return Normalized(None, kind, [Issue("image-too-large", "error", f"The {name} image is too large to process. Export it at the finished size, 300 DPI.")])
     except (OSError, SyntaxError, ValueError):
         hint = " In Photoshop, save with “Maximize Compatibility” turned on, or export a PDF or TIFF." if kind == "psd" else ""
         return Normalized(None, kind, [Issue("unreadable", "error", f"The {name} file could not be read.{hint}")])
@@ -147,7 +147,7 @@ def image_to_pdf(data: bytes, geometry: Geometry, kind: str) -> Normalized:
     elif _matches(ratio, trim_in):
         page_in = trim_in  # preflight flags the missing bleed
     elif _matches(ratio, (bleed_in[1], bleed_in[0])) or _matches(ratio, (trim_in[1], trim_in[0])):
-        return Normalized(None, kind, [Issue("rotated", "error", f"The {name} image is rotated. Turn it to match the card orientation.")])
+        return Normalized(None, kind, [Issue("rotated", "error", f"The {name} image is rotated. Turn it to match the orientation of the order.")])
     else:
         min_w, min_h = round(bleed_in[0] * MIN_DPI), round(bleed_in[1] * MIN_DPI)
         return Normalized(
@@ -157,8 +157,8 @@ def image_to_pdf(data: bytes, geometry: Geometry, kind: str) -> Normalized:
                 Issue(
                     "wrong-size",
                     "error",
-                    f"The {name} image is {px_w} × {px_h} px, which does not have the proportions of this card. It must be "
-                    f"{_inches(bleed_in[0] * PT_PER_IN)} × {_inches(bleed_in[1] * PT_PER_IN)} in (the card plus bleed): "
+                    f"The {name} image is {px_w} × {px_h} px, which does not have the proportions of this size. It must be "
+                    f"{_inches(bleed_in[0] * PT_PER_IN)} × {_inches(bleed_in[1] * PT_PER_IN)} in (the finished size plus bleed): "
                     f"{min_w} × {min_h} px at {MIN_DPI} DPI.",
                 )
             ],

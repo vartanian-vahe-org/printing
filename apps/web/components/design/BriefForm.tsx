@@ -82,7 +82,7 @@ export function BriefForm({ tier, brief, onChange, onChangeTier }: Props) {
           rows={4}
           maxLength={3000}
           value={brief.notes}
-          placeholder="Colors, style, cards you like, anything to avoid…"
+          placeholder="Colors, style, designs you like, anything to avoid…"
           onChange={(e) => onChange((b) => ({ ...b, notes: e.target.value }))}
         />
       </div>

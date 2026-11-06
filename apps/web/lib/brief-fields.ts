@@ -1,7 +1,7 @@
 /**
- * What the customer fills in for "let us design it": one field per line of the card, so nothing is
- * forgotten and our designer gets it sorted. Business cards only for now; other products get their
- * own list when they are added.
+ * What the customer fills in for "let us design it": one field per line of the design, so nothing is
+ * forgotten and our designer gets it sorted. The same list for every product; "Anything else to print"
+ * takes what a flyer or postcard needs beyond it.
  */
 export interface BriefFieldDef {
   key: string;
@@ -30,7 +30,7 @@ export const BRIEF_FIELDS: BriefFieldDef[] = [
   {
     key: 'other',
     label: 'Anything else to print',
-    placeholder: 'Back of the card: list of services, a QR code to our booking page, license number…',
+    placeholder: 'A headline, list of services, a QR code to our booking page, license number…',
     multiline: true,
     wide: true,
     maxLength: 1000,

@@ -18,7 +18,7 @@ interface Props {
   onRemove: (side: FileSide) => void;
   /** The customer picked which pages of a multi-page file are printed (front, then back), 1-based. */
   onChoosePages: (side: FileSide, pages: number[]) => void;
-  /** The card size chosen in step 1 (e.g. "Slim 3.5" x 1.75""), with a way back to change it. */
+  /** The size chosen in step 1 (e.g. "Slim 3.5" x 1.75""), with a way back to change it. */
   sizeName?: string;
   onChangeSize?: () => void;
 }
@@ -32,7 +32,7 @@ export function UploadPanel({ files, checks, backMode, size, onAdd, onRemove, on
       {sizeName && (
         <div className={styles.chosen}>
           <span>
-            Card size: <strong>{sizeName}</strong>
+            Size: <strong>{sizeName}</strong>
           </span>
           {onChangeSize && (
             <button type="button" className={styles.linkButton} onClick={onChangeSize}>
@@ -45,7 +45,7 @@ export function UploadPanel({ files, checks, backMode, size, onAdd, onRemove, on
         <strong>File setup</strong>
         <ul>
           <li>
-            {bleedW} × {bleedH} in: your {formatInches(size.widthIn)} × {formatInches(size.heightIn)} card plus{' '}
+            {bleedW} × {bleedH} in: the {formatInches(size.widthIn)} × {formatInches(size.heightIn)} finished size plus{' '}
             {formatInches(size.bleedIn)} bleed on every side
           </li>
           <li>
@@ -223,7 +223,7 @@ function PrintedPages({ pdf, roles }: { pdf: OpenedPdf; roles: string[] }) {
     <div className={styles.thumbs}>
       {shown.map((role, index) => (
         <figure key={role} className={styles.thumb}>
-          <Thumbnail url={urls[index] ?? null} alt={`${role} of your card`} />
+          <Thumbnail url={urls[index] ?? null} alt={`${role} of your design`} />
           <figcaption>{role}</figcaption>
         </figure>
       ))}

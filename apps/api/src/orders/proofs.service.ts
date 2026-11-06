@@ -155,7 +155,7 @@ export class ProofsService {
 
       const backMode = (item.printSpec as unknown as PrintSpec | null)?.backMode ?? 'separate';
       if (backMode === 'separate' && !files.back && files.front.pageCount < 2) {
-        throw new BadRequestException('This card has a back: upload a back file or a 2-page PDF.');
+        throw new BadRequestException('This design has a back: upload a back file or a 2-page PDF.');
       }
       const round = (design.artwork?.round ?? 0) + 1;
       const artwork = { front: files.front, ...(backMode === 'separate' && files.back ? { back: files.back } : {}), round, deliveredAt: new Date().toISOString() };

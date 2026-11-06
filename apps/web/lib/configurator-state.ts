@@ -107,7 +107,7 @@ export function optionDeltas(
 }
 
 /**
- * Total and per-card price at every quantity sold for the current options. Where the current speed
+ * Total and per-item price at every quantity sold for the current options. Where the current speed
  * is not offered, the price is that of the speed the customer would be switched to.
  */
 export function tierPrices(catalog: Catalog, state: ConfiguratorState) {
@@ -141,9 +141,8 @@ export function speedChoices(catalog: Catalog, state: ConfiguratorState): SpeedC
     const offered = quantities.filter((q) => turnaroundAt(catalog, code, q));
     if (offered.length === 0) return [];
     const below = offered.filter((q) => q < state.quantity);
-    const unavailable = below.length
-      ? `Up to ${count.format(below.at(-1)!)} cards`
-      : `From ${count.format(offered[0]!)} cards`;
+    const unit = catalog.product.unitNamePlural;
+    const unavailable = below.length ? `Up to ${count.format(below.at(-1)!)} ${unit}` : `From ${count.format(offered[0]!)} ${unit}`;
     return [{ code, businessDays: null, unavailable }];
   });
 }

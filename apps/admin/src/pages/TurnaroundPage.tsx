@@ -167,7 +167,7 @@ export function TurnaroundPage() {
                         type="checkbox"
                         checked={cell.offered}
                         onChange={() => toggle(speed.code, tier.quantity)}
-                        aria-label={`Offer ${speed.label} for ${tier.quantity} cards`}
+                        aria-label={`Offer ${speed.label} at quantity ${tier.quantity}`}
                       />
                       {cell.offered ? (
                         <>

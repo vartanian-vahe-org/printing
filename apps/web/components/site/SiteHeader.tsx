@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { AccountLink } from './AccountLink';
-import { getProducts } from '../../lib/api';
+import { comingSoon, getProducts } from '../../lib/api';
 import { isEnabled } from '../../lib/features';
 import { CartLink } from './CartLink';
 import styles from './site.module.css';
@@ -37,12 +37,11 @@ export async function SiteHeader() {
               </div>
             </div>
           )}
-          <span className={styles.navSoon} title="Coming soon">
-            Flyers
-          </span>
-          <span className={styles.navSoon} title="Coming soon">
-            Stickers &amp; Labels
-          </span>
+          {comingSoon(products).map((name) => (
+            <span key={name} className={styles.navSoon} title="Coming soon">
+              {name}
+            </span>
+          ))}
         </nav>
         {isEnabled('account') && <AccountLink />}
         {isEnabled('cart') && <CartLink />}

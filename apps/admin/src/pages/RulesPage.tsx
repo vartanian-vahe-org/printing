@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router';
 import { api, type AdminCatalog, type AdminGroup } from '../api';
 import { useCatalog, useSaver } from '../catalog';
 import { Toast } from '../components/Toast';
@@ -14,8 +15,21 @@ export function RulesPage() {
 
   if (!catalog) return <p className="page-loading">Loading…</p>;
   // Falls back to the first option when the picked one no longer exists (deleted on the Options page).
-  const whenGroup = catalog.groups.find((g) => g.code === when.group) ?? catalog.groups[0]!;
-  const whenValue = whenGroup.values.find((v) => v.code === when.value) ?? whenGroup.values[0]!;
+  const filled = catalog.groups.filter((g) => g.values.length > 0);
+  const whenGroup = filled.find((g) => g.code === when.group) ?? filled[0];
+  const whenValue = whenGroup?.values.find((v) => v.code === when.value) ?? whenGroup?.values[0];
+  if (!whenGroup || !whenValue) {
+    return (
+      <div className="page">
+        <header className="page-header">
+          <h1>Rules</h1>
+        </header>
+        <p className="muted">
+          This product has no options yet. Add them on the <Link to="/options">Options</Link> page first.
+        </p>
+      </div>
+    );
+  }
   const current = { group: whenGroup.code, value: whenValue.code };
 
   return (

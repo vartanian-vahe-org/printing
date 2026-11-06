@@ -218,6 +218,20 @@
       "when": 1793891206221,
       "tag": "0030_seed_product_details",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1793970370794,
+      "tag": "0031_product_units",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793970371646,
+      "tag": "0032_seed_product_units",
+      "breakpoints": true
     }
   ]
 }

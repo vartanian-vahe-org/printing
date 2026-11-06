@@ -57,8 +57,17 @@ export interface ProductInput {
   code?: string;
   name: string;
   description?: string | null;
-  /** Existing product whose whole configuration the new one starts with. */
-  copyFrom: string;
+  unitName?: string;
+  unitNamePlural?: string;
+  /** Existing product whose whole configuration the new one starts with; left out for a blank product. */
+  copyFrom?: string;
+}
+
+export interface GroupInput {
+  code?: string;
+  label: string;
+  /** A group always has an option, so a live product keeps working: this one becomes its default. */
+  firstOption: string;
 }
 
 export interface ProductPatch {
@@ -66,6 +75,8 @@ export interface ProductPatch {
   description?: string | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
+  unitName?: string;
+  unitNamePlural?: string;
   sortOrder?: number;
   isActive?: boolean;
 }
@@ -160,6 +171,21 @@ export interface PricingInput {
 
 const isCoreGroup = (code: string) => (CORE_GROUPS as readonly string[]).includes(code);
 
+/** The groups every product has: the pricing engine needs them, so they can be renamed but not deleted. */
+const REQUIRED_GROUPS = [
+  { code: SIZE_GROUP, label: 'Size' },
+  { code: PAPER_GROUP, label: 'Paper' },
+  { code: PRINTED_SIDE_GROUP, label: 'Printed Side' },
+  { code: TURNAROUND_GROUP, label: 'Turnaround' },
+];
+const isRequiredGroup = (code: string) => REQUIRED_GROUPS.some((g) => g.code === code);
+
+/** Details of the first option of an add-on group the 3D preview reads; other groups have none. */
+const FIRST_OPTION_ATTRIBUTES: Record<string, Record<string, unknown>> = {
+  coating: { front: 'none', back: 'none', laminated: false },
+  corners: { radius_in: 0 },
+};
+
 /** core_prices column holding the value of each core group. */
 const CORE_COLUMN = {
   [SIZE_GROUP]: 'sizeValueId',
@@ -203,15 +229,24 @@ export class AdminCatalogService {
   }
 
   /**
-   * Fails the transaction if the storefront could no longer open: the default options need a price at
-   * the default quantity, and each quantity at least one turnaround speed.
+   * Fails the transaction if the storefront could no longer open a live product. A hidden one may be
+   * unfinished: it is checked when shown, and the Products page lists what is missing.
    */
   private async assertStorefrontStillWorks(tx: Tx, productCode: string) {
+    const [product] = await tx.select({ isActive: products.isActive }).from(products).where(eq(products.code, productCode));
+    if (product?.isActive) await this.assertSellable(tx, productCode);
+  }
+
+  /** Every required group needs an option, the default options a price at the default quantity, and each quantity a turnaround speed. */
+  private async assertSellable(db: Executor, productCode: string) {
     let quantity: number | null = null;
     try {
-      const catalog = await new CatalogService(tx as unknown as Database).readCatalog(productCode, { includeHidden: true });
+      const catalog = await new CatalogService(db as unknown as Database).readCatalog(productCode, { includeHidden: true });
+      const empty = catalog.groups.filter((g) => g.values.length === 0).map((g) => g.label);
+      if (empty.length) throw new BadRequestException(`Add at least one option to: ${empty.join(', ')}.`);
       const tiers = sortedTiers(catalog);
-      if (tiers.length === 0) throw new BadRequestException('At least one quantity tier must stay active.');
+      if (tiers.length === 0) throw new BadRequestException('Add at least one quantity.');
+      if (catalog.corePrices.length === 0) throw new BadRequestException('Enter prices on the Pricing page.');
       for (const tier of tiers) {
         quantity = tier.quantity;
         const selection = resolveSelection(catalog, {}, tier.quantity);
@@ -221,13 +256,24 @@ export class AdminCatalogService {
     } catch (err) {
       if (err instanceof UnsatisfiableSelectionError) {
         if (err.groupCode === TURNAROUND_GROUP && quantity !== null) {
-          throw new BadRequestException(`No turnaround would be offered for ${quantity.toLocaleString('en-US')} cards. Offer at least one speed at every quantity.`);
+          throw new BadRequestException(`No turnaround would be offered at quantity ${quantity.toLocaleString('en-US')}. Offer at least one speed at every quantity.`);
         }
         throw new BadRequestException(`This change leaves "${err.groupCode}" with no available option. Allow at least one.`);
       }
       if (err instanceof InvalidConfigurationError) {
         throw new BadRequestException(`This change breaks the default configuration: ${err.issues.join('; ')}`);
       }
+      throw err;
+    }
+  }
+
+  /** Why a product cannot go on the storefront yet; null when it can. */
+  private async setupIssue(productCode: string): Promise<string | null> {
+    try {
+      await this.assertSellable(this.db, productCode);
+      return null;
+    } catch (err) {
+      if (err instanceof BadRequestException) return err.message;
       throw err;
     }
   }
@@ -242,12 +288,14 @@ export class AdminCatalogService {
         description: products.description,
         seoTitle: products.seoTitle,
         seoDescription: products.seoDescription,
+        unitName: products.unitName,
+        unitNamePlural: products.unitNamePlural,
         sortOrder: products.sortOrder,
         isActive: products.isActive,
       })
       .from(products)
       .orderBy(asc(products.sortOrder), asc(products.name));
-    return { products: rows };
+    return { products: await Promise.all(rows.map(async (row) => ({ ...row, setupIssue: await this.setupIssue(row.code) }))) };
   }
 
   async getCatalog(productCode: string) {
@@ -439,7 +487,7 @@ export class AdminCatalogService {
   }
 
   /**
-   * Adds an option at the end of its group, active and not the default. With `copyFrom` it starts with
+   * Adds an option at the end of its group, active and not the default (unless it is the group's first). With `copyFrom` it starts with
    * that option's prices, turnaround days and rules (and, for sizes, its templates). Otherwise a new add-on
    * is 0%, a new core option is not sold until it has prices, a new turnaround speed is offered at no
    * quantity until set in the table, rules that limit its group leave it out, and every template supports
@@ -478,6 +526,7 @@ export class AdminCatalogService {
           description: input.description ?? null,
           attributes: input.attributes,
           sortOrder: (last?.sortOrder ?? 0) + 1,
+          isDefault: existing.size === 0,
           createdBy: staffId,
           updatedBy: staffId,
         })
@@ -655,9 +704,85 @@ export class AdminCatalogService {
     });
   }
 
+  /** Adds an add-on group with its first option, at 0% and listed before turnaround. */
+  async createGroup(productCode: string, input: GroupInput, staffId: string): Promise<{ code: string }> {
+    return this.db.transaction(async (tx) => {
+      const productId = await this.productId(tx, productCode);
+      const groups = await tx.select().from(optionGroups).where(eq(optionGroups.productId, productId)).orderBy(asc(optionGroups.sortOrder));
+      const code = input.code ?? valueCodeFrom(input.label);
+      if (groups.some((g) => g.code === code)) throw new BadRequestException(`This product already has a "${code}" group.`);
+
+      const turnaround = groups.find((g) => g.code === TURNAROUND_GROUP);
+      const sortOrder = turnaround?.sortOrder ?? (groups.at(-1)?.sortOrder ?? 0) + 1;
+      if (turnaround) await tx.update(optionGroups).set({ sortOrder: sortOrder + 1, updatedBy: staffId }).where(eq(optionGroups.id, turnaround.id));
+      const [group] = await tx
+        .insert(optionGroups)
+        .values({ productId, code, label: input.label, sortOrder, createdBy: staffId, updatedBy: staffId })
+        .returning({ id: optionGroups.id });
+      await tx.insert(optionValues).values({
+        groupId: group!.id,
+        code: valueCodeFrom(input.firstOption),
+        label: input.firstOption,
+        attributes: FIRST_OPTION_ATTRIBUTES[code] ?? {},
+        sortOrder: 1,
+        isDefault: true,
+        createdBy: staffId,
+        updatedBy: staffId,
+      });
+
+      await this.assertStorefrontStillWorks(tx, productCode);
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.group.create',
+        target: `${productCode} · ${code}`,
+        summary: `Added the ${input.label} group`,
+        changes: { before: null, after: { code, label: input.label, firstOption: input.firstOption } },
+      });
+      return { code };
+    });
+  }
+
+  async updateGroup(productCode: string, groupCode: string, label: string, staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const productId = await this.productId(tx, productCode);
+      const groupId = await this.groupId(tx, productId, groupCode);
+      const [before] = await tx.select({ label: optionGroups.label }).from(optionGroups).where(eq(optionGroups.id, groupId));
+      await tx.update(optionGroups).set({ label, updatedBy: staffId }).where(eq(optionGroups.id, groupId));
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.group.update',
+        target: `${productCode} · ${groupCode}`,
+        summary: `Renamed ${before!.label} to ${label}`,
+        changes: { before: { label: before!.label }, after: { label } },
+      });
+    });
+  }
+
+  /** Deletes an add-on group with its options and rules. Placed orders keep their own copy of the configuration. */
+  async deleteGroup(productCode: string, groupCode: string, staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const productId = await this.productId(tx, productCode);
+      const groupId = await this.groupId(tx, productId, groupCode);
+      if (isRequiredGroup(groupCode)) throw new BadRequestException('Size, paper, printed sides and turnaround are needed by every product. You can rename them instead.');
+
+      const [group] = await tx.select({ label: optionGroups.label }).from(optionGroups).where(eq(optionGroups.id, groupId));
+      await tx.delete(optionGroups).where(eq(optionGroups.id, groupId));
+      const rest = await tx.select({ id: optionGroups.id }).from(optionGroups).where(eq(optionGroups.productId, productId)).orderBy(asc(optionGroups.sortOrder));
+      for (const [index, row] of rest.entries()) {
+        await tx.update(optionGroups).set({ sortOrder: index + 1, updatedBy: staffId }).where(eq(optionGroups.id, row.id));
+      }
+      await this.assertStorefrontStillWorks(tx, productCode);
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.group.delete',
+        target: `${productCode} · ${groupCode}`,
+        summary: `Deleted the ${group!.label} group`,
+        changes: { before: { code: groupCode, label: group!.label }, after: null },
+      });
+    });
+  }
+
   /**
-   * Adds a product that starts as a full copy of another one: options, rules, quantities, prices,
-   * turnaround, templates and design packages. It stays off the storefront until it is shown.
+   * Adds a product, off the storefront until it is shown. With `copyFrom` it starts as a full copy of
+   * that product: options, rules, quantities, prices, turnaround, templates and design packages.
+   * Without it, it starts blank: only the required groups, with nothing in them.
    */
   async createProduct(input: ProductInput, staffId: string): Promise<{ code: string }> {
     return this.db.transaction(async (tx) => {
@@ -666,7 +791,8 @@ export class AdminCatalogService {
       const [taken] = await tx.select({ id: products.id }).from(products).where(eq(products.code, code));
       if (taken) throw new BadRequestException(`/${code} is already used by another product. Choose another URL.`);
 
-      const sourceId = await this.productId(tx, input.copyFrom);
+      const [source] = input.copyFrom ? await tx.select().from(products).where(eq(products.code, input.copyFrom)) : [];
+      if (input.copyFrom && !source) throw new NotFoundException(`Product "${input.copyFrom}" not found`);
       const [last] = await tx.select({ sortOrder: max(products.sortOrder) }).from(products);
       const [product] = await tx
         .insert(products)
@@ -674,20 +800,28 @@ export class AdminCatalogService {
           code,
           name: input.name,
           description: input.description ?? null,
+          ...(source ? { unitName: source.unitName, unitNamePlural: source.unitNamePlural } : {}),
+          ...(input.unitName ? { unitName: input.unitName } : {}),
+          ...(input.unitNamePlural ? { unitNamePlural: input.unitNamePlural } : {}),
           sortOrder: (last?.sortOrder ?? 0) + 1,
           isActive: false,
           createdBy: staffId,
           updatedBy: staffId,
         })
         .returning({ id: products.id });
-      await this.copyConfiguration(tx, sourceId, product!.id, staffId);
+      if (source) {
+        await this.copyConfiguration(tx, source.id, product!.id, staffId);
+      } else {
+        await tx.insert(optionGroups).values(
+          REQUIRED_GROUPS.map((g, index) => ({ ...g, productId: product!.id, sortOrder: index + 1, createdBy: staffId, updatedBy: staffId })),
+        );
+      }
 
-      await this.assertStorefrontStillWorks(tx, code);
       await this.audit.record(tx, staffId, {
         action: 'catalog.product.create',
         target: code,
-        summary: `Added ${input.name}, copied from ${input.copyFrom}`,
-        changes: { before: null, after: { code, name: input.name, copyFrom: input.copyFrom } },
+        summary: input.copyFrom ? `Added ${input.name}, copied from ${input.copyFrom}` : `Added ${input.name} as a blank product`,
+        changes: { before: null, after: { code, name: input.name, copyFrom: input.copyFrom ?? null } },
       });
       return { code };
     });
@@ -849,8 +983,8 @@ export class AdminCatalogService {
   }
 
   /**
-   * Adds a quantity. It starts with the turnaround of the closest quantity, because every quantity needs
-   * a speed, and with no prices: it is not sold until they are entered on the Pricing page.
+   * Adds a quantity (the default, if it is the product's first). It starts with the turnaround of the closest
+   * quantity, because every quantity needs a speed, and with no prices: it is not sold until they are entered on the Pricing page.
    */
   async createQuantity(productCode: string, quantity: number, staffId: string) {
     await this.db.transaction(async (tx) => {
@@ -869,7 +1003,7 @@ export class AdminCatalogService {
 
       const [tier] = await tx
         .insert(productQuantityTiers)
-        .values({ productId, quantity, createdBy: staffId, updatedBy: staffId })
+        .values({ productId, quantity, isDefault: others.length === 0, createdBy: staffId, updatedBy: staffId })
         .returning({ id: productQuantityTiers.id });
       if (closest) {
         const cells = await tx.select().from(turnaroundOptions).where(eq(turnaroundOptions.quantityTierId, closest.id));

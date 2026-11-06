@@ -8,13 +8,14 @@ export type DesignMethod = 'upload' | 'template' | 'service';
 interface Props {
   value: DesignMethod | null;
   templateCount: number;
+  unitName: string;
   /** Cheapest design package, or null when the service is not offered. */
   servicePriceFrom: number | null;
   onChange: (method: DesignMethod) => void;
 }
 
-/** Step 2: the three ways to get a design onto the card. */
-export function MethodPicker({ value, templateCount, servicePriceFrom, onChange }: Props) {
+/** Step 2: the ways to get a design onto the product; a product without templates does not offer them. */
+export function MethodPicker({ value, templateCount, unitName, servicePriceFrom, onChange }: Props) {
   const methods: { code: DesignMethod; title: string; text: string; meta: string; icon: string }[] = [
     {
       code: 'upload',
@@ -23,13 +24,17 @@ export function MethodPicker({ value, templateCount, servicePriceFrom, onChange 
       meta: 'PDF · free file check',
       icon: '⬆',
     },
-    {
-      code: 'template',
-      title: 'Choose a template',
-      text: 'Pick a design, add your details and logo, and see it live.',
-      meta: `${templateCount} template${templateCount === 1 ? '' : 's'}`,
-      icon: '▦',
-    },
+    ...(templateCount > 0
+      ? [
+          {
+            code: 'template' as const,
+            title: 'Choose a template',
+            text: 'Pick a design, add your details and logo, and see it live.',
+            meta: `${templateCount} template${templateCount === 1 ? '' : 's'}`,
+            icon: '▦',
+          },
+        ]
+      : []),
     ...(servicePriceFrom !== null
       ? [
           {
@@ -44,7 +49,7 @@ export function MethodPicker({ value, templateCount, servicePriceFrom, onChange 
   ];
 
   return (
-    <div className={styles.methods} role="radiogroup" aria-label="How do you want to design your card?">
+    <div className={styles.methods} role="radiogroup" aria-label={`How do you want to design your ${unitName}?`}>
       {methods.map((method) => (
         <button
           key={method.code}

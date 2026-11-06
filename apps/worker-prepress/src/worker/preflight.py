@@ -91,18 +91,18 @@ def check_size(page_no: int, side: str, size: tuple[float, float], geometry: Geo
             Issue(
                 "no-bleed",
                 "warning",
-                f"{side}: the page is the finished card size without bleed. Colors or images that touch the edge may show a thin white line after cutting.",
+                f"{side}: the page is the finished size without bleed. Colors or images that touch the edge may show a thin white line after cutting.",
                 page_no,
             )
         ]
     if _close(size, (bleed[1], bleed[0])) or _close(size, (trim[1], trim[0])):
-        return [Issue("rotated", "error", f"{side}: the page is rotated. Turn it to match the card orientation.", page_no)]
+        return [Issue("rotated", "error", f"{side}: the page is rotated. Turn it to match the orientation of the order.", page_no)]
     return [
         Issue(
             "wrong-size",
             "error",
             f"{side}: the page is {_inches(size[0])} × {_inches(size[1])} in; it must be {_inches(bleed[0])} × {_inches(bleed[1])} in "
-            f"(the card plus {_inches(geometry.bleed_in * PT_PER_IN)} in bleed on every side).",
+            f"(the finished size plus {_inches(geometry.bleed_in * PT_PER_IN)} in bleed on every side).",
             page_no,
         )
     ]
@@ -306,7 +306,7 @@ def check_images_and_text(page_no: int, side: str, page: pdfium.PdfPage, geometr
                 Issue(
                     "small-text",
                     "warning",
-                    f"{side}: some text is {min(sizes):.1f} pt; text smaller than {MIN_TEXT_PT:g} pt is hard to read on a printed card.",
+                    f"{side}: some text is {min(sizes):.1f} pt; text smaller than {MIN_TEXT_PT:g} pt is hard to read once printed.",
                     page_no,
                 )
             )

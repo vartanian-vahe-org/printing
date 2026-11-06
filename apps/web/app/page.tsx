@@ -1,7 +1,7 @@
 import { defaultQuantity, offeredQuantities, quote, resolveSelection, type Catalog } from '@printing/pricing';
 import type { Template } from '@printing/templates';
 import Link from 'next/link';
-import { getConfigurator, getProducts, getTemplates } from '../lib/api';
+import { comingSoon, getConfigurator, getProducts, getTemplates } from '../lib/api';
 import { CardArt } from '../components/home/CardArt';
 import { formatCents } from '../lib/format';
 import styles from './home.module.css';
@@ -22,11 +22,9 @@ function startingPrice(catalog: Catalog): { cents: number; quantity: number } | 
 const VALUE_PROPS = [
   { title: 'Fast turnaround', text: 'Production in as little as 1 business day. Order by 2 PM Pacific.' },
   { title: 'Made in California', text: 'Printed and trimmed in our own facility, not outsourced.' },
-  { title: 'Free proof', text: 'Approve a digital proof of your card before anything is printed.' },
+  { title: 'Free proof', text: 'Approve a digital proof of your design before anything is printed.' },
   { title: 'Free shipping over $100', text: 'Free standard shipping to all 50 states on orders of $100 or more.' },
 ];
-
-const COMING_SOON = ['Flyers', 'Postcards', 'Stickers & Labels', 'Signs & Banners'];
 
 export default async function HomePage() {
   const products = await getProducts().catch(() => []);
@@ -64,7 +62,7 @@ export default async function HomePage() {
             </div>
             {price && (
               <p className={styles.heroPrice}>
-                From <strong>{formatCents(price.cents)}</strong> for {price.quantity} cards
+                From <strong>{formatCents(price.cents)}</strong> for {price.quantity} {catalog?.product.unitNamePlural}
               </p>
             )}
           </div>
@@ -108,7 +106,7 @@ export default async function HomePage() {
               </Link>
             );
           })}
-          {COMING_SOON.map((name) => (
+          {comingSoon(products, ['Flyers', 'Postcards', 'Stickers & Labels', 'Signs & Banners']).map((name) => (
             <div key={name} className={styles.category} aria-disabled="true">
               <div className={`${styles.categoryImage} ${styles.categoryPlaceholder}`} />
               <span className={styles.categoryName}>{name}</span>
@@ -158,11 +156,11 @@ export default async function HomePage() {
 
       <section className={styles.cta}>
         <div>
-          <h2>Ready to make your cards?</h2>
+          <h2>Ready to order?</h2>
           <p>Choose your options, see the price instantly and preview your design in 3D.</p>
         </div>
         <Link href={leadHref} className={styles.primaryButton}>
-          Order business cards
+          Get started
         </Link>
       </section>
     </main>

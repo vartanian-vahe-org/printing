@@ -45,7 +45,7 @@ export function orderTimeline(order: Order): TimelineStep[] {
       label: 'Printing',
       done: printed,
       date: null,
-      note: order.status === 'in_production' ? 'Your cards are being printed in our California shop.' : null,
+      note: order.status === 'in_production' ? 'Your order is being printed in our California shop.' : null,
     },
     { key: 'shipped', label: 'Shipped', done: printed, date: order.shippedAt, note: null },
   ];

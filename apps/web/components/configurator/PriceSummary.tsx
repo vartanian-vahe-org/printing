@@ -6,11 +6,13 @@ const qty = new Intl.NumberFormat('en-US');
 
 interface Props {
   quote: Quote;
+  /** What the customer is ordering, e.g. "flyers". */
+  unitNamePlural: string;
   /** "Let us design it" package, charged once on top of the printing. */
   designFee?: { name: string; priceCents: number } | null;
 }
 
-export function PriceSummary({ quote, designFee = null }: Props) {
+export function PriceSummary({ quote, unitNamePlural, designFee = null }: Props) {
   const addOns = quote.lines.filter((line) => line.upchargeCents !== 0);
   const totalCents = quote.totalCents + (designFee?.priceCents ?? 0);
 
@@ -19,7 +21,7 @@ export function PriceSummary({ quote, designFee = null }: Props) {
       <div className={styles.priceRow}>
         <span className={styles.priceTotal}>{formatCents(totalCents)}</span>
         <span className={styles.priceEach}>
-          {qty.format(quote.quantity)} cards · {formatCents(quote.unitPriceCents)} each
+          {qty.format(quote.quantity)} {unitNamePlural} · {formatCents(quote.unitPriceCents)} each
           {designFee ? ` + ${designFee.name} design` : ''}
         </span>
       </div>
@@ -28,7 +30,7 @@ export function PriceSummary({ quote, designFee = null }: Props) {
         <summary>Price breakdown</summary>
         <dl>
           <div>
-            <dt>{qty.format(quote.quantity)} cards</dt>
+            <dt>{qty.format(quote.quantity)} {unitNamePlural}</dt>
             <dd>{formatCents(quote.corePriceCents)}</dd>
           </div>
           {addOns.map((line) => (

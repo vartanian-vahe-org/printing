@@ -76,7 +76,7 @@ export function checkPageSize(page: PageSize, size: ExpectedSize): PageSizeCheck
   return {
     level: 'error',
     hasBleed: false,
-    message: `Your page is ${actual}. For a ${formatInches(size.widthIn)} × ${formatInches(size.heightIn)} card, upload ${want} (with bleed) or ${formatInches(size.widthIn)} × ${formatInches(size.heightIn)}.`,
+    message: `Your page is ${actual}. For a finished size of ${formatInches(size.widthIn)} × ${formatInches(size.heightIn)}, upload ${want} (with bleed) or ${formatInches(size.widthIn)} × ${formatInches(size.heightIn)}.`,
   };
 }
 

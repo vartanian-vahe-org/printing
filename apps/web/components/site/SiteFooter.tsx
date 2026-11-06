@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getProducts } from '../../lib/api';
+import { comingSoon, getProducts } from '../../lib/api';
 import { isEnabled } from '../../lib/features';
 import { BRAND_NAME } from './SiteHeader';
 import styles from './site.module.css';
@@ -21,8 +21,11 @@ export async function SiteFooter() {
               {product.name}
             </Link>
           ))}
-          <span className={styles.footerSoon}>Flyers · coming soon</span>
-          <span className={styles.footerSoon}>Stickers &amp; Labels · coming soon</span>
+          {comingSoon(products).map((name) => (
+            <span key={name} className={styles.footerSoon}>
+              {name} · coming soon
+            </span>
+          ))}
         </div>
         <div className={styles.footerColumn}>
           <h2>Ordering</h2>

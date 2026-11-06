@@ -195,7 +195,7 @@ describe('guest cart', () => {
     for (let i = 0; i < 2; i++) slimDoc.addPage([270, 144]).drawRectangle({ x: 0, y: 0, width: 270, height: 144, color: cmyk(0, 0, 0, 1) });
     const slim = await checkArtwork(await uploadArtwork(await slimDoc.save(), 'slim.pdf'), { geometry: { ...standardCard, heightIn: 1.75 } });
     expect(slim.issues).toEqual([]);
-    expect((await add(slim.outputKey!)).body.message).toMatch(/another card size/);
+    expect((await add(slim.outputKey!)).body.message).toMatch(/another size/);
   });
 
   it('keeps only the template text fields it knows', async () => {

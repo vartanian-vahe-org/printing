@@ -138,8 +138,13 @@ export interface AdminProduct {
   description: string | null;
   seoTitle: string | null;
   seoDescription: string | null;
+  /** What customers call one and several of it, e.g. "flyer" and "flyers". */
+  unitName: string;
+  unitNamePlural: string;
   sortOrder: number;
   isActive: boolean;
+  /** Why it cannot go on the storefront yet; null when it can. */
+  setupIssue: string | null;
 }
 
 export interface AdminCatalog {

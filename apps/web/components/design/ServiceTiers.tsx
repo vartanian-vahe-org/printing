@@ -22,7 +22,7 @@ export function ServiceTiers({ tiers, selectedCode, onSelect }: Props) {
   return (
     <div className={styles.serviceIntro}>
       <ol className={styles.serviceSteps}>
-        <li>Choose a package and tell us what to put on your card.</li>
+        <li>Choose a package and tell us what to print.</li>
         <li>Our designer emails you a proof.</li>
         <li>Ask for changes or approve it, then we print.</li>
       </ol>

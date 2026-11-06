@@ -24,6 +24,9 @@ export const products = pgTable('products', {
   /** Browser title and search result text; the name and description are used when empty. */
   seoTitle: text('seo_title'),
   seoDescription: text('seo_description'),
+  /** What customers call one and several of it on the storefront, e.g. "flyer" and "flyers". */
+  unitName: text('unit_name').notNull().default('item'),
+  unitNamePlural: text('unit_name_plural').notNull().default('items'),
   sortOrder: integer('sort_order').notNull().default(0),
   isActive: boolean('is_active').notNull().default(true),
   ...auditColumns,

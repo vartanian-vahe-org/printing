@@ -19,7 +19,7 @@ import { REDIS } from '../redis/redis.tokens.js';
 
 /** Catalog cache lifetime; admin edits clear it at once, so this only bounds a missed clear. */
 const CACHE_SECONDS = 300;
-const cacheKey = (productCode: string) => `catalog:v3:${productCode}`;
+const cacheKey = (productCode: string) => `catalog:v4:${productCode}`;
 
 /**
  * Reads a product's configurator data from the DB in the shape @printing/pricing expects.
@@ -78,7 +78,7 @@ export class CatalogService implements OnModuleInit {
   /** `includeHidden`: admin checks also read products that are not on the storefront yet. */
   async readCatalog(productCode: string, { includeHidden = false } = {}): Promise<Catalog> {
     const [product] = await this.db
-      .select({ id: products.id, code: products.code, name: products.name })
+      .select({ id: products.id, code: products.code, name: products.name, unitName: products.unitName, unitNamePlural: products.unitNamePlural })
       .from(products)
       .where(and(eq(products.code, productCode), includeHidden ? undefined : eq(products.isActive, true)))
       .limit(1);
@@ -174,7 +174,7 @@ export class CatalogService implements OnModuleInit {
     }));
 
     return {
-      product: { code: product.code, name: product.name },
+      product: { code: product.code, name: product.name, unitName: product.unitName, unitNamePlural: product.unitNamePlural },
       groups,
       rules,
       quantityTiers: tierRows.map((t) => ({

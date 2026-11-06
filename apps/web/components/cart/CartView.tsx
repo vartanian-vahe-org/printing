@@ -71,9 +71,9 @@ export function CartView() {
     return (
       <div className={styles.empty}>
         <h2>Your cart is empty</h2>
-        <p>Design your business cards and add them here.</p>
+        <p>Pick a product, design it and add it here.</p>
         <Link href="/#products" className={styles.primary}>
-          Design business cards
+          Browse products
         </Link>
       </div>
     );
@@ -151,7 +151,7 @@ function CartRow({
   return (
     <article className={`${styles.row} ${busy ? styles.rowBusy : ''}`}>
       <div className={styles.thumb}>
-        {preview ? <img src={preview} alt="Front of your card" /> : <span>{item.design.mode === 'upload' ? 'PDF' : item.design.mode === 'service' ? 'Design' : ''}</span>}
+        {preview ? <img src={preview} alt="Front of your design" /> : <span>{item.design.mode === 'upload' ? 'PDF' : item.design.mode === 'service' ? 'Design' : ''}</span>}
       </div>
       <div className={styles.details}>
         <h3>{item.productName}</h3>

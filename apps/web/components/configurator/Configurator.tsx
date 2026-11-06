@@ -87,11 +87,8 @@ const STEPS: { step: Step; label: string }[] = [
   { step: 'details', label: 'Details' },
 ];
 
-const DETAILS_TITLE: Record<DesignMethod, string> = {
-  template: 'Personalize your card',
-  upload: 'Check your files',
-  service: 'Tell our designer what you need',
-};
+const detailsTitle = (method: DesignMethod, unitName: string) =>
+  ({ template: `Personalize your ${unitName}`, upload: 'Check your files', service: 'Tell our designer what you need' })[method];
 
 interface Props {
   catalog: Catalog;
@@ -196,6 +193,7 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
     loadTemplateFonts().then(ready, ready);
   }, []);
 
+  const { unitName, unitNamePlural } = catalog.product;
   const groups = useMemo(() => sortedGroups(catalog), [catalog]);
   const coreGroups = groups.filter((g) => (CORE_GROUPS as readonly string[]).includes(g.code));
   const addonGroups = groups.filter((g) => !coreGroups.includes(g) && g.code !== TURNAROUND_GROUP);
@@ -218,6 +216,12 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
   const backMode = useMemo(() => cardSpec(catalog, state.selection, size).backMode, [catalog, state.selection, size]);
   const availableTemplates = useMemo(() => templatesForSize(templates, size.code), [templates, size.code]);
   const template = availableTemplates.find((t) => t.code === design.templateCode) ?? null;
+  // A saved draft (or a new size) can point at templates this size does not have: choose again.
+  useEffect(() => {
+    if (method !== 'template' || availableTemplates.length > 0) return;
+    setMethod(null);
+    setStep((current) => (current === 'details' ? 'design' : current));
+  }, [method, availableTemplates.length]);
   const tier = designServices.find((t) => t.code === tierCode) ?? null;
   const designFee = method === 'service' && tier ? { name: tier.name, priceCents: tier.priceCents } : null;
   const printDays = currentQuote.businessDays;
@@ -311,14 +315,14 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
   );
 
   const preview = (
-    <section className={styles.previewColumn} aria-label="Card preview">
-      <CardPreview fill catalog={catalog} selection={state.selection} size={size} artwork={previewImages} />
+    <section className={styles.previewColumn} aria-label="Preview">
+      <CardPreview fill catalog={catalog} selection={state.selection} size={size} artwork={previewImages} blank={templates.length === 0} />
     </section>
   );
 
   const priceAndDate = (
     <>
-      <PriceSummary quote={currentQuote} designFee={step === 'details' ? designFee : null} />
+      <PriceSummary quote={currentQuote} unitNamePlural={unitNamePlural} designFee={step === 'details' ? designFee : null} />
       <ShipEstimate calendar={calendar} businessDays={step === 'details' ? shipDays : printDays} />
     </>
   );
@@ -348,9 +352,9 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
         <div className={`${styles.studio} ${styles.studioFit}`}>
           {preview}
 
-          <section className={`${styles.column} ${styles.mainColumn}`} aria-label="Card options">
+          <section className={`${styles.column} ${styles.mainColumn}`} aria-label="Options">
             <div className={styles.columnBody}>
-              <h2 className={styles.columnTitle}>Your card</h2>
+              <h2 className={styles.columnTitle}>Your {unitName}</h2>
               {coreGroups.map(optionField)}
               {addonGroups.length > 0 && <h2 className={styles.columnTitle}>Add-ons</h2>}
               {addonGroups.map(optionField)}
@@ -397,7 +401,7 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
       {step === 'design' && (
         <div className={styles.choose}>
           <div className={styles.chooseHeader}>
-            <h2>How would you like to design your card?</h2>
+            <h2>How would you like to design your {unitName}?</h2>
             <button type="button" className={styles.backButton} onClick={() => go('options')}>
               ← Back to options
             </button>
@@ -407,6 +411,7 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
             value={method}
             templateCount={availableTemplates.length}
             servicePriceFrom={designServices.length ? Math.min(...designServices.map((t) => t.priceCents)) : null}
+            unitName={unitName}
             onChange={setMethod}
           />
 
@@ -426,11 +431,11 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
               <div className={styles.uploadNext}>
                 <p className={styles.hint}>
                   {pdf.files.front && !uploadReady && (pdf.files.front.status === 'ready' || pdf.files.front.status === 'error')
-                    ? 'Fix the problems above to continue: upload a corrected file, or change the card size to match your file.'
-                    : 'We check your files right away (size, 300 DPI, CMYK colors, fonts) and show your card in 3D on the next step.'}
+                    ? 'Fix the problems above to continue: upload a corrected file, or change the size to match your file.'
+                    : `We check your files right away (size, 300 DPI, CMYK colors, fonts) and show your ${unitName} in 3D on the next step.`}
                 </p>
                 <button type="button" className={styles.primaryButton} disabled={!uploadReady} onClick={() => go('details')}>
-                  Review your card
+                  Review your {unitName}
                 </button>
               </div>
             </section>
@@ -468,9 +473,9 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
         <div className={method === 'service' ? `${styles.studio} ${styles.studioNoPreview}` : styles.studio}>
           {method !== 'service' && preview}
 
-          <section className={`${styles.column} ${styles.mainColumn}`} aria-label={DETAILS_TITLE[method]}>
+          <section className={`${styles.column} ${styles.mainColumn}`} aria-label={detailsTitle(method, unitName)}>
             <div className={styles.columnBody}>
-              <h2 className={styles.columnTitle}>{DETAILS_TITLE[method]}</h2>
+              <h2 className={styles.columnTitle}>{detailsTitle(method, unitName)}</h2>
               {method === 'template' && (
                 <DesignPanel
                   selected={template}
@@ -502,7 +507,7 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
           <section className={`${styles.column} ${styles.orderColumn}`} aria-label="Your order">
             <div className={styles.columnBody}>
               <div className={styles.orderHeader}>
-                <h2 className={styles.columnTitle}>Your cards</h2>
+                <h2 className={styles.columnTitle}>Your {unitNamePlural}</h2>
                 <button type="button" className={styles.backButton} onClick={() => go('options')}>
                   Edit options
                 </button>

@@ -35,6 +35,21 @@ const valueCreateSchema = z
   })
   .strict();
 
+const groupCreateSchema = z
+  .object({
+    /** Optional; made from the label when left out. */
+    code: z
+      .string()
+      .regex(/^[a-z0-9]+(_[a-z0-9]+)*$/, 'Use lowercase letters, numbers and underscores')
+      .max(60)
+      .optional(),
+    label: z.string().trim().min(1).max(120),
+    firstOption: z.string().trim().min(1).max(120),
+  })
+  .strict();
+
+const groupPatchSchema = z.object({ label: z.string().trim().min(1).max(120) }).strict();
+
 const ruleSchema = z.object({
   whenGroup: code,
   whenValue: code,
@@ -86,7 +101,10 @@ const productCreateSchema = z
       .optional(),
     name: z.string().trim().min(1).max(120),
     description: z.string().trim().max(500).nullable().optional(),
-    copyFrom: code,
+    unitName: z.string().trim().min(1).max(40).optional(),
+    unitNamePlural: z.string().trim().min(1).max(40).optional(),
+    /** Left out for a blank product. */
+    copyFrom: code.optional(),
   })
   .strict();
 
@@ -96,6 +114,8 @@ const productPatchSchema = z
     description: z.string().trim().max(500).nullable().optional(),
     seoTitle: z.string().trim().max(70).nullable().optional(),
     seoDescription: z.string().trim().max(170).nullable().optional(),
+    unitName: z.string().trim().min(1).max(40).optional(),
+    unitNamePlural: z.string().trim().min(1).max(40).optional(),
     sortOrder: z.number().int().min(0).max(10_000).optional(),
     isActive: z.boolean().optional(),
   })
@@ -187,6 +207,36 @@ export class AdminCatalogController {
   @Get('catalog')
   get(@Param('code') productCode: string) {
     return this.catalog.getCatalog(productCode);
+  }
+
+  @Post('groups')
+  async createGroup(
+    @Param('code') productCode: string,
+    @Body(new ZodValidationPipe(groupCreateSchema)) body: z.infer<typeof groupCreateSchema>,
+    @Req() request: AdminRequest,
+  ) {
+    const created = await this.catalog.createGroup(productCode, body, request.staff!.id);
+    await this.storefront.invalidate(productCode);
+    return created;
+  }
+
+  @Patch('groups/:group')
+  @HttpCode(204)
+  async updateGroup(
+    @Param('code') productCode: string,
+    @Param('group') group: string,
+    @Body(new ZodValidationPipe(groupPatchSchema)) body: z.infer<typeof groupPatchSchema>,
+    @Req() request: AdminRequest,
+  ) {
+    await this.catalog.updateGroup(productCode, group, body.label, request.staff!.id);
+    await this.storefront.invalidate(productCode);
+  }
+
+  @Delete('groups/:group')
+  @HttpCode(204)
+  async deleteGroup(@Param('code') productCode: string, @Param('group') group: string, @Req() request: AdminRequest) {
+    await this.catalog.deleteGroup(productCode, group, request.staff!.id);
+    await this.storefront.invalidate(productCode);
   }
 
   @Patch('groups/:group/values/:value')

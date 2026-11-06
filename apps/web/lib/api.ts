@@ -25,6 +25,11 @@ function serverHeaders(): HeadersInit {
   return secret ? { 'x-proxy-secret': secret } : {};
 }
 
+/** Teaser names, without the ones already on sale. */
+export function comingSoon(products: StorefrontProduct[], names = ['Flyers', 'Stickers & Labels']): string[] {
+  return names.filter((name) => !products.some((p) => p.name.toLowerCase().includes(name.toLowerCase())));
+}
+
 /** Products on the storefront, in display order (server-side only, read once per page request). */
 export const getProducts = cache(async (): Promise<StorefrontProduct[]> => {
   const apiUrl = process.env.API_INTERNAL_URL;

@@ -45,7 +45,7 @@ describe('checkPageSize', () => {
     const result = checkPageSize({ widthPt: 612, heightPt: 792 }, std);
     expect(result.level).toBe('error');
     expect(result.message).toBe(
-      'Your page is 8.5" × 11". For a 3.5" × 2" card, upload 3.75" × 2.25" (with bleed) or 3.5" × 2".',
+      'Your page is 8.5" × 11". For a finished size of 3.5" × 2", upload 3.75" × 2.25" (with bleed) or 3.5" × 2".',
     );
   });
 

@@ -3,7 +3,9 @@
  *   set -a; . ../../.env; set +a; corepack pnpm test:e2e
  * Every change made here is reverted.
  */
+import { cmyk, PDFDocument } from 'pdf-lib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { address, checkArtwork, testHeaders, uniqueEmail, uploadArtwork } from './helpers.js';
 
 const base = process.env.API_BASE_URL ?? 'http://localhost:4000';
 const email = process.env.ADMIN_EMAIL;
@@ -246,6 +248,8 @@ describe('admin products', () => {
   afterAll(async () => {
     await call('PATCH', admin, { isActive: true });
     await call('DELETE', copy);
+    await call('DELETE', `${base}/admin/products/e2e-flyers`);
+    await call('DELETE', `${admin}/groups/e2e_folding`);
   });
 
   it('copies a whole product and keeps it hidden', async () => {
@@ -316,6 +320,101 @@ describe('admin products', () => {
     expect((await call('GET', `${base}/admin/products/e2e-silk-cards/catalog`)).status).toBe(404);
   });
 
+  it('builds a blank product from nothing and shows it once it can be sold', async () => {
+    const flyers = `${base}/admin/products/e2e-flyers`;
+    const issue = async () => (await call('GET', `${base}/admin/products`)).body.products.find((p: any) => p.code === 'e2e-flyers').setupIssue;
+    const created = await call('POST', `${base}/admin/products`, { name: 'E2E Flyers', unitName: 'flyer', unitNamePlural: 'flyers' });
+    expect(created.body.code).toBe('e2e-flyers');
+    const blank = (await call('GET', `${flyers}/catalog`)).body;
+    expect(blank.groups.map((g: any) => [g.code, g.values.length])).toEqual([['size', 0], ['paper', 0], ['printed_side', 0], ['turnaround', 0]]);
+    expect(await issue()).toMatch(/Add at least one option to: Size, Paper, Printed Side, Turnaround/);
+    const early = await call('PATCH', flyers, { isActive: true });
+    expect(early.status).toBe(400);
+    expect(early.body.message).toMatch(/Add at least one option/);
+
+    const add = (group: string, label: string, attributes: Record<string, unknown>) => call('POST', `${flyers}/groups/${group}/values`, { label, attributes });
+    expect((await add('size', 'Letter', { trim_w_in: 8.5, trim_h_in: 11, bleed_in: 0.125, safe_in: 0.125 })).status).toBe(201);
+    expect((await add('size', 'Too big', { trim_w_in: 40, trim_h_in: 11, bleed_in: 0.125, safe_in: 0.125 })).status).toBe(400);
+    expect((await add('paper', '100lb Text', { thickness_pt: 4, tier: 'standard' })).status).toBe(201);
+    expect((await add('printed_side', 'Front only', { back: 'blank' })).status).toBe(201);
+    expect((await add('turnaround', 'Standard', {})).status).toBe(201);
+    expect((await call('POST', `${flyers}/quantities`, { quantity: 250 })).status).toBe(204);
+    const filled = (await call('GET', `${flyers}/catalog`)).body;
+    expect(filled.groups.every((g: any) => g.values[0].isDefault)).toBe(true);
+    expect(filled.quantityTiers[0].isDefault).toBe(true);
+
+    expect(await issue()).toMatch(/Enter prices/);
+    const cell = { size: 'letter', paper: '100lb_text', printedSide: 'front_only', quantity: 250, priceCents: 8900 };
+    expect((await call('PUT', `${flyers}/pricing`, { corePrices: [cell] })).status).toBe(204);
+    expect(await issue()).toMatch(/No turnaround would be offered at quantity 250/);
+    expect((await call('PUT', `${flyers}/turnarounds`, { cells: [{ value: 'standard', quantity: 250, businessDays: 4, percent: 0 }] })).status).toBe(204);
+    expect(await issue()).toBeNull();
+
+    expect((await call('PATCH', flyers, { isActive: true })).status).toBe(204);
+    const page = (await call('GET', `${base}/products/e2e-flyers/configurator`, undefined, false)).body;
+    expect(page.catalog.product).toMatchObject({ unitName: 'flyer', unitNamePlural: 'flyers' });
+    expect(page.defaults.quantity).toBe(250);
+    const priced = await call('POST', `${base}/quotes`, { productCode: 'e2e-flyers', selection: page.defaults.selection, quantity: 250 }, false);
+    expect(priced.body.totalCents).toBe(8900);
+
+    // A customer orders it with their own file, sized for this product and not for a card.
+    const doc = await PDFDocument.create();
+    doc.addPage([630, 810]).drawRectangle({ x: 0, y: 0, width: 630, height: 810, color: cmyk(0, 0, 0, 1) });
+    const key = await uploadArtwork(await doc.save(), 'flyer.pdf');
+    const checked = await checkArtwork(key, { geometry: { widthIn: 8.5, heightIn: 11, bleedIn: 0.125, safeIn: 0.125 }, side: 'front', maxPages: 1 });
+    expect(checked.issues.filter((i) => i.level === 'error')).toEqual([]);
+    let cart = '';
+    const shop = async (path: string, body: unknown) => {
+      const res = await fetch(`${base}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...testHeaders, ...(cart ? { cookie: cart } : {}) },
+        body: JSON.stringify(body),
+      });
+      cart = res.headers.get('set-cookie')?.split(';')[0] ?? cart;
+      return { status: res.status, body: (await res.json()) as any };
+    };
+    const added = await shop('/cart/items', {
+      productCode: 'e2e-flyers',
+      configuration: { selection: page.defaults.selection, quantity: 250 },
+      design: { mode: 'upload', front: { key: checked.outputKey, fileName: 'flyer.pdf', pageCount: 1 }, proof: 'send' },
+    });
+    expect(added.status).toBe(201);
+    expect(added.body.items[0].totalCents).toBe(8900);
+    const totals = (await shop('/checkout/quote', { address: { state: 'CA', zip: '90012' } })).body.totals;
+    const order = await shop('/checkout/orders', { email: uniqueEmail(), shippingAddress: address, shippingMethodCode: 'standard', expectedTotalCents: totals.totalCents });
+    expect(order.status).toBe(201);
+    expect(order.body.number).toBeGreaterThan(0);
+
+    // Live now: the checks are back.
+    expect((await call('PUT', `${flyers}/pricing`, { corePrices: [{ ...cell, priceCents: null }] })).status).toBe(400);
+    await call('PATCH', flyers, { isActive: false });
+    expect((await call('DELETE', flyers)).status).toBe(204);
+  });
+
+  it('adds, renames and deletes option groups; the required ones stay', async () => {
+    const created = await call('POST', `${admin}/groups`, { label: 'E2E Folding', firstOption: 'No fold' });
+    expect(created.body.code).toBe('e2e_folding');
+    const groups = async () => (await call('GET', `${admin}/catalog`)).body.groups;
+    const folding = (await groups()).find((g: any) => g.code === 'e2e_folding');
+    expect(folding.values).toEqual([expect.objectContaining({ code: 'no_fold', isDefault: true })]);
+    expect((await groups()).at(-1).code).toBe('turnaround');
+    const selection = { ...defaultSelection, e2e_folding: 'no_fold' };
+    expect((await call('POST', `${base}/quotes`, { productCode: 'business-cards', selection, quantity: 500 }, false)).status).toBe(200);
+    expect((await call('POST', `${admin}/groups`, { label: 'E2E Folding', firstOption: 'x' })).status).toBe(400);
+
+    expect((await call('PATCH', `${admin}/groups/e2e_folding`, { label: 'E2E Fold' })).status).toBe(204);
+    expect((await groups()).find((g: any) => g.code === 'e2e_folding').label).toBe('E2E Fold');
+    expect((await call('PATCH', `${admin}/groups/paper`, { label: 'Stock' })).status).toBe(204);
+    expect((await call('PATCH', `${admin}/groups/paper`, { label: 'Paper' })).status).toBe(204);
+
+    const required = await call('DELETE', `${admin}/groups/size`);
+    expect(required.status).toBe(400);
+    expect(required.body.message).toMatch(/needed by every product/);
+    expect((await call('DELETE', `${admin}/groups/e2e_folding`)).status).toBe(204);
+    expect((await groups()).map((g: any) => g.sortOrder)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect((await quote('business-cards')).status).toBe(200);
+  });
+
   it('keeps at least one product on the storefront', async () => {
     expect((await call('PATCH', admin, { isActive: false })).status).toBe(204);
     expect(await publicList()).not.toContain('business-cards');
@@ -371,7 +470,7 @@ describe('admin catalog: turnaround table', () => {
   it('refuses to leave a quantity with no speed, and unknown speeds', async () => {
     const none = await call('PUT', `${admin}/turnarounds`, { cells: original.filter((c) => c.quantity !== 50) });
     expect(none.status).toBe(400);
-    expect(none.body.message).toMatch(/No turnaround would be offered for 50 cards/);
+    expect(none.body.message).toMatch(/No turnaround would be offered at quantity 50/);
     expect((await call('GET', `${admin}/catalog`)).body.turnarounds).toHaveLength(original.length);
 
     const unknown = await call('PUT', `${admin}/turnarounds`, { cells: [...original, { value: 'warp', quantity: 50, businessDays: 1, percent: 0 }] });

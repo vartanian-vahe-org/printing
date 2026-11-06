@@ -26,8 +26,8 @@ export function ProductsPage() {
         <div>
           <h1>Products</h1>
           <p className="muted">
-            Each product has its own page, options, prices and quantities. A new product starts as a copy of another one and stays hidden until
-            you show it. The storefront lists them in this order.
+            Each product has its own page, options, prices and quantities. A new product starts blank or as a copy of another one, and stays
+            hidden until you show it. The storefront lists them in this order.
           </p>
         </div>
       </header>
@@ -61,6 +61,8 @@ function ProductRow({
   const [description, setDescription] = useState(product.description ?? '');
   const [seoTitle, setSeoTitle] = useState(product.seoTitle ?? '');
   const [seoDescription, setSeoDescription] = useState(product.seoDescription ?? '');
+  const [unitName, setUnitName] = useState(product.unitName);
+  const [unitNamePlural, setUnitNamePlural] = useState(product.unitNamePlural);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const path = `/admin/products/${product.code}`;
 
@@ -69,6 +71,8 @@ function ProductRow({
     setDescription(product.description ?? '');
     setSeoTitle(product.seoTitle ?? '');
     setSeoDescription(product.seoDescription ?? '');
+    setUnitName(product.unitName);
+    setUnitNamePlural(product.unitNamePlural);
     setConfirmDelete(false);
   }
 
@@ -105,6 +109,7 @@ function ProductRow({
           ) : (
             <code className="value-code">/{product.code}</code>
           )}
+          {!product.isActive && product.setupIssue && <p className="value-issue">Not ready: {product.setupIssue}</p>}
         </div>
         <div className="value-actions">
           <button
@@ -120,7 +125,7 @@ function ProductRow({
           <button
             type="button"
             className="btn btn-small"
-            disabled={saver.saving}
+            disabled={saver.saving || (!product.isActive && Boolean(product.setupIssue))}
             onClick={() =>
               void save(
                 () => api(path, { method: 'PATCH', body: { isActive: !product.isActive } }),
@@ -158,6 +163,8 @@ function ProductRow({
                     description: description.trim() || null,
                     seoTitle: seoTitle.trim() || null,
                     seoDescription: seoDescription.trim() || null,
+                    unitName: unitName.trim(),
+                    unitNamePlural: unitNamePlural.trim(),
                   },
                 }),
               `${name.trim()} saved`,
@@ -173,6 +180,7 @@ function ProductRow({
               <span>SEO title (browser tab and search results)</span>
               <input value={seoTitle} onChange={(e) => setSeoTitle(e.target.value)} maxLength={70} placeholder="Uses the name" />
             </label>
+            <UnitFields one={unitName} many={unitNamePlural} onOne={setUnitName} onMany={setUnitNamePlural} />
           </div>
           <label className="field">
             <span>Description (under the name on the product page)</span>
@@ -229,6 +237,22 @@ function ProductRow({
   );
 }
 
+/** The words the storefront uses for the product, e.g. "250 flyers · $0.20 each". */
+function UnitFields({ one, many, onOne, onMany }: { one: string; many: string; onOne: (text: string) => void; onMany: (text: string) => void }) {
+  return (
+    <>
+      <label className="field">
+        <span>One item is called</span>
+        <input value={one} onChange={(e) => onOne(e.target.value)} required maxLength={40} placeholder="flyer" />
+      </label>
+      <label className="field">
+        <span>Several are called</span>
+        <input value={many} onChange={(e) => onMany(e.target.value)} required maxLength={40} placeholder="flyers" />
+      </label>
+    </>
+  );
+}
+
 function AddProduct({ saver }: { saver: Saver }) {
   const { products, selectProduct } = useCatalog();
   const save = useProductSave(saver);
@@ -236,8 +260,11 @@ function AddProduct({ saver }: { saver: Saver }) {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [description, setDescription] = useState('');
+  const [unitName, setUnitName] = useState('');
+  const [unitNamePlural, setUnitNamePlural] = useState('');
+  /** Empty: a blank product. */
   const [copyFrom, setCopyFrom] = useState('');
-  const source = products.find((p) => p.code === copyFrom) ?? products[0];
+  const source = products.find((p) => p.code === copyFrom);
 
   if (!open) {
     return (
@@ -245,12 +272,13 @@ function AddProduct({ saver }: { saver: Saver }) {
         <button
           type="button"
           className="btn btn-small"
-          disabled={!source}
           onClick={() => {
             setName('');
             setCode('');
             setDescription('');
-            setCopyFrom(products[0]?.code ?? '');
+            setUnitName('');
+            setUnitNamePlural('');
+            setCopyFrom('');
             setOpen(true);
           }}
         >
@@ -273,8 +301,10 @@ function AddProduct({ saver }: { saver: Saver }) {
               body: {
                 name: name.trim(),
                 description: description.trim() || null,
+                unitName: unitName.trim(),
+                unitNamePlural: unitNamePlural.trim(),
                 ...(code.trim() ? { code: code.trim() } : {}),
-                copyFrom: source!.code,
+                ...(source ? { copyFrom: source.code } : {}),
               },
             });
             created = result.code;
@@ -303,26 +333,39 @@ function AddProduct({ saver }: { saver: Saver }) {
             />
           </label>
           <label className="field">
-            <span>Copy everything from</span>
-            <select value={source?.code ?? ''} onChange={(e) => setCopyFrom(e.target.value)}>
+            <span>Start from</span>
+            <select
+              value={copyFrom}
+              onChange={(e) => {
+                const picked = products.find((p) => p.code === e.target.value);
+                setCopyFrom(e.target.value);
+                if (picked) {
+                  setUnitName(picked.unitName);
+                  setUnitNamePlural(picked.unitNamePlural);
+                }
+              }}
+            >
+              <option value="">Blank product</option>
               {products.map((p) => (
                 <option key={p.code} value={p.code}>
-                  {p.name}
+                  Copy of {p.name}
                 </option>
               ))}
             </select>
           </label>
+          <UnitFields one={unitName} many={unitNamePlural} onOne={setUnitName} onMany={setUnitNamePlural} />
         </div>
         <label className="field">
           <span>Description (under the name on the product page)</span>
           <textarea className="textarea" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} />
         </label>
         <p className="muted">
-          The options, rules, quantities, prices, turnaround, templates and design packages of {source?.name ?? 'that product'} are copied. Later
-          changes to one product do not touch the other.
+          {source
+            ? `The options, rules, quantities, prices, turnaround, templates and design packages of ${source.name} are copied. Later changes to one product do not touch the other.`
+            : 'It starts with empty Size, Paper, Printed Side and Turnaround groups. Add your options, quantities and prices, then show it. Customers can upload their own files; templates come from copying a product that has them.'}
         </p>
         <div className="form-actions">
-          <button type="submit" className="btn btn-primary" disabled={saver.saving || !name.trim()}>
+          <button type="submit" className="btn btn-primary" disabled={saver.saving || !name.trim() || !unitName.trim() || !unitNamePlural.trim()}>
             Add product
           </button>
           <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>

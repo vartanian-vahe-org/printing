@@ -463,6 +463,21 @@ select {
   margin-left: 0;
 }
 
+.group-form {
+  flex-basis: 100%;
+  margin: 8px 0 0;
+  padding: 16px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e5e5);
+  border-radius: 12px;
+}
+
+.value-issue {
+  margin: 4px 0 0;
+  color: var(--danger, #b42318);
+  font-size: 13px;
+}
+
 .form-actions-spacer {
   flex: 1;
 }

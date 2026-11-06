@@ -128,7 +128,7 @@ export function CheckoutView() {
       <div className={styles.empty}>
         <h2>Your cart is empty</h2>
         <Link href="/#products" className={styles.primary}>
-          Design business cards
+          Browse products
         </Link>
       </div>
     );

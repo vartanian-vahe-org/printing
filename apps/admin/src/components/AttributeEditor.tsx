@@ -54,6 +54,7 @@ export function AttributeEditor({ groupCode, value, onChange }: Props) {
               <input
                 type="number"
                 step="any"
+                required
                 value={Number.isFinite(current) ? current : ''}
                 onChange={(e) => set(e.target.value === '' ? Number.NaN : Number(e.target.value))}
               />
@@ -86,7 +87,7 @@ export function AttributeEditor({ groupCode, value, onChange }: Props) {
         return (
           <label key={key} className="field">
             <span>{label}</span>
-            <input type="text" value={String(current ?? '')} onChange={(e) => set(e.target.value)} />
+            <input type="text" required value={String(current ?? '')} onChange={(e) => set(e.target.value)} />
           </label>
         );
       })}

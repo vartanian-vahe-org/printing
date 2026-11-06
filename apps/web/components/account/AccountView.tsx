@@ -209,7 +209,7 @@ function Dashboard({ customer, onSignedOut, onChanged }: { customer: Customer; o
         <p className={styles.muted}>Loading…</p>
       ) : orders.length === 0 ? (
         <p className={styles.muted}>
-          No orders yet. <Link href="/#products">Design business cards</Link>
+          No orders yet. <Link href="/#products">Browse products</Link>
         </p>
       ) : (
         <ul className={styles.orders}>

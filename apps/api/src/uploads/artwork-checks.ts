@@ -20,6 +20,6 @@ export async function artworkProblem(storage: StorageService, key: string, geome
   const object = await storage.describe(key);
   if (!object) return `${label} was not found. Please upload it again.`;
   if (object.metadata.check !== 'passed') return `${label} did not pass the file check. Upload a corrected file.`;
-  if (object.metadata.geometry !== geometryTag(geometry)) return `${label} was checked for another card size. Upload it again for this size.`;
+  if (object.metadata.geometry !== geometryTag(geometry)) return `${label} was checked for another size. Upload it again for this size.`;
   return null;
 }
