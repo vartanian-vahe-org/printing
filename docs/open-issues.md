@@ -49,7 +49,6 @@ Cập nhật: 2026-10-20. Khi giải quyết xong một mục: ghi quyết đị
 | O13 | Preview 3D là tấm phẳng theo kích thước: flyer, postcard ổn, nhưng envelope không có nắp, sản phẩm gấp không hiện nếp gấp | Tấm phẳng, tờ trắng nếu chưa có template | Có cần preview riêng cho envelope và sản phẩm gấp | Trung bình |
 | O14 | Admin chưa tạo được template mới, nên product trống chỉ có Upload và Design service (nếu thêm gói). Form brief cho designer dùng chung các trường của card | Hiện Upload; muốn có template thì copy từ product có template | Làm cùng O10 | Cao |
 | O15 | Kích thước tối đa 36 in, ảnh tối đa 100 MP (cỡ 24 × 36 in ở 300 DPI). Poster lớn hơn chưa làm được; thứ tự các nhóm add-on theo thứ tự thêm, chưa đổi được | Giới hạn trong `attribute-schemas.ts`, `formats.py` | Hỏi xưởng khổ in tối đa | Thấp |
-| O16 | Quantity vẫn riêng từng product, chưa vào kho chung vì giá gắn với nó | Mỗi product tự nhập | Hỏi Alex có muốn danh sách quantity dùng chung không | Thấp |
 | O7 | Kiểm tra file chưa có: chữ quá nhỏ (dưới 6pt), màu đen 4 lớp (rich black) cho chữ nhỏ, tổng mực quá cao | Chỉ các mục trong spec 6.3 | Hỏi xưởng các ngưỡng thường dùng rồi thêm vào `preflight.py` | Thấp |
 
 ## Giao diện (storefront)

@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useRef, useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router';
 import { api, type AdminCatalog } from '../api';
-import { STOREFRONT_ORIGIN, useCatalog, useSaver } from '../catalog';
-import { QuantityList } from '../components/QuantityList';
+import { STOREFRONT_ORIGIN, useCatalog, useSaver, type RegisterSave } from '../catalog';
 import { Toast } from '../components/Toast';
 import { AddGroup } from './OptionsPage';
 import { PricingEditor } from './PricingPage';
-import { OptionPicker } from './ProductOptionsPage';
+import { OptionPicker, QuantityPicker } from './ProductOptionsPage';
 import { ProductDetailsForm } from './ProductsPage';
 import { TurnaroundEditor } from './TurnaroundPage';
 
@@ -17,7 +16,7 @@ const STEPS = [
   { code: 'size', label: 'Size', title: 'Sizes', text: 'Tick the sizes this product comes in, or add a new one to the library.' },
   { code: 'paper', label: 'Paper', title: 'Paper', text: 'Tick the papers or stocks for this product.' },
   { code: 'printed_side', label: 'Printed sides', title: 'Printed sides', text: 'For example front only (4/0) or both sides (4/4).' },
-  { code: 'quantity', label: 'Quantity', title: 'Quantities', text: 'Add the quantities customers can order.' },
+  { code: 'quantity', label: 'Quantity', title: 'Quantities', text: 'Tick the quantities customers can order, or add a new one to the library.' },
   { code: 'turnaround', label: 'Turnaround', title: 'Turnaround', text: 'Tick your speeds, then set which quantities offer each one, with its production days and percent.' },
   { code: 'prices', label: 'Prices', title: 'Prices', text: 'One price per combination and quantity, in US dollars. Leave a cell empty if it is not sold.' },
   { code: 'addons', label: 'Add-ons', title: 'Add-ons (optional)', text: 'Tick extras such as folding or coating, each adding a percent of the price. Skip this step if there are none.' },
@@ -156,13 +155,19 @@ export function NewProductPage() {
 /** The steps from sizes to publishing. Each one saves as it goes, so leaving and coming back loses nothing. */
 export function ProductSetupPage() {
   const { code = '', step } = useParams();
-  const { catalog, product, selectProduct } = useCatalog();
+  const { catalog, path, product, selectProduct } = useCatalog();
   const navigate = useNavigate();
-  const [dirty, setDirty] = useState(false);
-  const markDirty = useCallback((value: boolean) => setDirty(value), []);
+  const [busy, setBusy] = useState(false);
+  const [hint, setHint] = useState<string | null>(null);
+  /** What the open step saves when leaving it; ticking and typing touch nothing until then. */
+  const saves = useRef(new Map<string, () => Promise<boolean>>());
+  const register = useCallback<RegisterSave>((key, save) => {
+    saves.current.set(key, save);
+    return () => saves.current.delete(key);
+  }, []);
 
   useEffect(() => selectProduct(code), [code, selectProduct]);
-  useEffect(() => setDirty(false), [step]);
+  useEffect(() => setHint(null), [step]);
 
   if (!catalog || !product || product.code !== code || catalog.product.code !== code) return <p className="page-loading">Loading…</p>;
 
@@ -172,8 +177,31 @@ export function ProductSetupPage() {
   if (index === -1 || index > lastReachable) return <Navigate to={`/products/${code}/setup/${STEPS[lastReachable]!.code}`} replace />;
 
   const current = STEPS[index]!;
-  const needed = missing(current.code, catalog);
-  const go = (to: number) => void navigate(`/products/${code}/setup/${STEPS[to]!.code}`);
+
+  /** Saves the step, options first: the turnaround table needs its speeds saved. False when a part could not save. */
+  async function saveStep() {
+    const parts = [...saves.current].sort(([a], [b]) => Number(b.startsWith('options.')) - Number(a.startsWith('options.')));
+    for (const [, save] of parts) {
+      if (!(await save())) return false;
+    }
+    return true;
+  }
+
+  /** Leaves the step; going forward also needs it complete. */
+  async function go(to: number) {
+    setBusy(true);
+    setHint(null);
+    try {
+      if (!(await saveStep())) return setHint('Check the values on this step.');
+      if (to > index) {
+        const needed = missing(current.code, await api<AdminCatalog>(`${path}/catalog`));
+        if (needed) return setHint(needed);
+      }
+      void navigate(to === -1 ? '/products' : `/products/${code}/setup/${STEPS[to]!.code}`);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="page">
@@ -185,9 +213,9 @@ export function ProductSetupPage() {
           </p>
         </div>
         <div className="header-actions">
-          <Link className="btn btn-ghost" to="/products">
+          <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void go(-1)}>
             Finish later
-          </Link>
+          </button>
         </div>
       </header>
 
@@ -198,8 +226,8 @@ export function ProductSetupPage() {
               type="button"
               className={`setup-step ${i < lastReachable || firstOpen === -1 ? 'setup-step-done' : ''}`}
               aria-current={i === index ? 'step' : undefined}
-              disabled={i > lastReachable}
-              onClick={() => go(i)}
+              disabled={i > lastReachable || busy}
+              onClick={() => void go(i)}
             >
               <span className="setup-step-number">{i + 1}</span>
               {s.label}
@@ -208,59 +236,58 @@ export function ProductSetupPage() {
         ))}
       </ol>
 
-      <SetupStep key={current.code} step={current.code} onDirty={markDirty} />
+      <SetupStep key={current.code} step={current.code} register={register} />
 
       {current.code !== 'review' && (
         <div className="setup-footer">
           {index > 0 && (
-            <button type="button" className="btn btn-ghost" onClick={() => go(index - 1)}>
+            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void go(index - 1)}>
               Back
             </button>
           )}
-          <button type="button" className="btn btn-primary" disabled={Boolean(needed) || dirty} onClick={() => go(index + 1)}>
-            Next
+          <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void go(index + 1)}>
+            {busy ? 'Saving…' : 'Next'}
           </button>
-          {(dirty || needed) && <p className="muted">{dirty ? 'Save your changes first.' : needed}</p>}
+          {hint && <p className="form-error">{hint}</p>}
         </div>
       )}
     </div>
   );
 }
 
-function SetupStep({ step, onDirty }: { step: StepCode; onDirty: (dirty: boolean) => void }) {
+function SetupStep({ step, register }: { step: StepCode; register: RegisterSave }) {
   const { catalog, library, product } = useCatalog();
   const saver = useSaver();
+  const [speedCodes, setSpeedCodes] = useState<string[]>([]);
   if (!catalog || !product) return null;
   const group = library.find((g) => g.code === step);
   const addons = library.filter((g) => !g.required);
   const speeds = library.find((g) => g.code === 'turnaround');
-  const usesAddons = catalog.groups.some((g) => !REQUIRED_GROUPS.includes(g.code));
 
   return (
     <>
       {step === 'details' && (
         <div className="card">
-          <ProductDetailsForm product={product} saver={saver} onDirty={onDirty} />
+          <ProductDetailsForm product={product} saver={saver} register={register} />
         </div>
       )}
-      {(step === 'size' || step === 'paper' || step === 'printed_side') && group && <OptionPicker group={group} saver={saver} />}
-      {step === 'quantity' && <QuantityList saver={saver} />}
+      {(step === 'size' || step === 'paper' || step === 'printed_side') && group && <OptionPicker group={group} saver={saver} register={register} />}
+      {step === 'quantity' && <QuantityPicker saver={saver} register={register} />}
       {step === 'turnaround' && speeds && (
         <>
-          <OptionPicker group={speeds} saver={saver} />
-          {valuesOf(catalog, 'turnaround').length > 0 && <TurnaroundEditor onDirty={onDirty} />}
+          <OptionPicker group={speeds} saver={saver} register={register} onPicked={setSpeedCodes} />
+          {speedCodes.length > 0 && <TurnaroundEditor register={register} speedCodes={speedCodes} />}
         </>
       )}
-      {step === 'prices' && <PricingEditor show="core" onDirty={onDirty} />}
+      {step === 'prices' && <PricingEditor show="core" register={register} />}
       {step === 'addons' && (
         <>
           {addons.map((g) => (
-            <OptionPicker key={g.code} group={g} saver={saver} title={g.label} />
+            <OptionPicker key={g.code} group={g} saver={saver} register={register} title={g.label} percent />
           ))}
           <div className="tabs">
             <AddGroup saver={saver} onAdded={() => undefined} />
           </div>
-          {usesAddons && <PricingEditor show="addons" onDirty={onDirty} />}
         </>
       )}
       {step === 'review' && <Review saver={saver} />}

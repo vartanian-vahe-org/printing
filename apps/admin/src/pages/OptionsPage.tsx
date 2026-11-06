@@ -1,10 +1,14 @@
 import { useState } from 'react';
-import { api, type LibraryGroup, type LibraryValue } from '../api';
+import { api, type LibraryGroup, type LibraryQuantity, type LibraryValue } from '../api';
 import { useCatalog, useSaver } from '../catalog';
 import { AttributeEditor } from '../components/AttributeEditor';
 import { Toast } from '../components/Toast';
 
 type Saver = ReturnType<typeof useSaver>;
+
+/** Quantities are not an option group, so their tab sits after the groups. */
+const QUANTITY_TAB = 'quantity';
+const shown = (quantity: number) => quantity.toLocaleString('en-US');
 
 /** Details to fill in for the first option of an empty group; later ones start from an existing option. */
 const BLANK_ATTRIBUTES: Record<string, Record<string, unknown>> = {
@@ -15,12 +19,13 @@ const BLANK_ATTRIBUTES: Record<string, Record<string, unknown>> = {
 
 /** The option library: created once here, then each product picks what it uses. */
 export function OptionsPage() {
-  const { library } = useCatalog();
+  const { library, libraryQuantities } = useCatalog();
   const [groupCode, setGroupCode] = useState('size');
   const saver = useSaver();
 
   const group = library.find((g) => g.code === groupCode) ?? library[0];
   if (!group) return <p className="page-loading">Loading…</p>;
+  const showQuantities = groupCode === QUANTITY_TAB;
 
   return (
     <div className="page">
@@ -28,32 +33,187 @@ export function OptionsPage() {
         <div>
           <h1>Option library</h1>
           <p className="muted">
-            Every size, paper and add-on is created once here and shared by all products. A change reaches every product using the option. Which
-            options a product offers, and their prices, are set on the product.
+            Every size, paper, add-on and quantity is created once here and shared by all products. A change reaches every product using it. What
+            a product offers, and its prices, are set on the product.
           </p>
         </div>
       </header>
 
       <div className="tabs">
         {library.map((g) => (
-          <button key={g.code} type="button" className={`tab ${g.code === group.code ? 'tab-active' : ''}`} onClick={() => setGroupCode(g.code)}>
+          <button key={g.code} type="button" className={`tab ${!showQuantities && g.code === group.code ? 'tab-active' : ''}`} onClick={() => setGroupCode(g.code)}>
             {g.label}
             <span className="tab-count">{g.values.length}</span>
           </button>
         ))}
+        <button type="button" className={`tab ${showQuantities ? 'tab-active' : ''}`} onClick={() => setGroupCode(QUANTITY_TAB)}>
+          Quantity
+          <span className="tab-count">{libraryQuantities.length}</span>
+        </button>
         <AddGroup saver={saver} onAdded={setGroupCode} />
       </div>
 
-      <div className="card">
-        <GroupHeader key={`header.${group.code}`} group={group} saver={saver} />
-        {group.values.map((value, index) => (
-          <ValueRow key={`${group.code}.${value.code}`} group={group} value={value} neighbours={[group.values[index - 1], group.values[index + 1]]} saver={saver} />
-        ))}
-        <AddLibraryValue key={group.code} group={group} saver={saver} />
-      </div>
+      {showQuantities ? (
+        <div className="card">
+          {libraryQuantities.map((q) => (
+            <QuantityRow key={q.quantity} value={q} saver={saver} />
+          ))}
+          <AddLibraryQuantity saver={saver} />
+        </div>
+      ) : (
+        <div className="card">
+          <GroupHeader key={`header.${group.code}`} group={group} saver={saver} />
+          {group.values.map((value, index) => (
+            <ValueRow key={`${group.code}.${value.code}`} group={group} value={value} neighbours={[group.values[index - 1], group.values[index + 1]]} saver={saver} />
+          ))}
+          <AddLibraryValue key={group.code} group={group} saver={saver} />
+        </div>
+      )}
 
       <Toast status={saver.status} onClose={saver.clearStatus} />
     </div>
+  );
+}
+
+function QuantityRow({ value, saver }: { value: LibraryQuantity; saver: Saver }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState(String(value.quantity));
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const path = `/admin/options/quantities/${value.quantity}`;
+
+  return (
+    <div className="value-row quantity-row">
+      <div className="value-summary">
+        <div className="value-main">
+          <div className="value-label">{shown(value.quantity)}</div>
+          <span className="value-code">{value.usedBy.length ? `Used by ${value.usedBy.join(', ')}` : 'Not used by any product yet'}</span>
+        </div>
+        <div className="value-actions">
+          <button
+            type="button"
+            className="btn btn-small"
+            aria-expanded={open}
+            onClick={() => {
+              setText(String(value.quantity));
+              setConfirmDelete(false);
+              setOpen(!open);
+            }}
+          >
+            {open ? 'Close' : 'Edit'}
+          </button>
+        </div>
+      </div>
+
+      {open && (
+        <form
+          className="value-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const quantity = Number(text);
+            void saver.save(() => api(path, { method: 'PATCH', body: { quantity } }), `Changed to ${shown(quantity)}`).then((ok) => ok && setOpen(false));
+          }}
+        >
+          <div className="form-grid">
+            <QuantityField value={text} onChange={setText} />
+          </div>
+          {value.usedBy.length > 0 && <p className="muted">This changes it on {value.usedBy.join(', ')}. Their prices and turnaround stay the same, so check them after.</p>}
+          <div className="form-actions">
+            <button type="submit" className="btn btn-primary" disabled={saver.saving || Number(text) === value.quantity}>
+              Save
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </button>
+            <span className="form-actions-spacer" />
+            {value.usedBy.length ? (
+              <span className="muted">Remove it from {value.usedBy.join(', ')} before deleting it.</span>
+            ) : (
+              <button type="button" className="btn btn-ghost btn-danger-text" onClick={() => setConfirmDelete(true)}>
+                Delete quantity
+              </button>
+            )}
+          </div>
+          {confirmDelete && (
+            <div className="confirm-box" role="alert">
+              <p>
+                Delete <strong>{shown(value.quantity)}</strong> from the library?
+              </p>
+              <div className="form-actions">
+                <button type="button" className="btn btn-danger" disabled={saver.saving} onClick={() => void saver.save(() => api(path, { method: 'DELETE' }), `${shown(value.quantity)} deleted`)}>
+                  Delete
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={() => setConfirmDelete(false)}>
+                  Keep it
+                </button>
+              </div>
+            </div>
+          )}
+        </form>
+      )}
+    </div>
+  );
+}
+
+/** "Add quantity" to the library. `onAdded`: on a product, ticks the new quantity. */
+export function AddLibraryQuantity({ saver, onAdded }: { saver: Saver; onAdded?: (quantity: number) => void }) {
+  const { libraryQuantities } = useCatalog();
+  const [open, setOpen] = useState(libraryQuantities.length === 0);
+  const [text, setText] = useState('');
+
+  if (!open) {
+    return (
+      <div className="value-row value-add">
+        <button
+          type="button"
+          className="btn btn-small"
+          onClick={() => {
+            setText('');
+            setOpen(true);
+          }}
+        >
+          + New quantity
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="value-row value-add">
+      <form
+        className="value-form value-form-new"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const quantity = Number(text);
+          void saver.save(() => api('/admin/options/quantities', { method: 'POST', body: { quantity } }), `${shown(quantity)} added`).then((ok) => {
+            if (!ok) return;
+            onAdded?.(quantity);
+            setOpen(false);
+          });
+        }}
+      >
+        <h3 className="form-subtitle">New quantity</h3>
+        <div className="form-grid">
+          <QuantityField value={text} onChange={setText} autoFocus />
+        </div>
+        <div className="form-actions">
+          <button type="submit" className="btn btn-primary" disabled={saver.saving || !text.trim()}>
+            Add quantity
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function QuantityField({ value, onChange, autoFocus }: { value: string; onChange: (value: string) => void; autoFocus?: boolean }) {
+  return (
+    <label className="field">
+      <span>Quantity</span>
+      <input type="number" min={1} max={1_000_000} step={1} value={value} onChange={(e) => onChange(e.target.value)} required autoFocus={autoFocus} />
+    </label>
   );
 }
 
@@ -145,7 +305,7 @@ function GroupHeader({ group, saver }: { group: LibraryGroup; saver: Saver }) {
   );
 }
 
-/** "Add group": a new add-on such as Binding or Grommets, for any product to use. */
+/** A new add-on group such as Binding or Grommets, for any product to use. */
 export function AddGroup({ saver, onAdded }: { saver: Saver; onAdded: (code: string) => void }) {
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState('');
@@ -162,7 +322,7 @@ export function AddGroup({ saver, onAdded }: { saver: Saver; onAdded: (code: str
           setOpen(true);
         }}
       >
-        + Add group
+        + Add add-on group
       </button>
     );
   }
@@ -185,7 +345,7 @@ export function AddGroup({ saver, onAdded }: { saver: Saver; onAdded: (code: str
           });
       }}
     >
-      <h3 className="form-subtitle">New option group</h3>
+      <h3 className="form-subtitle">New add-on group</h3>
       <div className="form-grid">
         <label className="field">
           <span>Name (shown to customers)</span>
@@ -196,10 +356,10 @@ export function AddGroup({ saver, onAdded }: { saver: Saver; onAdded: (code: str
           <input value={firstOption} onChange={(e) => setFirstOption(e.target.value)} required maxLength={120} placeholder="e.g. No fold" />
         </label>
       </div>
-      <p className="muted">It is an add-on: each product that uses it sets its own percent.</p>
+      <p className="muted">Extras such as folding or grommets. They add a percent to the price, set on each product.</p>
       <div className="form-actions">
         <button type="submit" className="btn btn-primary" disabled={saver.saving || !label.trim() || !firstOption.trim()}>
-          Add group
+          Add add-on group
         </button>
         <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>
           Cancel
@@ -344,9 +504,9 @@ function ValueRow({
 
 /**
  * "Add option" to the library. Its details start from an existing option of the group, or blank for
- * the first one. `useOn`: the product path that starts using the new option right away.
+ * the first one. `onAdded`: on a product, ticks the new option.
  */
-export function AddLibraryValue({ group, saver, useOn }: { group: LibraryGroup; saver: Saver; useOn?: string }) {
+export function AddLibraryValue({ group, saver, onAdded }: { group: LibraryGroup; saver: Saver; onAdded?: (code: string) => void }) {
   const sources = group.values;
   const initial = sources[0];
   const startAttributes = initial?.attributes ?? BLANK_ATTRIBUTES[group.code] ?? {};
@@ -386,16 +546,18 @@ export function AddLibraryValue({ group, saver, useOn }: { group: LibraryGroup; 
         className="value-form value-form-new"
         onSubmit={(e) => {
           e.preventDefault();
+          let created = '';
           void saver
             .save(async () => {
-              const created = await api<{ code: string }>(`/admin/options/groups/${group.code}/values`, {
+              const result = await api<{ code: string }>(`/admin/options/groups/${group.code}/values`, {
                 method: 'POST',
                 body: { label: label.trim(), description: description.trim() || null, attributes },
               });
-              if (useOn) await api(`${useOn}/groups/${group.code}/values`, { method: 'POST', body: { value: created.code } });
+              created = result.code;
             }, `${label.trim()} added`)
             .then((ok) => {
               if (!ok) return;
+              onAdded?.(created);
               reset();
               setOpen(false);
             });

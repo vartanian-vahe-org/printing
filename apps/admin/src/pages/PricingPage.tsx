@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { api, type AdminCatalog, type AdminValue } from '../api';
-import { dollars, parseDollars, useCatalog, useSaver } from '../catalog';
+import { dollars, parseDollars, useCatalog, useSaver, type RegisterSave } from '../catalog';
 import { Toast } from '../components/Toast';
 
 type Grid = Record<string, string>;
@@ -48,8 +48,8 @@ export function PricingPage() {
   );
 }
 
-/** The price tables and their Save button; `onDirty` tells a page around it about unsaved changes. */
-export function PricingEditor({ show = 'all', onDirty }: { show?: 'all' | 'core' | 'addons'; onDirty?: (dirty: boolean) => void }) {
+/** The price tables. `register`: the setup wizard saves them on Next, so they show no Save button. */
+export function PricingEditor({ show = 'all', register }: { show?: 'all' | 'core' | 'addons'; register?: RegisterSave }) {
   const { catalog, path: productPath } = useCatalog();
   const saver = useSaver();
   const initial = useMemo(() => (catalog ? initialGrid(catalog) : null), [catalog]);
@@ -65,15 +65,15 @@ export function PricingEditor({ show = 'all', onDirty }: { show?: 'all' | 'core'
   const changedCore = initial ? Object.keys(core).filter((k) => core[k]!.trim() !== (initial.core[k] ?? '')) : [];
   const changedAddons = initial ? Object.keys(addons).filter((k) => Number(addons[k]) !== Number(initial.addons[k]) || addons[k]!.trim() === '') : [];
   const changes = changedCore.length + changedAddons.length;
-  useEffect(() => onDirty?.(changes > 0), [changes, onDirty]);
+  const invalid = changedCore.some((k) => !validPrice(core[k]!)) || changedAddons.some((k) => !validPercent(addons[k]!));
+  useEffect(() => register?.('prices', async () => (changes === 0 ? true : invalid ? false : save())));
 
   if (!catalog || !initial) return <p className="page-loading">Loading…</p>;
   const tiers = catalog.quantityTiers;
   const valuesOf = (code: string) => catalog.groups.find((g) => g.code === code)?.values ?? [];
-  const invalid = changedCore.some((k) => !validPrice(core[k]!)) || changedAddons.some((k) => !validPercent(addons[k]!));
 
   function save() {
-    void saver.save(
+    return saver.save(
       () =>
         api(`${productPath}/pricing`, {
           method: 'PUT',
@@ -101,16 +101,18 @@ export function PricingEditor({ show = 'all', onDirty }: { show?: 'all' | 'core'
 
   return (
     <>
-      <div className="header-actions editor-actions">
-        {changes > 0 && (
-          <button type="button" className="btn btn-ghost" onClick={() => (setCore(initial.core), setAddons(initial.addons))}>
-            Discard
+      {!register && (
+        <div className="header-actions editor-actions">
+          {changes > 0 && (
+            <button type="button" className="btn btn-ghost" onClick={() => (setCore(initial.core), setAddons(initial.addons))}>
+              Discard
+            </button>
+          )}
+          <button type="button" className="btn btn-primary" disabled={changes === 0 || invalid || saver.saving} onClick={() => void save()}>
+            {changes > 0 ? `Save changes (${changes})` : 'No changes'}
           </button>
-        )}
-        <button type="button" className="btn btn-primary" disabled={changes === 0 || invalid || saver.saving} onClick={save}>
-          {changes > 0 ? `Save changes (${changes})` : 'No changes'}
-        </button>
-      </div>
+        </div>
+      )}
       {invalid && <div className="banner banner-error">Some amounts are not valid. Use e.g. 26.60 for a price and 15 for a percent.</div>}
 
       {show !== 'addons' && <section className="card price-section">

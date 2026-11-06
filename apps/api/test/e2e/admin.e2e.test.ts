@@ -186,7 +186,10 @@ describe('admin catalog: quantities', () => {
     call('POST', `${base}/quotes`, { productCode: 'business-cards', selection: defaultSelection, quantity }, false);
 
   afterAll(async () => {
-    for (const quantity of [600, 700, 12000]) await call('DELETE', `${admin}/quantities/${quantity}`);
+    for (const quantity of [600, 700, 12000]) {
+      await call('DELETE', `${admin}/quantities/${quantity}`);
+      await call('DELETE', `${base}/admin/options/quantities/${quantity}`);
+    }
   });
 
   it('adds a quantity in order, with the closest turnaround and no price', async () => {
@@ -407,6 +410,58 @@ describe('admin products', () => {
     expect((await call('DELETE', flyers)).status).toBe(204);
     expect((await call('GET', `${base}/admin/options`)).body.groups.find((g: any) => g.code === 'size').values.find((v: any) => v.code === 'e2e_letter').usedBy).toEqual([]);
     expect((await call('DELETE', `${library}/size/values/e2e_letter`)).status).toBe(204);
+  });
+
+  it('saves what a product offers in a group in one go', async () => {
+    const put = (body: unknown) => call('PUT', `${copy}/groups/corners/values`, body);
+    const corners = async () => (await call('GET', `${copy}/catalog`)).body.groups.find((g: any) => g.code === 'corners').values;
+    const before = await corners();
+    expect(before.map((v: any) => v.code)).toEqual(['square', 'rounded_quarter']);
+    const percent = before.find((v: any) => v.code === 'rounded_quarter').addonPercent;
+
+    expect((await put({ values: [{ code: 'square' }, { code: 'rounded_quarter', isActive: false }], default: 'rounded_quarter' })).body.message).toMatch(/default option must be active/);
+    expect((await put({ values: [{ code: 'square' }], default: 'rounded_quarter' })).body.message).toMatch(/default must be one/);
+    expect((await put({ values: [{ code: 'nope' }] })).status).toBe(404);
+
+    expect((await put({ values: [{ code: 'square', isActive: true }, { code: 'rounded_quarter', isActive: false, addonPercent: 12 }] })).status).toBe(204);
+    expect((await corners()).find((v: any) => v.code === 'rounded_quarter')).toMatchObject({ isActive: false, addonPercent: 12, isDefault: false });
+    expect((await put({ values: [{ code: 'square' }] })).status).toBe(204);
+    expect((await corners()).map((v: any) => v.code)).toEqual(['square']);
+    expect((await put({ values: [{ code: 'rounded_quarter', isActive: true, addonPercent: percent }, { code: 'square' }], default: 'square' })).status).toBe(204);
+    expect((await corners()).map((v: any) => [v.code, v.isDefault, v.isActive])).toEqual([['square', true, true], ['rounded_quarter', false, true]]);
+  });
+
+  it('shares quantities through the library', async () => {
+    const options = `${base}/admin/options`;
+    const quantities = async () => (await call('GET', options)).body.quantities;
+    const tiers = async () => (await call('GET', `${copy}/catalog`)).body.quantityTiers.map((t: any) => t.quantity);
+    expect((await call('POST', `${options}/quantities`, { quantity: 777 })).status).toBe(204);
+    expect((await call('POST', `${options}/quantities`, { quantity: 777 })).status).toBe(400);
+    const before = await tiers();
+    expect((await quantities()).find((q: any) => q.quantity === 777).usedBy).toEqual([]);
+
+    const put = (body: unknown) => call('PUT', `${copy}/quantities`, body);
+    const all = before.map((quantity: number) => ({ quantity }));
+    expect((await put({ quantities: [...all, { quantity: 778 }] })).body.message).toMatch(/option library/);
+    expect((await put({ quantities: [...all, { quantity: 777 }] })).status).toBe(204);
+    expect(await tiers()).toContain(777);
+    expect((await quantities()).find((q: any) => q.quantity === 777).usedBy).toEqual(['E2E Premium']);
+
+    const inUse = await call('DELETE', `${options}/quantities/777`);
+    expect(inUse.status).toBe(400);
+    expect(inUse.body.message).toMatch(/Used by E2E Premium/);
+
+    // A new number reaches the product, with its price.
+    const cell = { ...defaultCore, quantity: 777, priceCents: 7000 };
+    expect((await call('PUT', `${copy}/pricing`, { corePrices: [cell] })).status).toBe(204);
+    expect((await call('PATCH', `${options}/quantities/777`, { quantity: 779 })).status).toBe(204);
+    const catalog = (await call('GET', `${copy}/catalog`)).body;
+    expect(catalog.quantityTiers.map((t: any) => t.quantity)).toEqual([...before, 779].sort((a, b) => a - b));
+    expect(catalog.corePrices.find((p: any) => p.quantity === 779 && p.size === defaultCore.size && p.paper === '14pt' && p.printedSide === 'front_back').priceCents).toBe(7000);
+
+    expect((await put({ quantities: all })).status).toBe(204);
+    expect(await tiers()).toEqual(before);
+    expect((await call('DELETE', `${options}/quantities/779`)).status).toBe(204);
   });
 
   it('adds, renames and deletes library groups; the required ones stay', async () => {

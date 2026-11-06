@@ -3,6 +3,7 @@ import {
   corePrices,
   type Database,
   designServiceTiers,
+  libraryQuantities,
   optionGroups,
   optionValueRuleAllowed,
   optionValueRules,
@@ -47,6 +48,18 @@ export interface ValuePatch {
 export interface ValueUseInput {
   value: string;
   copyFrom?: string;
+}
+
+/** Everything a product offers in a group, saved at once. */
+export interface GroupValuesInput {
+  values: { code: string; isActive?: boolean; addonPercent?: number }[];
+  default?: string;
+}
+
+/** Everything a product sells in quantities, saved at once. */
+export interface ProductQuantitiesInput {
+  quantities: { quantity: number; isActive?: boolean }[];
+  default?: number;
 }
 
 export interface LibraryValueInput {
@@ -498,90 +511,94 @@ export class AdminCatalogService {
     await this.db.transaction(async (tx) => {
       const productId = await this.productId(tx, productCode);
       const groupId = await this.groupId(tx, groupCode);
-      const [value] = await tx
-        .select({ id: optionValues.id, label: optionValues.label })
-        .from(optionValues)
-        .where(and(eq(optionValues.groupId, groupId), eq(optionValues.code, input.value)));
-      if (!value) throw new NotFoundException(`Value "${input.value}" not found in "${groupCode}"`);
-      const used = await this.valueIds(tx, productId, groupId);
-      if (used.has(input.value)) throw new BadRequestException(`This product already uses ${value.label}.`);
-      const source = input.copyFrom ? used.get(input.copyFrom) : undefined;
-      if (input.copyFrom && !source) throw new BadRequestException(`Option "${input.copyFrom}" not found in "${groupCode}"`);
-      const id = value.id;
-
-      let addonPercent = 0;
-      if (source) {
-        const [row] = await tx
-          .select({ addonPercent: productOptionValues.addonPercent })
-          .from(productOptionValues)
-          .where(and(eq(productOptionValues.productId, productId), eq(productOptionValues.valueId, source.id)));
-        addonPercent = row?.addonPercent ?? 0;
-      }
-      await tx.insert(productOptionValues).values({ productId, groupId, valueId: id, isDefault: used.size === 0, addonPercent, createdBy: staffId, updatedBy: staffId });
-
-      if (source) {
-        const tierIds = await this.productTierIds(tx, productId);
-        if (isCoreGroup(groupCode) && tierIds.length) {
-          const column = CORE_COLUMN[groupCode as keyof typeof CORE_COLUMN];
-          const prices = await tx.select().from(corePrices).where(and(eq(corePrices[column], source.id), inArray(corePrices.quantityTierId, tierIds)));
-          if (prices.length) {
-            await tx.insert(corePrices).values(
-              prices.map(({ sizeValueId, paperValueId, printedSideValueId, quantityTierId, priceCents }) => ({
-                sizeValueId,
-                paperValueId,
-                printedSideValueId,
-                quantityTierId,
-                priceCents,
-                [column]: id,
-                createdBy: staffId,
-                updatedBy: staffId,
-              })),
-            );
-          }
-        }
-        const cells = tierIds.length
-          ? await tx.select().from(turnaroundOptions).where(and(eq(turnaroundOptions.optionValueId, source.id), inArray(turnaroundOptions.quantityTierId, tierIds)))
-          : [];
-        if (cells.length) {
-          await tx.insert(turnaroundOptions).values(
-            cells.map((c) => ({ optionValueId: id, quantityTierId: c.quantityTierId, businessDays: c.businessDays, pricePercent: c.pricePercent, createdBy: staffId, updatedBy: staffId })),
-          );
-        }
-        // Its own rules: "when the customer picks <source>, only … in group Y".
-        const ownRules = await tx.select().from(optionValueRules).where(and(eq(optionValueRules.productId, productId), eq(optionValueRules.whenValueId, source.id)));
-        for (const rule of ownRules) {
-          const allowed = await tx.select().from(optionValueRuleAllowed).where(eq(optionValueRuleAllowed.ruleId, rule.id));
-          const [copy] = await tx
-            .insert(optionValueRules)
-            .values({ productId, whenValueId: id, targetGroupId: rule.targetGroupId, createdBy: staffId, updatedBy: staffId })
-            .returning({ id: optionValueRules.id });
-          await tx.insert(optionValueRuleAllowed).values(allowed.map((a) => ({ ruleId: copy!.id, valueId: a.valueId })));
-        }
-        // Rules of other options that allow <source> allow the new one too.
-        const allowing = await tx
-          .select({ ruleId: optionValueRuleAllowed.ruleId })
-          .from(optionValueRuleAllowed)
-          .innerJoin(optionValueRules, eq(optionValueRules.id, optionValueRuleAllowed.ruleId))
-          .where(and(eq(optionValueRules.productId, productId), eq(optionValueRuleAllowed.valueId, source.id)));
-        if (allowing.length) await tx.insert(optionValueRuleAllowed).values(allowing.map((a) => ({ ruleId: a.ruleId, valueId: id })));
-      }
-
-      if (groupCode === SIZE_GROUP) {
-        const rows = await tx.select({ id: templates.id, sizes: templates.supportedSizeCodes }).from(templates).where(eq(templates.productId, productId));
-        for (const row of rows) {
-          if (input.copyFrom && !row.sizes.includes(input.copyFrom)) continue;
-          await tx.update(templates).set({ supportedSizeCodes: [...row.sizes, input.value], updatedBy: staffId }).where(eq(templates.id, row.id));
-        }
-      }
-
+      const label = await this.attachValue(tx, productId, groupId, groupCode, input, staffId);
       await this.assertStorefrontStillWorks(tx, productCode);
       await this.audit.record(tx, staffId, {
         action: 'catalog.value.use',
         target: `${productCode} · ${groupCode} / ${input.value}`,
-        summary: `Added ${value.label}${input.copyFrom ? ` (prices and rules copied from ${input.copyFrom})` : ''}`,
+        summary: `Added ${label}${input.copyFrom ? ` (prices and rules copied from ${input.copyFrom})` : ''}`,
         changes: { before: null, after: { value: input.value, copyFrom: input.copyFrom ?? null } },
       });
     });
+  }
+
+  private async attachValue(tx: Tx, productId: string, groupId: string, groupCode: string, input: ValueUseInput, staffId: string): Promise<string> {
+    const [value] = await tx
+      .select({ id: optionValues.id, label: optionValues.label })
+      .from(optionValues)
+      .where(and(eq(optionValues.groupId, groupId), eq(optionValues.code, input.value)));
+    if (!value) throw new NotFoundException(`Value "${input.value}" not found in "${groupCode}"`);
+    const used = await this.valueIds(tx, productId, groupId);
+    if (used.has(input.value)) throw new BadRequestException(`This product already uses ${value.label}.`);
+    const source = input.copyFrom ? used.get(input.copyFrom) : undefined;
+    if (input.copyFrom && !source) throw new BadRequestException(`Option "${input.copyFrom}" not found in "${groupCode}"`);
+    const id = value.id;
+
+    let addonPercent = 0;
+    if (source) {
+      const [row] = await tx
+        .select({ addonPercent: productOptionValues.addonPercent })
+        .from(productOptionValues)
+        .where(and(eq(productOptionValues.productId, productId), eq(productOptionValues.valueId, source.id)));
+      addonPercent = row?.addonPercent ?? 0;
+    }
+    await tx.insert(productOptionValues).values({ productId, groupId, valueId: id, isDefault: used.size === 0, addonPercent, createdBy: staffId, updatedBy: staffId });
+
+    if (source) {
+      const tierIds = await this.productTierIds(tx, productId);
+      if (isCoreGroup(groupCode) && tierIds.length) {
+        const column = CORE_COLUMN[groupCode as keyof typeof CORE_COLUMN];
+        const prices = await tx.select().from(corePrices).where(and(eq(corePrices[column], source.id), inArray(corePrices.quantityTierId, tierIds)));
+        if (prices.length) {
+          await tx.insert(corePrices).values(
+            prices.map(({ sizeValueId, paperValueId, printedSideValueId, quantityTierId, priceCents }) => ({
+              sizeValueId,
+              paperValueId,
+              printedSideValueId,
+              quantityTierId,
+              priceCents,
+              [column]: id,
+              createdBy: staffId,
+              updatedBy: staffId,
+            })),
+          );
+        }
+      }
+      const cells = tierIds.length
+        ? await tx.select().from(turnaroundOptions).where(and(eq(turnaroundOptions.optionValueId, source.id), inArray(turnaroundOptions.quantityTierId, tierIds)))
+        : [];
+      if (cells.length) {
+        await tx.insert(turnaroundOptions).values(
+          cells.map((c) => ({ optionValueId: id, quantityTierId: c.quantityTierId, businessDays: c.businessDays, pricePercent: c.pricePercent, createdBy: staffId, updatedBy: staffId })),
+        );
+      }
+      // Its own rules: "when the customer picks <source>, only … in group Y".
+      const ownRules = await tx.select().from(optionValueRules).where(and(eq(optionValueRules.productId, productId), eq(optionValueRules.whenValueId, source.id)));
+      for (const rule of ownRules) {
+        const allowed = await tx.select().from(optionValueRuleAllowed).where(eq(optionValueRuleAllowed.ruleId, rule.id));
+        const [copy] = await tx
+          .insert(optionValueRules)
+          .values({ productId, whenValueId: id, targetGroupId: rule.targetGroupId, createdBy: staffId, updatedBy: staffId })
+          .returning({ id: optionValueRules.id });
+        await tx.insert(optionValueRuleAllowed).values(allowed.map((a) => ({ ruleId: copy!.id, valueId: a.valueId })));
+      }
+      // Rules of other options that allow <source> allow the new one too.
+      const allowing = await tx
+        .select({ ruleId: optionValueRuleAllowed.ruleId })
+        .from(optionValueRuleAllowed)
+        .innerJoin(optionValueRules, eq(optionValueRules.id, optionValueRuleAllowed.ruleId))
+        .where(and(eq(optionValueRules.productId, productId), eq(optionValueRuleAllowed.valueId, source.id)));
+      if (allowing.length) await tx.insert(optionValueRuleAllowed).values(allowing.map((a) => ({ ruleId: a.ruleId, valueId: id })));
+    }
+
+    if (groupCode === SIZE_GROUP) {
+      const rows = await tx.select({ id: templates.id, sizes: templates.supportedSizeCodes }).from(templates).where(eq(templates.productId, productId));
+      for (const row of rows) {
+        if (input.copyFrom && !row.sizes.includes(input.copyFrom)) continue;
+        await tx.update(templates).set({ supportedSizeCodes: [...row.sizes, input.value], updatedBy: staffId }).where(eq(templates.id, row.id));
+      }
+    }
+    return value.label;
   }
 
   /**
@@ -594,58 +611,111 @@ export class AdminCatalogService {
     await this.db.transaction(async (tx) => {
       const productId = await this.productId(tx, productCode);
       const groupId = await this.groupId(tx, groupCode);
-      const used = await this.valueIds(tx, productId, groupId);
-      const value = used.get(valueCode);
-      if (!value) throw new NotFoundException(`Value "${valueCode}" not found in "${groupCode}"`);
-      if (value.isDefault && used.size > 1) throw new BadRequestException('This is the default option. Make another option the default before removing it.');
-      const [{ label } = { label: valueCode }] = await tx.select({ label: optionValues.label }).from(optionValues).where(eq(optionValues.id, value.id));
-
-      // Rules whose only allowed option is this one would leave customers nothing to pick.
-      const restricting = await tx
-        .select({ ruleId: optionValueRuleAllowed.ruleId, valueId: optionValueRuleAllowed.valueId })
-        .from(optionValueRuleAllowed)
-        .innerJoin(optionValueRules, eq(optionValueRules.id, optionValueRuleAllowed.ruleId))
-        .where(and(eq(optionValueRules.productId, productId), eq(optionValueRules.targetGroupId, groupId)));
-      const onlyHere = [...new Set(restricting.filter((r) => r.valueId === value.id).map((r) => r.ruleId))].filter(
-        (ruleId) => restricting.filter((r) => r.ruleId === ruleId).length === 1,
-      );
-      if (onlyHere.length) {
-        const blockers = await tx
-          .select({ label: optionValues.label })
-          .from(optionValueRules)
-          .innerJoin(optionValues, eq(optionValues.id, optionValueRules.whenValueId))
-          .where(inArray(optionValueRules.id, onlyHere));
-        throw new BadRequestException(`${label} is the only option allowed with ${blockers.map((b) => b.label).join(', ')}. Change that rule first.`);
-      }
-
-      await tx.delete(productOptionValues).where(and(eq(productOptionValues.productId, productId), eq(productOptionValues.valueId, value.id)));
-      await tx.delete(optionValueRules).where(and(eq(optionValueRules.productId, productId), eq(optionValueRules.whenValueId, value.id)));
-      const ruleIds = (await tx.select({ id: optionValueRules.id }).from(optionValueRules).where(eq(optionValueRules.productId, productId))).map((r) => r.id);
-      if (ruleIds.length) await tx.delete(optionValueRuleAllowed).where(and(inArray(optionValueRuleAllowed.ruleId, ruleIds), eq(optionValueRuleAllowed.valueId, value.id)));
-      const tierIds = await this.productTierIds(tx, productId);
-      if (tierIds.length) {
-        await tx.delete(turnaroundOptions).where(and(eq(turnaroundOptions.optionValueId, value.id), inArray(turnaroundOptions.quantityTierId, tierIds)));
-        if (isCoreGroup(groupCode)) {
-          const column = CORE_COLUMN[groupCode as keyof typeof CORE_COLUMN];
-          await tx.delete(corePrices).where(and(eq(corePrices[column], value.id), inArray(corePrices.quantityTierId, tierIds)));
-        }
-      }
-
-      if (groupCode === SIZE_GROUP) {
-        const rows = await tx.select({ id: templates.id, sizes: templates.supportedSizeCodes }).from(templates).where(eq(templates.productId, productId));
-        for (const row of rows.filter((r) => r.sizes.includes(valueCode))) {
-          await tx.update(templates).set({ supportedSizeCodes: row.sizes.filter((s) => s !== valueCode), updatedBy: staffId }).where(eq(templates.id, row.id));
-        }
-      }
-
+      const label = await this.detachValue(tx, productId, groupId, groupCode, valueCode, staffId);
       await this.assertStorefrontStillWorks(tx, productCode);
       await this.audit.record(tx, staffId, {
         action: 'catalog.value.remove',
         target: `${productCode} · ${groupCode} / ${valueCode}`,
         summary: `Removed ${label}`,
-        changes: { before: { code: valueCode, label, isActive: value.isActive }, after: null },
+        changes: { before: { code: valueCode, label }, after: null },
       });
     });
+  }
+
+  /**
+   * Saves what a product offers in a group in one go: options left out are removed as in `removeValue`, new
+   * ones start as in `useValue`, and the default falls back to the first option when it was removed.
+   */
+  async setGroupValues(productCode: string, groupCode: string, input: GroupValuesInput, staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const productId = await this.productId(tx, productCode);
+      const groupId = await this.groupId(tx, groupCode);
+      const used = await this.valueIds(tx, productId, groupId);
+      const wanted = input.values.map((v) => v.code);
+      if (new Set(wanted).size !== wanted.length) throw new BadRequestException('An option is listed twice');
+
+      const defaultCode = input.default ?? [...used].find(([code, v]) => v.isDefault && wanted.includes(code))?.[0] ?? wanted[0];
+      if (defaultCode && !wanted.includes(defaultCode)) throw new BadRequestException('The default must be one of the options');
+      if (input.values.find((v) => v.code === defaultCode)?.isActive === false) {
+        throw new BadRequestException('The default option must be active. Choose another default before hiding this one.');
+      }
+
+      const inGroup = and(eq(productOptionValues.productId, productId), eq(productOptionValues.groupId, groupId));
+      await tx.update(productOptionValues).set({ isDefault: false, updatedBy: staffId }).where(inGroup);
+      const removed = [...used.keys()].filter((code) => !wanted.includes(code));
+      for (const code of removed) await this.detachValue(tx, productId, groupId, groupCode, code, staffId);
+      const added = wanted.filter((code) => !used.has(code));
+      for (const code of added) await this.attachValue(tx, productId, groupId, groupCode, { value: code }, staffId);
+
+      await tx.update(productOptionValues).set({ isDefault: false, updatedBy: staffId }).where(inGroup);
+      const now = await this.valueIds(tx, productId, groupId);
+      for (const value of input.values) {
+        await tx
+          .update(productOptionValues)
+          .set({
+            isDefault: value.code === defaultCode,
+            ...(value.isActive === undefined ? {} : { isActive: value.isActive }),
+            ...(value.addonPercent === undefined ? {} : { addonPercent: value.addonPercent }),
+            updatedBy: staffId,
+          })
+          .where(and(inGroup, eq(productOptionValues.valueId, now.get(value.code)!.id)));
+      }
+
+      await this.assertStorefrontStillWorks(tx, productCode);
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.value.pick',
+        target: `${productCode} · ${groupCode}`,
+        summary: `Offers ${wanted.length} option(s): ${added.length} added, ${removed.length} removed`,
+        changes: { before: [...used.keys()].sort(), after: [...wanted].sort(), default: defaultCode ?? null },
+      });
+    });
+  }
+
+  private async detachValue(tx: Tx, productId: string, groupId: string, groupCode: string, valueCode: string, staffId: string): Promise<string> {
+    const used = await this.valueIds(tx, productId, groupId);
+    const value = used.get(valueCode);
+    if (!value) throw new NotFoundException(`Value "${valueCode}" not found in "${groupCode}"`);
+    if (value.isDefault && used.size > 1) throw new BadRequestException('This is the default option. Make another option the default before removing it.');
+    const [{ label } = { label: valueCode }] = await tx.select({ label: optionValues.label }).from(optionValues).where(eq(optionValues.id, value.id));
+
+    // Rules whose only allowed option is this one would leave customers nothing to pick.
+    const restricting = await tx
+      .select({ ruleId: optionValueRuleAllowed.ruleId, valueId: optionValueRuleAllowed.valueId })
+      .from(optionValueRuleAllowed)
+      .innerJoin(optionValueRules, eq(optionValueRules.id, optionValueRuleAllowed.ruleId))
+      .where(and(eq(optionValueRules.productId, productId), eq(optionValueRules.targetGroupId, groupId)));
+    const onlyHere = [...new Set(restricting.filter((r) => r.valueId === value.id).map((r) => r.ruleId))].filter(
+      (ruleId) => restricting.filter((r) => r.ruleId === ruleId).length === 1,
+    );
+    if (onlyHere.length) {
+      const blockers = await tx
+        .select({ label: optionValues.label })
+        .from(optionValueRules)
+        .innerJoin(optionValues, eq(optionValues.id, optionValueRules.whenValueId))
+        .where(inArray(optionValueRules.id, onlyHere));
+      throw new BadRequestException(`${label} is the only option allowed with ${blockers.map((b) => b.label).join(', ')}. Change that rule first.`);
+    }
+
+    await tx.delete(productOptionValues).where(and(eq(productOptionValues.productId, productId), eq(productOptionValues.valueId, value.id)));
+    await tx.delete(optionValueRules).where(and(eq(optionValueRules.productId, productId), eq(optionValueRules.whenValueId, value.id)));
+    const ruleIds = (await tx.select({ id: optionValueRules.id }).from(optionValueRules).where(eq(optionValueRules.productId, productId))).map((r) => r.id);
+    if (ruleIds.length) await tx.delete(optionValueRuleAllowed).where(and(inArray(optionValueRuleAllowed.ruleId, ruleIds), eq(optionValueRuleAllowed.valueId, value.id)));
+    const tierIds = await this.productTierIds(tx, productId);
+    if (tierIds.length) {
+      await tx.delete(turnaroundOptions).where(and(eq(turnaroundOptions.optionValueId, value.id), inArray(turnaroundOptions.quantityTierId, tierIds)));
+      if (isCoreGroup(groupCode)) {
+        const column = CORE_COLUMN[groupCode as keyof typeof CORE_COLUMN];
+        await tx.delete(corePrices).where(and(eq(corePrices[column], value.id), inArray(corePrices.quantityTierId, tierIds)));
+      }
+    }
+
+    if (groupCode === SIZE_GROUP) {
+      const rows = await tx.select({ id: templates.id, sizes: templates.supportedSizeCodes }).from(templates).where(eq(templates.productId, productId));
+      for (const row of rows.filter((r) => r.sizes.includes(valueCode))) {
+        await tx.update(templates).set({ supportedSizeCodes: row.sizes.filter((s) => s !== valueCode), updatedBy: staffId }).where(eq(templates.id, row.id));
+      }
+    }
+    return label;
   }
 
   async setRule(productCode: string, input: RuleInput, staffId: string) {
@@ -697,7 +767,7 @@ export class AdminCatalogService {
 
   /** Every group and option, and which products use each option. */
   async getLibrary() {
-    const [groups, values, uses] = await Promise.all([
+    const [groups, values, uses, quantities, tiers] = await Promise.all([
       this.db.select().from(optionGroups).orderBy(asc(optionGroups.sortOrder)),
       this.db.select().from(optionValues).orderBy(asc(optionValues.sortOrder)),
       this.db
@@ -705,8 +775,15 @@ export class AdminCatalogService {
         .from(productOptionValues)
         .innerJoin(products, eq(products.id, productOptionValues.productId))
         .orderBy(asc(products.sortOrder)),
+      this.db.select({ quantity: libraryQuantities.quantity }).from(libraryQuantities).orderBy(asc(libraryQuantities.quantity)),
+      this.db
+        .select({ quantity: productQuantityTiers.quantity, name: products.name })
+        .from(productQuantityTiers)
+        .innerJoin(products, eq(products.id, productQuantityTiers.productId))
+        .orderBy(asc(products.sortOrder)),
     ]);
     return {
+      quantities: quantities.map(({ quantity }) => ({ quantity, usedBy: tiers.filter((t) => t.quantity === quantity).map((t) => t.name) })),
       groups: groups.map((g) => ({
         code: g.code,
         label: g.label,
@@ -885,6 +962,68 @@ export class AdminCatalogService {
         changes: { before: { code: value.code, label: value.label, description: value.description, attributes: value.attributes }, after: null },
       });
     });
+  }
+
+  async createLibraryQuantity(quantity: number, staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const [taken] = await tx.select().from(libraryQuantities).where(eq(libraryQuantities.quantity, quantity));
+      if (taken) throw new BadRequestException(`${quantity.toLocaleString('en-US')} already exists.`);
+      await tx.insert(libraryQuantities).values({ quantity, createdBy: staffId, updatedBy: staffId });
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.quantity.create',
+        target: `library / ${quantity}`,
+        summary: `Added quantity ${quantity} to the library`,
+        changes: { before: null, after: { quantity } },
+      });
+    });
+  }
+
+  /** Changes the number on every product selling it; their prices and turnaround stay on it. */
+  async updateLibraryQuantity(from: number, to: number, staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const [row] = await tx.select().from(libraryQuantities).where(eq(libraryQuantities.quantity, from));
+      if (!row) throw new NotFoundException(`Quantity ${from} not found`);
+      if (from === to) return;
+      const [taken] = await tx.select().from(libraryQuantities).where(eq(libraryQuantities.quantity, to));
+      if (taken) throw new BadRequestException(`${to.toLocaleString('en-US')} already exists.`);
+
+      await tx.update(libraryQuantities).set({ quantity: to, updatedBy: staffId }).where(eq(libraryQuantities.quantity, from));
+      const using = await tx.select({ productId: productQuantityTiers.productId }).from(productQuantityTiers).where(eq(productQuantityTiers.quantity, to));
+      for (const { productId } of using) await this.sortQuantityTiers(tx, productId, staffId);
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.quantity.update',
+        target: `library / ${from}`,
+        summary: `Changed quantity ${from} to ${to}`,
+        changes: { before: { quantity: from }, after: { quantity: to } },
+      });
+    });
+  }
+
+  /** Deletes a quantity no product sells. */
+  async deleteLibraryQuantity(quantity: number, staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const [row] = await tx.select().from(libraryQuantities).where(eq(libraryQuantities.quantity, quantity));
+      if (!row) throw new NotFoundException(`Quantity ${quantity} not found`);
+      const using = await tx
+        .select({ name: products.name })
+        .from(productQuantityTiers)
+        .innerJoin(products, eq(products.id, productQuantityTiers.productId))
+        .where(eq(productQuantityTiers.quantity, quantity));
+      if (using.length) throw new BadRequestException(`Used by ${using.map((u) => u.name).join(', ')}. Remove it from those products first.`);
+
+      await tx.delete(libraryQuantities).where(eq(libraryQuantities.quantity, quantity));
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.quantity.delete',
+        target: `library / ${quantity}`,
+        summary: `Deleted quantity ${quantity} from the library`,
+        changes: { before: { quantity }, after: null },
+      });
+    });
+  }
+
+  /** A quantity set straight on a product joins the library. */
+  private async ensureLibraryQuantity(tx: Tx, quantity: number, staffId: string) {
+    await tx.insert(libraryQuantities).values({ quantity, createdBy: staffId, updatedBy: staffId }).onConflictDoNothing();
   }
 
   // ---------------------------------------------------------------- products
@@ -1068,46 +1207,95 @@ export class AdminCatalogService {
     await this.db.transaction(async (tx) => {
       const productId = await this.productId(tx, productCode);
       await this.assertQuantityIsNew(tx, productId, quantity);
-
-      const others = await tx
-        .select({ id: productQuantityTiers.id, quantity: productQuantityTiers.quantity })
-        .from(productQuantityTiers)
-        .where(eq(productQuantityTiers.productId, productId))
-        .orderBy(asc(productQuantityTiers.quantity));
-      const closest = others.reduce<(typeof others)[number] | undefined>(
-        (best, tier) => (!best || Math.abs(tier.quantity - quantity) < Math.abs(best.quantity - quantity) ? tier : best),
-        undefined,
-      );
-
-      const [tier] = await tx
-        .insert(productQuantityTiers)
-        .values({ productId, quantity, isDefault: others.length === 0, createdBy: staffId, updatedBy: staffId })
-        .returning({ id: productQuantityTiers.id });
-      if (closest) {
-        const cells = await tx.select().from(turnaroundOptions).where(eq(turnaroundOptions.quantityTierId, closest.id));
-        if (cells.length) {
-          await tx.insert(turnaroundOptions).values(
-            cells.map((c) => ({
-              optionValueId: c.optionValueId,
-              quantityTierId: tier!.id,
-              businessDays: c.businessDays,
-              pricePercent: c.pricePercent,
-              createdBy: staffId,
-              updatedBy: staffId,
-            })),
-          );
-        }
-      }
-
+      const closest = await this.attachQuantity(tx, productId, quantity, staffId);
       await this.sortQuantityTiers(tx, productId, staffId);
       await this.assertStorefrontStillWorks(tx, productCode);
       await this.audit.record(tx, staffId, {
         action: 'catalog.quantity.create',
         target: `${productCode} · quantity / ${quantity}`,
         summary: `Added quantity ${quantity}`,
-        changes: { before: null, after: { quantity, turnaroundFrom: closest?.quantity ?? null } },
+        changes: { before: null, after: { quantity, turnaroundFrom: closest ?? null } },
       });
     });
+  }
+
+  /**
+   * Saves the quantities a product sells in one go: new ones start as in `createQuantity`, those left out go
+   * with their prices and turnaround, and the default falls back to the first active one when it was removed.
+   */
+  async setQuantities(productCode: string, input: ProductQuantitiesInput, staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const productId = await this.productId(tx, productCode);
+      const tiers = await tx.select().from(productQuantityTiers).where(eq(productQuantityTiers.productId, productId));
+      const wanted = input.quantities.map((q) => q.quantity);
+      if (new Set(wanted).size !== wanted.length) throw new BadRequestException('A quantity is listed twice');
+      const known = wanted.length ? await tx.select().from(libraryQuantities).where(inArray(libraryQuantities.quantity, wanted)) : [];
+      const unknown = wanted.filter((q) => !known.some((k) => k.quantity === q));
+      if (unknown.length) throw new BadRequestException(`Add ${unknown.join(', ')} to the option library first.`);
+
+      const isHidden = (quantity: number) => (input.quantities.find((q) => q.quantity === quantity)?.isActive ?? tiers.find((t) => t.quantity === quantity)?.isActive) === false;
+      const keptDefault = tiers.find((t) => t.isDefault && wanted.includes(t.quantity) && !isHidden(t.quantity))?.quantity;
+      const defaultQuantity = input.default ?? keptDefault ?? wanted.find((q) => !isHidden(q));
+      if (defaultQuantity !== undefined && !wanted.includes(defaultQuantity)) throw new BadRequestException('The default must be one of the quantities');
+      if (defaultQuantity !== undefined && isHidden(defaultQuantity)) throw new BadRequestException('The default quantity must be active. Choose another default first.');
+
+      const removed = tiers.filter((t) => !wanted.includes(t.quantity));
+      const added = wanted.filter((q) => !tiers.some((t) => t.quantity === q));
+      await tx.update(productQuantityTiers).set({ isDefault: false, updatedBy: staffId }).where(eq(productQuantityTiers.productId, productId));
+      if (removed.length) await tx.delete(productQuantityTiers).where(inArray(productQuantityTiers.id, removed.map((t) => t.id)));
+      for (const quantity of added) await this.attachQuantity(tx, productId, quantity, staffId);
+      await tx.update(productQuantityTiers).set({ isDefault: false, updatedBy: staffId }).where(eq(productQuantityTiers.productId, productId));
+      for (const q of input.quantities) {
+        await tx
+          .update(productQuantityTiers)
+          .set({ isDefault: q.quantity === defaultQuantity, ...(q.isActive === undefined ? {} : { isActive: q.isActive }), updatedBy: staffId })
+          .where(and(eq(productQuantityTiers.productId, productId), eq(productQuantityTiers.quantity, q.quantity)));
+      }
+
+      await this.sortQuantityTiers(tx, productId, staffId);
+      await this.assertStorefrontStillWorks(tx, productCode);
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.quantity.pick',
+        target: `${productCode} · quantity`,
+        summary: `Sells ${wanted.length} quantities: ${added.length} added, ${removed.length} removed`,
+        changes: { before: tiers.map((t) => t.quantity).sort((a, b) => a - b), after: [...wanted].sort((a, b) => a - b), default: defaultQuantity ?? null },
+      });
+    });
+  }
+
+  /** Puts a quantity on a product; returns the quantity whose turnaround it copied. */
+  private async attachQuantity(tx: Tx, productId: string, quantity: number, staffId: string): Promise<number | undefined> {
+    await this.ensureLibraryQuantity(tx, quantity, staffId);
+    const others = await tx
+      .select({ id: productQuantityTiers.id, quantity: productQuantityTiers.quantity })
+      .from(productQuantityTiers)
+      .where(eq(productQuantityTiers.productId, productId))
+      .orderBy(asc(productQuantityTiers.quantity));
+    const closest = others.reduce<(typeof others)[number] | undefined>(
+      (best, tier) => (!best || Math.abs(tier.quantity - quantity) < Math.abs(best.quantity - quantity) ? tier : best),
+      undefined,
+    );
+
+    const [tier] = await tx
+      .insert(productQuantityTiers)
+      .values({ productId, quantity, isDefault: others.length === 0, createdBy: staffId, updatedBy: staffId })
+      .returning({ id: productQuantityTiers.id });
+    if (closest) {
+      const cells = await tx.select().from(turnaroundOptions).where(eq(turnaroundOptions.quantityTierId, closest.id));
+      if (cells.length) {
+        await tx.insert(turnaroundOptions).values(
+          cells.map((c) => ({
+            optionValueId: c.optionValueId,
+            quantityTierId: tier!.id,
+            businessDays: c.businessDays,
+            pricePercent: c.pricePercent,
+            createdBy: staffId,
+            updatedBy: staffId,
+          })),
+        );
+      }
+    }
+    return closest?.quantity;
   }
 
   /** Changes the number of a quantity; its prices and turnaround stay on it. */
@@ -1117,6 +1305,7 @@ export class AdminCatalogService {
       const tier = await this.quantityTier(tx, productId, from);
       if (from === to) return;
       await this.assertQuantityIsNew(tx, productId, to);
+      await this.ensureLibraryQuantity(tx, to, staffId);
 
       await tx.update(productQuantityTiers).set({ quantity: to, updatedBy: staffId }).where(eq(productQuantityTiers.id, tier.id));
       await this.sortQuantityTiers(tx, productId, staffId);

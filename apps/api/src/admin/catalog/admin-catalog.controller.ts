@@ -59,6 +59,15 @@ const groupCreateSchema = z
 
 const groupPatchSchema = z.object({ label: z.string().trim().min(1).max(120) }).strict();
 
+const groupValuesSchema = z
+  .object({
+    values: z
+      .array(z.object({ code, isActive: z.boolean().optional(), addonPercent: z.number().min(-90).max(500).optional() }).strict())
+      .max(500),
+    default: code.optional(),
+  })
+  .strict();
+
 const ruleSchema = z.object({
   whenGroup: code,
   whenValue: code,
@@ -131,7 +140,14 @@ const productPatchSchema = z
   .strict()
   .refine((p) => Object.keys(p).length > 0, { message: 'Nothing to update' });
 
-const quantitySchema = z.object({ quantity: z.number().int().min(1).max(1_000_000) }).strict();
+const quantity = z.number().int().min(1).max(1_000_000);
+const quantitySchema = z.object({ quantity }).strict();
+const productQuantitiesSchema = z
+  .object({
+    quantities: z.array(z.object({ quantity, isActive: z.boolean().optional() }).strict()).max(200),
+    default: quantity.optional(),
+  })
+  .strict();
 
 const turnaroundSchema = z.object({
   cells: z
@@ -231,6 +247,18 @@ export class AdminCatalogController {
     await this.storefront.invalidate(productCode);
   }
 
+  @Put('groups/:group/values')
+  @HttpCode(204)
+  async setGroupValues(
+    @Param('code') productCode: string,
+    @Param('group') group: string,
+    @Body(new ZodValidationPipe(groupValuesSchema)) body: z.infer<typeof groupValuesSchema>,
+    @Req() request: AdminRequest,
+  ) {
+    await this.catalog.setGroupValues(productCode, group, body, request.staff!.id);
+    await this.storefront.invalidate(productCode);
+  }
+
   @Post('groups/:group/values')
   @HttpCode(204)
   async useValue(
@@ -263,6 +291,17 @@ export class AdminCatalogController {
     @Req() request: AdminRequest,
   ) {
     await this.catalog.setRule(productCode, body, request.staff!.id);
+    await this.storefront.invalidate(productCode);
+  }
+
+  @Put('quantities')
+  @HttpCode(204)
+  async setQuantities(
+    @Param('code') productCode: string,
+    @Body(new ZodValidationPipe(productQuantitiesSchema)) body: z.infer<typeof productQuantitiesSchema>,
+    @Req() request: AdminRequest,
+  ) {
+    await this.catalog.setQuantities(productCode, body, request.staff!.id);
     await this.storefront.invalidate(productCode);
   }
 
@@ -401,6 +440,29 @@ export class AdminOptionsController {
   @HttpCode(204)
   async deleteGroup(@Param('group') group: string, @Req() request: AdminRequest) {
     await this.catalog.deleteGroup(group, request.staff!.id);
+  }
+
+  @Post('quantities')
+  @HttpCode(204)
+  async createQuantity(@Body(new ZodValidationPipe(quantitySchema)) body: z.infer<typeof quantitySchema>, @Req() request: AdminRequest) {
+    await this.catalog.createLibraryQuantity(body.quantity, request.staff!.id);
+  }
+
+  @Patch('quantities/:quantity')
+  @HttpCode(204)
+  async updateQuantity(
+    @Param('quantity', ParseIntPipe) from: number,
+    @Body(new ZodValidationPipe(quantitySchema)) body: z.infer<typeof quantitySchema>,
+    @Req() request: AdminRequest,
+  ) {
+    await this.catalog.updateLibraryQuantity(from, body.quantity, request.staff!.id);
+    await this.storefront.invalidateAll();
+  }
+
+  @Delete('quantities/:quantity')
+  @HttpCode(204)
+  async deleteQuantity(@Param('quantity', ParseIntPipe) value: number, @Req() request: AdminRequest) {
+    await this.catalog.deleteLibraryQuantity(value, request.staff!.id);
   }
 
   @Post('groups/:group/values')

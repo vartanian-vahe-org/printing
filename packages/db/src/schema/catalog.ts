@@ -142,6 +142,18 @@ export const optionValueRuleAllowed = pgTable(
   (t) => [primaryKey({ columns: [t.ruleId, t.valueId] })],
 );
 
+/** The quantities of the option library. Changing a number here changes it on every product using it. */
+export const libraryQuantities = pgTable(
+  'library_quantities',
+  {
+    quantity: integer('quantity').primaryKey(),
+    ...auditColumns,
+    ...timestamps,
+  },
+  (t) => [check('library_quantities_quantity_check', sql`${t.quantity} > 0`)],
+);
+
+/** The library quantities a product sells; its prices and turnaround hang on these rows. */
 export const productQuantityTiers = pgTable(
   'product_quantity_tiers',
   {
@@ -149,7 +161,9 @@ export const productQuantityTiers = pgTable(
     productId: uuid('product_id')
       .notNull()
       .references(() => products.id, { onDelete: 'cascade' }),
-    quantity: integer('quantity').notNull(),
+    quantity: integer('quantity')
+      .notNull()
+      .references(() => libraryQuantities.quantity, { onDelete: 'restrict', onUpdate: 'cascade' }),
     sortOrder: integer('sort_order').notNull().default(0),
     isActive: boolean('is_active').notNull().default(true),
     isDefault: boolean('is_default').notNull().default(false),

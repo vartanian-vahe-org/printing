@@ -470,6 +470,14 @@ a.btn-primary {
   border-radius: 12px;
 }
 
+.save-row {
+  padding: 12px 18px;
+}
+
+.save-row .muted {
+  margin: 0 0 8px;
+}
+
 .pick-check {
   width: 18px;
   height: 18px;

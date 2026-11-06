@@ -1,10 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
-import { api, type AdminValue, type LibraryGroup, type LibraryValue } from '../api';
-import { useCatalog, useSaver } from '../catalog';
-import { QuantityList } from '../components/QuantityList';
+import { api, type LibraryGroup } from '../api';
+import { useCatalog, useSaver, type RegisterSave } from '../catalog';
 import { Toast } from '../components/Toast';
-import { AddLibraryValue } from './OptionsPage';
+import { AddLibraryQuantity, AddLibraryValue } from './OptionsPage';
 
 type Saver = ReturnType<typeof useSaver>;
 
@@ -46,17 +45,81 @@ export function ProductOptionsPage() {
         </button>
       </div>
 
-      {showQuantities ? <QuantityList saver={saver} /> : <OptionPicker key={group.code} group={group} saver={saver} />}
+      {showQuantities ? <QuantityPicker saver={saver} /> : <OptionPicker key={group.code} group={group} saver={saver} />}
 
       <Toast status={saver.status} onClose={saver.clearStatus} />
     </div>
   );
 }
 
-/** Every option of a library group, ticked when the product uses it, and a form for a new one. */
-export function OptionPicker({ group, saver, title }: { group: LibraryGroup; saver: Saver; title?: string }) {
+interface Pick {
+  isActive: boolean;
+  /** Text while it is typed; add-ons only. */
+  percent: string;
+}
+
+/**
+ * Every option of a library group, ticked when the product uses it, and a form for a new one. Ticking only
+ * changes this page: it is saved by the Save button, or with `register` when the wizard goes on.
+ */
+export function OptionPicker({
+  group,
+  saver,
+  title,
+  percent = false,
+  register,
+  onPicked,
+}: {
+  group: LibraryGroup;
+  saver: Saver;
+  title?: string;
+  /** Add-ons in the wizard: the percent is entered next to the option. */
+  percent?: boolean;
+  register?: RegisterSave;
+  onPicked?: (codes: string[]) => void;
+}) {
   const { catalog, path } = useCatalog();
-  const used = catalog?.groups.find((g) => g.code === group.code)?.values ?? [];
+  const used = useMemo(() => catalog?.groups.find((g) => g.code === group.code)?.values ?? [], [catalog, group.code]);
+  const saved = useMemo(() => Object.fromEntries(used.map((v) => [v.code, { isActive: v.isActive, percent: String(v.addonPercent) }])), [used]);
+  const savedDefault = used.find((v) => v.isDefault)?.code ?? null;
+  const [picks, setPicks] = useState<Record<string, Pick>>(saved);
+  const [defaultCode, setDefaultCode] = useState<string | null>(savedDefault);
+
+  // Start again from what is saved, but not when only the library changed (a new option was just added).
+  const signature = JSON.stringify([saved, savedDefault]);
+  useEffect(() => {
+    setPicks(saved);
+    setDefaultCode(savedDefault);
+  }, [signature]);
+
+  const codes = group.values.map((v) => v.code).filter((code) => picks[code]);
+  useEffect(() => onPicked?.(codes), [codes.join()]);
+
+  const dirty = JSON.stringify([sorted(picks), defaultCode]) !== JSON.stringify([sorted(saved), savedDefault]);
+  const invalidPercent = codes.some((code) => !Number.isFinite(Number(picks[code]!.percent)) || picks[code]!.percent.trim() === '');
+
+  function toggle(code: string) {
+    const { [code]: was, ...rest } = picks;
+    const next = was ? rest : { ...picks, [code]: saved[code] ?? { isActive: true, percent: '0' } };
+    setPicks(next);
+    if (!defaultCode || (was && defaultCode === code)) setDefaultCode(group.values.find((v) => next[v.code]?.isActive)?.code ?? null);
+  }
+
+  const save = () =>
+    saver.save(
+      () =>
+        api(`${path}/groups/${group.code}/values`, {
+          method: 'PUT',
+          body: {
+            values: codes.map((code) => ({ code, isActive: picks[code]!.isActive, ...(percent ? { addonPercent: Number(picks[code]!.percent) } : {}) })),
+            ...(defaultCode ? { default: defaultCode } : {}),
+          },
+        }),
+      `${group.label} saved`,
+    );
+  useEffect(() => register?.(`options.${group.code}`, async () => (!dirty ? true : invalidPercent ? false : save())));
+
+  const removed = used.filter((v) => !picks[v.code]).map((v) => v.label);
 
   return (
     <div className="card">
@@ -67,79 +130,68 @@ export function OptionPicker({ group, saver, title }: { group: LibraryGroup; sav
           </div>
         </div>
       )}
-      {group.values.map((value) => (
-        <PickRow key={value.code} group={group} value={value} use={used.find((v) => v.code === value.code)} saver={saver} />
-      ))}
-      <AddLibraryValue key={group.code} group={group} saver={saver} useOn={path} />
-    </div>
-  );
-}
-
-function PickRow({ group, value, use, saver }: { group: LibraryGroup; value: LibraryValue; use: AdminValue | undefined; saver: Saver }) {
-  const { path: productPath } = useCatalog();
-  const [confirmRemove, setConfirmRemove] = useState(false);
-  const base = `${productPath}/groups/${group.code}/values`;
-  const patch = (body: Record<string, unknown>, text: string) => saver.save(() => api(`${base}/${value.code}`, { method: 'PATCH', body }), text);
-
-  return (
-    <div className={`value-row ${use && !use.isActive ? 'value-hidden' : ''}`}>
-      <div className="value-summary">
-        <input
-          type="checkbox"
-          className="pick-check"
-          checked={Boolean(use)}
-          disabled={saver.saving}
-          aria-label={`Offer ${value.label}`}
-          onChange={() => {
-            if (use) setConfirmRemove(true);
-            else void saver.save(() => api(base, { method: 'POST', body: { value: value.code } }), `${value.label} added`);
-          }}
-        />
-        <div className="value-main">
-          <div className="value-label">
-            {value.label}
-            {use?.isDefault && <span className="badge badge-default">Default</span>}
-            {use && !use.isActive && <span className="badge">Hidden</span>}
+      {group.values.map((value) => {
+        const pick = picks[value.code];
+        const isDefault = defaultCode === value.code;
+        return (
+          <div key={value.code} className={`value-row ${pick && !pick.isActive ? 'value-hidden' : ''}`}>
+            <div className="value-summary">
+              <input type="checkbox" className="pick-check" checked={Boolean(pick)} aria-label={`Offer ${value.label}`} onChange={() => toggle(value.code)} />
+              <div className="value-main">
+                <div className="value-label">
+                  {value.label}
+                  {pick && isDefault && <span className="badge badge-default">Default</span>}
+                  {pick && !pick.isActive && <span className="badge">Hidden</span>}
+                </div>
+                {value.description && <span className="value-code">{value.description}</span>}
+              </div>
+              {pick && (
+                <div className="value-actions">
+                  {percent && (
+                    <span className="addon-percent">
+                      <input
+                        className="money"
+                        inputMode="decimal"
+                        value={pick.percent}
+                        aria-label={`${value.label} percent`}
+                        onChange={(e) => setPicks({ ...picks, [value.code]: { ...pick, percent: e.target.value } })}
+                      />
+                      <span>%</span>
+                    </span>
+                  )}
+                  {!isDefault && pick.isActive && (
+                    <button type="button" className="btn btn-small" onClick={() => setDefaultCode(value.code)}>
+                      Make default
+                    </button>
+                  )}
+                  {!isDefault && (
+                    <button type="button" className="btn btn-small" onClick={() => setPicks({ ...picks, [value.code]: { ...pick, isActive: !pick.isActive } })}>
+                      {pick.isActive ? 'Hide' : 'Show'}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-          {value.description && <span className="value-code">{value.description}</span>}
-        </div>
-        {use && (
-          <div className="value-actions">
-            {!use.isDefault && use.isActive && (
-              <button type="button" className="btn btn-small" disabled={saver.saving} onClick={() => void patch({ isDefault: true }, 'Default changed')}>
-                Make default
-              </button>
-            )}
-            {!use.isDefault && (
-              <button
-                type="button"
-                className="btn btn-small"
-                disabled={saver.saving}
-                onClick={() => void patch({ isActive: !use.isActive }, use.isActive ? 'Hidden from storefront' : 'Shown on storefront')}
-              >
-                {use.isActive ? 'Hide' : 'Show'}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-      {confirmRemove && (
-        <div className="confirm-box" role="alert">
-          <p>
-            Remove <strong>{value.label}</strong> from this product? Its prices and rules on this product are deleted; it stays in the library. To take
-            it off the storefront for a while, use Hide instead.
-          </p>
+        );
+      })}
+      <AddLibraryValue key={group.code} group={group} saver={saver} onAdded={(code) => setPicks((all) => ({ ...all, [code]: { isActive: true, percent: '0' } }))} />
+      {!register && dirty && (
+        <div className="value-row save-row">
+          {removed.length > 0 && <p className="muted">Saving removes the prices and rules of {removed.join(', ')} on this product.</p>}
           <div className="form-actions">
+            <button type="button" className="btn btn-primary" disabled={saver.saving || invalidPercent} onClick={() => void save()}>
+              Save changes
+            </button>
             <button
               type="button"
-              className="btn btn-danger"
-              disabled={saver.saving}
-              onClick={() => void saver.save(() => api(`${base}/${value.code}`, { method: 'DELETE' }), `${value.label} removed`).then(() => setConfirmRemove(false))}
+              className="btn btn-ghost"
+              onClick={() => {
+                setPicks(saved);
+                setDefaultCode(savedDefault);
+              }}
             >
-              Remove
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => setConfirmRemove(false)}>
-              Keep it
+              Discard
             </button>
           </div>
         </div>
@@ -147,3 +199,107 @@ function PickRow({ group, value, use, saver }: { group: LibraryGroup; value: Lib
     </div>
   );
 }
+
+/** The library quantities, ticked when the product sells them. Saved like `OptionPicker`. */
+export function QuantityPicker({ saver, register }: { saver: Saver; register?: RegisterSave }) {
+  const { catalog, libraryQuantities, path } = useCatalog();
+  const tiers = useMemo(() => catalog?.quantityTiers ?? [], [catalog]);
+  const saved = useMemo(() => Object.fromEntries(tiers.map((t) => [t.quantity, t.isActive])) as Record<number, boolean>, [tiers]);
+  const savedDefault = tiers.find((t) => t.isDefault)?.quantity ?? null;
+  const [picks, setPicks] = useState<Record<number, boolean>>(saved);
+  const [defaultQuantity, setDefaultQuantity] = useState<number | null>(savedDefault);
+
+  const signature = JSON.stringify([saved, savedDefault]);
+  useEffect(() => {
+    setPicks(saved);
+    setDefaultQuantity(savedDefault);
+  }, [signature]);
+
+  const dirty = JSON.stringify([picks, defaultQuantity]) !== signature;
+  const numbers = libraryQuantities.map((q) => q.quantity).filter((q) => q in picks);
+
+  function toggle(quantity: number) {
+    const { [quantity]: was, ...rest } = picks;
+    const next: Record<number, boolean> = was === undefined ? { ...picks, [quantity]: saved[quantity] ?? true } : rest;
+    setPicks(next);
+    if (defaultQuantity === null || (was !== undefined && defaultQuantity === quantity)) {
+      setDefaultQuantity(libraryQuantities.map((q) => q.quantity).find((q) => next[q]) ?? null);
+    }
+  }
+
+  const save = () =>
+    saver.save(
+      () =>
+        api(`${path}/quantities`, {
+          method: 'PUT',
+          body: { quantities: numbers.map((quantity) => ({ quantity, isActive: picks[quantity] })), ...(defaultQuantity ? { default: defaultQuantity } : {}) },
+        }),
+      'Quantities saved',
+    );
+  useEffect(() => register?.('options.quantity', async () => (dirty ? save() : true)));
+
+  const removed = tiers.filter((t) => !(t.quantity in picks)).map((t) => t.quantity.toLocaleString('en-US'));
+
+  return (
+    <div className="card">
+      {libraryQuantities.map(({ quantity }) => {
+        const active = picks[quantity];
+        const picked = active !== undefined;
+        const isDefault = defaultQuantity === quantity;
+        const priced = catalog?.corePrices.filter((p) => p.quantity === quantity).length ?? 0;
+        return (
+          <div key={quantity} className={`value-row ${picked && !active ? 'value-hidden' : ''}`}>
+            <div className="value-summary">
+              <input type="checkbox" className="pick-check" checked={picked} aria-label={`Sell ${quantity}`} onChange={() => toggle(quantity)} />
+              <div className="value-main">
+                <div className="value-label">
+                  {quantity.toLocaleString('en-US')}
+                  {picked && isDefault && <span className="badge badge-default">Default</span>}
+                  {picked && !active && <span className="badge">Hidden</span>}
+                  {!register && picked && quantity in saved && priced === 0 && <span className="badge badge-rule">No prices yet</span>}
+                </div>
+              </div>
+              {picked && (
+                <div className="value-actions">
+                  {!isDefault && active && (
+                    <button type="button" className="btn btn-small" onClick={() => setDefaultQuantity(quantity)}>
+                      Make default
+                    </button>
+                  )}
+                  {!isDefault && (
+                    <button type="button" className="btn btn-small" onClick={() => setPicks({ ...picks, [quantity]: !active })}>
+                      {active ? 'Hide' : 'Show'}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+      <AddLibraryQuantity saver={saver} onAdded={(quantity) => setPicks((all) => ({ ...all, [quantity]: true }))} />
+      {!register && dirty && (
+        <div className="value-row save-row">
+          {removed.length > 0 && <p className="muted">Saving removes the prices and turnaround of {removed.join(', ')} on this product.</p>}
+          <div className="form-actions">
+            <button type="button" className="btn btn-primary" disabled={saver.saving} onClick={() => void save()}>
+              Save changes
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => {
+                setPicks(saved);
+                setDefaultQuantity(savedDefault);
+              }}
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const sorted = (picks: Record<string, Pick>) => Object.entries(picks).sort(([a], [b]) => a.localeCompare(b));

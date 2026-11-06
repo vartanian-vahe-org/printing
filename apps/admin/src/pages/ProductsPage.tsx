@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { api, type AdminProduct } from '../api';
-import { useCatalog, useSaver } from '../catalog';
+import { useCatalog, useSaver, type RegisterSave } from '../catalog';
 import { Toast } from '../components/Toast';
 
 type Saver = ReturnType<typeof useSaver>;
@@ -104,15 +104,14 @@ function ProductRow({
 export function ProductDetailsForm({
   product,
   saver,
-  onSaved,
-  onDirty,
+  register,
   actions,
   children,
 }: {
   product: AdminProduct;
   saver: Saver;
-  onSaved?: () => void;
-  onDirty?: (dirty: boolean) => void;
+  /** The setup wizard saves it on Next, so it shows no Save button. */
+  register?: RegisterSave;
   actions?: ReactNode;
   children?: ReactNode;
 }) {
@@ -130,28 +129,30 @@ export function ProductDetailsForm({
     seoDescription !== (product.seoDescription ?? '') ||
     unitName !== product.unitName ||
     unitNamePlural !== product.unitNamePlural;
-  useEffect(() => onDirty?.(dirty), [dirty, onDirty]);
+  const submit = () =>
+    save(
+      () =>
+        api(`/admin/products/${product.code}`, {
+          method: 'PATCH',
+          body: {
+            name,
+            description: description.trim() || null,
+            seoTitle: seoTitle.trim() || null,
+            seoDescription: seoDescription.trim() || null,
+            unitName: unitName.trim(),
+            unitNamePlural: unitNamePlural.trim(),
+          },
+        }),
+      `${name.trim()} saved`,
+    );
+  useEffect(() => register?.('details', async () => (dirty ? submit() : true)));
 
   return (
     <form
       className="value-form"
       onSubmit={(e) => {
         e.preventDefault();
-        void save(
-          () =>
-            api(`/admin/products/${product.code}`, {
-              method: 'PATCH',
-              body: {
-                name,
-                description: description.trim() || null,
-                seoTitle: seoTitle.trim() || null,
-                seoDescription: seoDescription.trim() || null,
-                unitName: unitName.trim(),
-                unitNamePlural: unitNamePlural.trim(),
-              },
-            }),
-          `${name.trim()} saved`,
-        ).then((ok) => ok && onSaved?.());
+        void submit();
       }}
     >
       <div className="form-grid">
@@ -188,12 +189,14 @@ export function ProductDetailsForm({
         />
       </label>
       <p className="muted">The URL /{product.code} cannot change, because search engines and open carts point to it.</p>
-      <div className="form-actions">
-        <button type="submit" className="btn btn-primary" disabled={saver.saving}>
-          Save
-        </button>
-        {actions}
-      </div>
+      {!register && (
+        <div className="form-actions">
+          <button type="submit" className="btn btn-primary" disabled={saver.saving}>
+            Save
+          </button>
+          {actions}
+        </div>
+      )}
       {children}
     </form>
   );

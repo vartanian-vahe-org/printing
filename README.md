@@ -72,10 +72,11 @@ On startup the `migrate` service applies all database migrations (schema + defau
 | GET | `/products` | Products on the storefront, with their page and SEO text |
 | GET | `/admin/products/:code/catalog` | Full configuration incl. hidden values (admin) |
 | GET · POST · PATCH · DELETE | `/admin/options` · `/groups` · `/groups/:group` · `/groups/:group/values` · `/:value` | The option library shared by all products: groups and options, with who uses them; refused to delete while in use (admin) |
-| POST · PATCH · DELETE | `/admin/products/:code/groups/:group/values` · `/:value` | Use a library option on the product, show or hide it, make it default, remove it (admin) |
+| PUT · POST · PATCH · DELETE | `/admin/products/:code/groups/:group/values` · `/:value` | Save everything the product offers in a group at once, or use, change and remove one library option (admin) |
 | PUT | `/admin/products/:code/rules` | Set or remove a rule (admin) |
 | PUT | `/admin/products/:code/pricing` | Core prices, add-on percents, tier visibility/default (admin) |
-| POST · PATCH · DELETE | `/admin/products/:code/quantities` · `/:quantity` | Add, renumber or delete a quantity (admin) |
+| PUT · POST · PATCH · DELETE | `/admin/products/:code/quantities` · `/:quantity` | Save the quantities a product sells at once, or add, renumber or delete one (admin) |
+| POST · PATCH · DELETE | `/admin/options/quantities` · `/:quantity` | Quantities of the library; a new number reaches every product selling it (admin) |
 | POST · PATCH · DELETE | `/admin/products` · `/:code` | Add a blank product or a copy of another, edit its text, unit name, order and visibility, delete it (admin) |
 | PATCH | `/admin/products/:code/templates/:template` | Show or hide a template (admin) |
 

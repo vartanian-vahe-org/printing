@@ -77,6 +77,11 @@ export interface LibraryValue {
   usedBy: string[];
 }
 
+export interface LibraryQuantity {
+  quantity: number;
+  usedBy: string[];
+}
+
 export interface LibraryGroup {
   code: string;
   label: string;

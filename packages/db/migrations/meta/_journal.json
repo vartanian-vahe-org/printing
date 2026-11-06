@@ -239,6 +239,13 @@
       "when": 1793977437497,
       "tag": "0033_shared_option_library",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793982056691,
+      "tag": "0034_library_quantities",
+      "breakpoints": true
     }
   ]
 }
