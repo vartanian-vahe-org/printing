@@ -260,6 +260,20 @@
       "when": 1793983624037,
       "tag": "0036_design_service_library",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1793984753051,
+      "tag": "0037_printed_side_labels",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1793986926874,
+      "tag": "0038_speed_defaults",
+      "breakpoints": true
     }
   ]
 }

@@ -359,9 +359,9 @@ describe('admin products', () => {
     expect(await issue()).toMatch(/Enter prices/);
     const cell = { size: 'e2e_letter', paper: 'e2e_100lb', printedSide: 'e2e_front', quantity: 250, priceCents: 8900 };
     expect((await call('PUT', `${flyers}/pricing`, { corePrices: [cell] })).status).toBe(204);
-    expect(await issue()).toMatch(/No turnaround would be offered at quantity 250/);
-    expect((await call('PUT', `${flyers}/turnarounds`, { cells: [{ value: 'standard', quantity: 250, businessDays: 4, percent: 0 }] })).status).toBe(204);
+    // The speed ticked before the quantity applies with its library days and percent, with nothing else to set.
     expect(await issue()).toBeNull();
+    expect((await call('GET', `${flyers}/catalog`)).body.turnarounds).toEqual([expect.objectContaining({ value: 'standard', quantity: 250, percent: 0 })]);
 
     expect((await call('PATCH', flyers, { isActive: true })).status).toBe(204);
     const page = (await call('GET', `${base}/products/e2e-flyers/configurator`, undefined, false)).body;
@@ -429,6 +429,28 @@ describe('admin products', () => {
     expect((await corners()).map((v: any) => v.code)).toEqual(['square']);
     expect((await put({ values: [{ code: 'rounded_quarter', isActive: true, addonPercent: percent }, { code: 'square' }], default: 'square' })).status).toBe(204);
     expect((await corners()).map((v: any) => [v.code, v.isDefault, v.isActive])).toEqual([['square', true, true], ['rounded_quarter', false, true]]);
+  });
+
+  it('sets speeds in the library; a product follows them unless it changed a cell', async () => {
+    const speed = { code: 'e2e_fast', label: 'E2E Fast', attributes: { min_days: 2, max_days: 3, percent: 10 } };
+    expect((await call('POST', `${library}/turnaround/values`, { ...speed, attributes: { min_days: 4, max_days: 3, percent: 10 } })).status).toBe(400);
+    expect((await call('POST', `${library}/turnaround/values`, speed)).status).toBe(201);
+    expect((await call('POST', `${copy}/groups/turnaround/values`, { value: 'e2e_fast' })).status).toBe(204);
+    const cells = async () => (await call('GET', `${copy}/catalog`)).body.turnarounds;
+    const fast = async () => (await cells()).filter((c: any) => c.value === 'e2e_fast');
+    const tiers = (await call('GET', `${copy}/catalog`)).body.quantityTiers;
+    expect((await fast()).map((c: any) => [c.minBusinessDays, c.businessDays, c.percent])).toEqual(tiers.map(() => [2, 3, 10]));
+
+    const all = await cells();
+    const custom = all.map((c: any) => (c.value === 'e2e_fast' && c.quantity === 500 ? { ...c, businessDays: 9 } : c));
+    expect((await call('PUT', `${copy}/turnarounds`, { cells: custom })).status).toBe(204);
+    expect((await call('PATCH', `${library}/turnaround/values/e2e_fast`, { attributes: { min_days: 1, max_days: 2, percent: 5 } })).status).toBe(204);
+    const after = await fast();
+    expect(after.find((c: any) => c.quantity === 500)).toMatchObject({ minBusinessDays: 2, businessDays: 9, percent: 10 });
+    expect(after.find((c: any) => c.quantity === 100)).toMatchObject({ minBusinessDays: 1, businessDays: 2, percent: 5 });
+
+    expect((await call('DELETE', `${copy}/groups/turnaround/values/e2e_fast`)).status).toBe(204);
+    expect((await call('DELETE', `${library}/turnaround/values/e2e_fast`)).status).toBe(204);
   });
 
   it('shares quantities through the library', async () => {
@@ -573,7 +595,7 @@ describe('admin catalog: turnaround table', () => {
   });
 
   it('a speed copied from another starts with its days and percents', async () => {
-    expect((await call('POST', `${library}/turnaround/values`, { code: 'e2e_speed', label: 'E2E Speed', attributes: {} })).status).toBe(201);
+    expect((await call('POST', `${library}/turnaround/values`, { code: 'e2e_speed', label: 'E2E Speed', attributes: { min_days: 1, max_days: 1, percent: 0 } })).status).toBe(201);
     expect((await call('POST', `${admin}/groups/turnaround/values`, { value: 'e2e_speed', copyFrom: 'rush' })).status).toBe(204);
     const cells = (await call('GET', `${admin}/catalog`)).body.turnarounds;
     const of = (value: string) => cells.filter((c: any) => c.value === value).map(({ value: _v, ...rest }: any) => rest);
@@ -610,7 +632,7 @@ describe('admin catalog: adding and deleting options', () => {
   });
 
   it('makes a code from the label and refuses a taken one', async () => {
-    const body = { label: 'Rush 1 Hour!', attributes: {} };
+    const body = { label: 'Rush 1 Hour!', attributes: { min_days: 1, max_days: 1, percent: 90 } };
     const first = await call('POST', `${library}/turnaround/values`, { ...body, code: 'e2e_rush' });
     expect(first.status).toBe(201);
     const auto = await call('POST', `${library}/turnaround/values`, body);

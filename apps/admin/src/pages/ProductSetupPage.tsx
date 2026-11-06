@@ -8,7 +8,6 @@ import { AddGroup } from './OptionsPage';
 import { PricingEditor } from './PricingPage';
 import { OptionPicker, QuantityPicker } from './ProductOptionsPage';
 import { ProductDetailsForm } from './ProductsPage';
-import { TurnaroundEditor } from './TurnaroundPage';
 
 const REQUIRED_GROUPS = ['size', 'paper', 'printed_side', 'turnaround'];
 
@@ -18,7 +17,7 @@ const STEPS = [
   { code: 'paper', label: 'Paper', title: 'Paper', text: 'Tick the papers or stocks for this product.' },
   { code: 'printed_side', label: 'Printed sides', title: 'Printed sides', text: 'For example front only (4/0) or both sides (4/4).' },
   { code: 'quantity', label: 'Quantity', title: 'Quantities', text: 'Tick the quantities customers can order, or add a new one to the library.' },
-  { code: 'turnaround', label: 'Turnaround', title: 'Turnaround', text: 'Tick your speeds, then set which quantities offer each one, with its production days and percent.' },
+  { code: 'turnaround', label: 'Turnaround', title: 'Turnaround', text: 'Tick the speeds for this product. Their days and percent come from the Option library.' },
   { code: 'prices', label: 'Prices', title: 'Prices', text: 'One price per combination and quantity, in US dollars. Leave a cell empty if it is not sold.' },
   { code: 'addons', label: 'Add-ons', title: 'Add-ons (optional)', text: 'Tick extras such as folding or coating, each adding a percent of the price. Skip this step if there are none.' },
   { code: 'design', label: 'Design service', title: 'Design service (optional)', text: 'Tick the packages customers can buy for this product. Give one its own name if you like, and set its price.' },
@@ -45,7 +44,7 @@ function missing(step: StepCode, catalog: AdminCatalog): string | null {
       const speeds = valuesOf(catalog, 'turnaround').map((v) => v.code);
       if (speeds.length === 0) return 'Add at least one speed.';
       const uncovered = tiers.find((t) => !catalog.turnarounds.some((c) => c.quantity === t.quantity && speeds.includes(c.value)));
-      return uncovered ? `Offer a speed at quantity ${uncovered.quantity.toLocaleString('en-US')}, then save.` : null;
+      return uncovered ? `No speed is offered at quantity ${uncovered.quantity.toLocaleString('en-US')}. Tick one again or check the Turnaround tab.` : null;
     }
     case 'prices': {
       const standard = (group: string) => valuesOf(catalog, group).find((v) => v.isDefault)?.code;
@@ -260,7 +259,6 @@ export function ProductSetupPage() {
 function SetupStep({ step, register }: { step: StepCode; register: RegisterSave }) {
   const { catalog, library, product } = useCatalog();
   const saver = useSaver();
-  const [speedCodes, setSpeedCodes] = useState<string[]>([]);
   if (!catalog || !product) return null;
   const group = library.find((g) => g.code === step);
   const addons = library.filter((g) => !g.required);
@@ -275,12 +273,7 @@ function SetupStep({ step, register }: { step: StepCode; register: RegisterSave 
       )}
       {(step === 'size' || step === 'paper' || step === 'printed_side') && group && <OptionPicker group={group} saver={saver} register={register} />}
       {step === 'quantity' && <QuantityPicker saver={saver} register={register} />}
-      {step === 'turnaround' && speeds && (
-        <>
-          <OptionPicker group={speeds} saver={saver} register={register} onPicked={setSpeedCodes} />
-          {speedCodes.length > 0 && <TurnaroundEditor register={register} speedCodes={speedCodes} />}
-        </>
-      )}
+      {step === 'turnaround' && speeds && <OptionPicker group={speeds} saver={saver} register={register} />}
       {step === 'prices' && <PricingEditor show="core" register={register} />}
       {step === 'addons' && (
         <>

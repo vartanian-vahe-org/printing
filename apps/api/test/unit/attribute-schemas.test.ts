@@ -10,7 +10,7 @@ describe('attributeSchema', () => {
     expect(ok('coating', 'uv_both', { front: 'uv', back: 'uv', laminated: false })).toBe(true);
     expect(ok('printed_side', 'front_only', { back: 'blank' })).toBe(true);
     expect(ok('corners', 'rounded_quarter', { radius_in: 0.25 })).toBe(true);
-    expect(ok('turnaround', 'rush', {})).toBe(true);
+    expect(ok('turnaround', 'rush', { min_days: 1, max_days: 2, percent: 80 })).toBe(true);
   });
 
   it('rejects wrong types, unknown finishes, extra keys and impossible ranges', () => {
@@ -18,6 +18,7 @@ describe('attributeSchema', () => {
     expect(ok('coating', 'x', { front: 'chrome', back: 'uv', laminated: false })).toBe(false);
     expect(ok('corners', 'x', { radius_in: 0.25, color: 'red' })).toBe(false);
     expect(ok('turnaround', 'x', { business_days: 1 })).toBe(false);
+    expect(ok('turnaround', 'x', { min_days: 4, max_days: 3, percent: 0 })).toBe(false);
     expect(ok('size', 'x', { trim_w_in: 3.5, trim_h_in: 2, bleed_in: 0.125, safe_in: 0.125, price_multiplier: 1 })).toBe(false);
   });
 

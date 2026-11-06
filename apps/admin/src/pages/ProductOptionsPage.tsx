@@ -3,7 +3,7 @@ import { Link } from 'react-router';
 import { api, type LibraryGroup } from '../api';
 import { useCatalog, useSaver, type RegisterSave } from '../catalog';
 import { Toast } from '../components/Toast';
-import { AddLibraryQuantity, AddLibraryValue } from './OptionsPage';
+import { AddLibraryQuantity, AddLibraryValue, speedSummary } from './OptionsPage';
 
 type Saver = ReturnType<typeof useSaver>;
 
@@ -68,7 +68,6 @@ export function OptionPicker({
   title,
   percent = false,
   register,
-  onPicked,
 }: {
   group: LibraryGroup;
   saver: Saver;
@@ -76,7 +75,6 @@ export function OptionPicker({
   /** Add-ons in the wizard: the percent is entered next to the option. */
   percent?: boolean;
   register?: RegisterSave;
-  onPicked?: (codes: string[]) => void;
 }) {
   const { catalog, path } = useCatalog();
   const used = useMemo(() => catalog?.groups.find((g) => g.code === group.code)?.values ?? [], [catalog, group.code]);
@@ -93,7 +91,6 @@ export function OptionPicker({
   }, [signature]);
 
   const codes = group.values.map((v) => v.code).filter((code) => picks[code]);
-  useEffect(() => onPicked?.(codes), [codes.join()]);
 
   const dirty = JSON.stringify([sorted(picks), defaultCode]) !== JSON.stringify([sorted(saved), savedDefault]);
   const invalidPercent = codes.some((code) => !Number.isFinite(Number(picks[code]!.percent)) || picks[code]!.percent.trim() === '');
@@ -143,7 +140,11 @@ export function OptionPicker({
                   {pick && isDefault && <span className="badge badge-default">Default</span>}
                   {pick && !pick.isActive && <span className="badge">Hidden</span>}
                 </div>
-                {value.description && <span className="value-code">{value.description}</span>}
+                {group.code === 'turnaround' ? (
+                  <span className="value-code">{speedSummary(value.attributes)}</span>
+                ) : (
+                  value.description && <span className="value-code">{value.description}</span>
+                )}
               </div>
               {pick && (
                 <div className="value-actions">

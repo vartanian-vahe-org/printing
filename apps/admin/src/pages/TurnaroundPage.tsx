@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { api, type AdminCatalog } from '../api';
-import { useCatalog, useSaver, type RegisterSave } from '../catalog';
+import { useCatalog, useSaver } from '../catalog';
 import { Toast } from '../components/Toast';
 
 const TURNAROUND = 'turnaround';
@@ -76,9 +76,8 @@ export function TurnaroundPage() {
         <div>
           <h1>Turnaround</h1>
           <p className="muted">
-            Production days, as a range such as 3–4, and price of each speed at each quantity. Ship dates use the last day. The percent is added to the printing price (core price and
-            add-ons); use a negative percent for a discount. Untick a cell to stop offering that speed at that quantity. Every
-            quantity needs at least one speed.
+            Days and percent come from the Option library, so you only need this page for exceptions, such as a large quantity taking longer. Ship
+            dates use the last day. Untick a cell to stop offering that speed at that quantity; every quantity needs at least one speed.
           </p>
         </div>
       </header>
@@ -89,41 +88,26 @@ export function TurnaroundPage() {
 
 const NOT_OFFERED: Cell = { offered: false, minDays: '', days: '', percent: '' };
 
-/**
- * The quantity × speed table. `register`: the setup wizard saves it on Next, so it shows no Save button;
- * `speedCodes` are the speeds ticked there, which may not be saved yet.
- */
-export function TurnaroundEditor({ register, speedCodes }: { register?: RegisterSave; speedCodes?: string[] }) {
+/** The quantity × speed table. */
+function TurnaroundEditor() {
   const { catalog, path: productPath } = useCatalog();
   const saver = useSaver();
   const initial = useMemo(() => (catalog ? initialTable(catalog) : null), [catalog]);
   const [table, setTable] = useState<Table>({});
-  // Saved speeds reload the catalog while the wizard still has to save this table: keep what was typed.
-  const touched = useRef(false);
   useEffect(() => {
-    if (initial && !touched.current) setTable(initial);
+    if (initial) setTable(initial);
   }, [initial]);
 
-  const { library } = useCatalog();
   const changed = initial ? Object.keys(table).filter((k) => !same(table[k] ?? NOT_OFFERED, initial[k] ?? NOT_OFFERED)) : [];
   const dirty = changed.length > 0;
   const errors = Object.keys(table).filter((k) => cellError(table[k]!));
-  useEffect(() => register?.('turnaround-table', async () => (!dirty ? true : errors.length > 0 ? false : save())));
 
   if (!catalog || !initial) return <p className="page-loading">Loading…</p>;
-  const saved = catalog.groups.find((g) => g.code === TURNAROUND)?.values ?? [];
-  const ticked = library.find((g) => g.code === TURNAROUND)?.values.filter((v) => speedCodes?.includes(v.code)) ?? [];
-  const speeds = (speedCodes
-    ? ticked.map((v) => ({ code: v.code, label: v.label, sortOrder: v.sortOrder, isActive: true, isDefault: saved.some((s) => s.code === v.code && s.isDefault) }))
-    : [...saved]
-  ).sort((a, b) => a.sortOrder - b.sortOrder);
+  const speeds = [...(catalog.groups.find((g) => g.code === TURNAROUND)?.values ?? [])].sort((a, b) => a.sortOrder - b.sortOrder);
   const tiers = catalog.quantityTiers;
 
 
-  const update = (k: string, patch: Partial<Cell>) => {
-    touched.current = true;
-    setTable((t) => ({ ...t, [k]: { ...(t[k] ?? NOT_OFFERED), ...patch } }));
-  };
+  const update = (k: string, patch: Partial<Cell>) => setTable((t) => ({ ...t, [k]: { ...(t[k] ?? NOT_OFFERED), ...patch } }));
 
   /** Ticking an empty cell starts from the nearest offered cell of the same speed. */
   function toggle(value: string, quantity: number) {
@@ -140,42 +124,31 @@ export function TurnaroundEditor({ register, speedCodes }: { register?: Register
     const cells = tiers.map((t) => key(value, t.quantity)).filter((k) => table[k]?.offered);
     const percent = table[cells[0] ?? '']?.percent;
     if (percent === undefined) return;
-    touched.current = true;
     setTable((t) => ({ ...t, ...Object.fromEntries(cells.map((k) => [k, { ...t[k]!, percent }])) }));
   }
 
   function save() {
     const cells = Object.entries(table)
-      .filter(([k, c]) => c.offered && (!speedCodes || speedCodes.includes(k.split('@')[0]!)))
+      .filter(([, c]) => c.offered)
       .map(([k, c]) => {
         const [value, quantity] = k.split('@');
         return { value: value!, quantity: Number(quantity), minBusinessDays: Number(c.minDays), businessDays: Number(c.days), percent: Number(c.percent) };
       });
-    touched.current = false;
     return saver.save(() => api(`${productPath}/turnarounds`, { method: 'PUT', body: { cells } }), `Saved ${changed.length} change${changed.length === 1 ? '' : 's'}`);
   }
 
   return (
     <>
-      {!register && (
-        <div className="header-actions editor-actions">
+      <div className="header-actions editor-actions">
           {dirty && (
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => {
-                touched.current = false;
-                setTable(initial);
-              }}
-            >
+            <button type="button" className="btn btn-ghost" onClick={() => setTable(initial)}>
               Discard
             </button>
           )}
           <button type="button" className="btn btn-primary" disabled={!dirty || errors.length > 0 || saver.saving} onClick={() => void save()}>
             {dirty ? `Save changes (${changed.length})` : 'No changes'}
           </button>
-        </div>
-      )}
+      </div>
       {errors.length > 0 && <div className="banner banner-error">{cellError(table[errors[0]!]!)} (highlighted cells).</div>}
 
       <div className="card table-scroll">

@@ -21,6 +21,9 @@ const LABELS: Record<string, string> = {
   back: 'Back',
   laminated: 'Laminated',
   radius_in: 'Corner radius (in)',
+  min_days: 'First day (business days)',
+  max_days: 'Last day (business days)',
+  percent: 'Percent of the price',
 };
 
 interface Props {

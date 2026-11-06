@@ -22,8 +22,12 @@ const schemas: Record<string, () => z.ZodType> = {
   coating: () => z.object({ front: finish, back: finish, laminated: z.boolean() }).strict(),
   printed_side: () => z.object({ back: z.enum(['separate', 'blank', 'same_as_front']) }).strict(),
   corners: () => z.object({ radius_in: inches(1) }).strict(),
-  // Days and price per quantity live in the turnaround table (turnaround_options).
-  turnaround: () => z.object({}).strict(),
+  // What a product starts from; its own days and price per quantity live in turnaround_options.
+  turnaround: () =>
+    z
+      .object({ min_days: z.number().int().min(1).max(60), max_days: z.number().int().min(1).max(60), percent: z.number().min(-90).max(500) })
+      .strict()
+      .refine((a) => a.min_days <= a.max_days, { message: 'The first day cannot be after the last' }),
 };
 
 export function attributeSchema(groupCode: string): z.ZodType {

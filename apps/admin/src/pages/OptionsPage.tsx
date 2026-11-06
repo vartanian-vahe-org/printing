@@ -17,7 +17,15 @@ const BLANK_ATTRIBUTES: Record<string, Record<string, unknown>> = {
   size: { trim_w_in: Number.NaN, trim_h_in: Number.NaN, bleed_in: Number.NaN, safe_in: Number.NaN },
   paper: { thickness_pt: Number.NaN },
   printed_side: { back: 'separate' },
+  turnaround: { min_days: Number.NaN, max_days: Number.NaN, percent: Number.NaN },
 };
+
+/** "3–4 business days · +30%", from a speed's details. */
+export function speedSummary(attributes: Record<string, unknown>): string {
+  const { min_days: first, max_days: last, percent } = attributes as { min_days: number; max_days: number; percent: number };
+  const days = first === last ? `${last} business day${last === 1 ? '' : 's'}` : `${first}–${last} business days`;
+  return `${days} · ${percent > 0 ? '+' : ''}${percent}%`;
+}
 
 /** The option library: created once here, then each product picks what it uses. */
 export function OptionsPage() {
@@ -419,6 +427,7 @@ function ValueRow({
         </div>
         <div className="value-main">
           <div className="value-label">{value.label}</div>
+          {group.code === 'turnaround' && <span className="muted">{speedSummary(value.attributes)}</span>}
           <span className="value-code">{value.usedBy.length ? `Used by ${value.usedBy.join(', ')}` : 'Not used by any product yet'}</span>
         </div>
         <div className="value-actions">
@@ -469,6 +478,7 @@ function ValueRow({
             </>
           )}
           {value.usedBy.length > 1 && <p className="muted">This changes it on {value.usedBy.join(', ')}.</p>}
+          {group.code === 'turnaround' && <p className="muted">Quantities a product changed on its Turnaround tab keep their own days and percent.</p>}
           <div className="form-actions">
             <button type="submit" className="btn btn-primary" disabled={saver.saving}>
               Save

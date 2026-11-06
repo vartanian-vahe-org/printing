@@ -66,9 +66,9 @@ Mỗi coating khai báo bề mặt **mặt trước** và **mặt sau**.
 
 | code | Label |
 |---|---|
-| `front_back` (mặc định) | Full Color, Front and Back |
-| `front_only` | Full Color Front, Blank Back |
-| `same_both` | Full Color, Same Artwork Both Sides |
+| `front_back` (mặc định) | Front and Back |
+| `front_only` | Front Only, Blank Back |
+| `same_both` | Same Artwork Both Sides |
 
 ### 2.5 Corners
 

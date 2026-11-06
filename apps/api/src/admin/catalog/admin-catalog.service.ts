@@ -126,6 +126,11 @@ export function unitNamesFrom(name: string): { unitName: string; unitNamePlural:
   return { unitName: lower, unitNamePlural: lower.endsWith('ss') ? `${lower}es` : `${lower}s` };
 }
 
+/** The days and percent of a library speed, as a turnaround cell. */
+function speedCell(attributes: Record<string, unknown>) {
+  return { minBusinessDays: Number(attributes.min_days), businessDays: Number(attributes.max_days), pricePercent: Number(attributes.percent) };
+}
+
 /** The values of `row` for a copy: the database gives it a new id and dates. */
 function copyRow<T extends { createdAt: Date; updatedAt: Date }>(row: T, staffId: string) {
   const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...values } = row as T & { id?: string };
@@ -513,8 +518,8 @@ export class AdminCatalogService {
    * Adds a library option to a product, active and not the default (unless it is the product's first in the
    * group). With `copyFrom` it starts with that option's prices, turnaround days and rules (and, for sizes,
    * its templates). Otherwise a new add-on is 0%, a new core option is not sold until it has prices, a new
-   * turnaround speed is offered at no quantity until set in the table, rules that limit its group leave it
-   * out, and every template supports a new size (layouts adapt to any size).
+   * turnaround speed applies at every quantity with its library days and percent, rules that limit its group
+   * leave it out, and every template supports a new size (layouts adapt to any size).
    */
   async useValue(productCode: string, groupCode: string, input: ValueUseInput, staffId: string) {
     await this.db.transaction(async (tx) => {
@@ -533,7 +538,7 @@ export class AdminCatalogService {
 
   private async attachValue(tx: Tx, productId: string, groupId: string, groupCode: string, input: ValueUseInput, staffId: string): Promise<string> {
     const [value] = await tx
-      .select({ id: optionValues.id, label: optionValues.label })
+      .select({ id: optionValues.id, label: optionValues.label, attributes: optionValues.attributes })
       .from(optionValues)
       .where(and(eq(optionValues.groupId, groupId), eq(optionValues.code, input.value)));
     if (!value) throw new NotFoundException(`Value "${input.value}" not found in "${groupCode}"`);
@@ -598,6 +603,15 @@ export class AdminCatalogService {
         .innerJoin(optionValueRules, eq(optionValueRules.id, optionValueRuleAllowed.ruleId))
         .where(and(eq(optionValueRules.productId, productId), eq(optionValueRuleAllowed.valueId, source.id)));
       if (allowing.length) await tx.insert(optionValueRuleAllowed).values(allowing.map((a) => ({ ruleId: a.ruleId, valueId: id })));
+    }
+
+    if (!source && groupCode === TURNAROUND_GROUP) {
+      const tierIds = await this.productTierIds(tx, productId);
+      if (tierIds.length) {
+        await tx
+          .insert(turnaroundOptions)
+          .values(tierIds.map((quantityTierId) => ({ optionValueId: id, quantityTierId, ...speedCell(value.attributes), createdBy: staffId, updatedBy: staffId })));
+      }
     }
 
     if (groupCode === SIZE_GROUP) {
@@ -961,6 +975,21 @@ export class AdminCatalogService {
       if (patch.attributes) this.parseAttributes(groupCode, patch.attributes);
 
       await tx.update(optionValues).set({ ...patch, updatedBy: staffId }).where(eq(optionValues.id, before.id));
+      if (groupCode === TURNAROUND_GROUP && patch.attributes) {
+        // Cells a product changed on its Turnaround tab stay as they are.
+        const was = speedCell(before.attributes);
+        await tx
+          .update(turnaroundOptions)
+          .set({ ...speedCell(patch.attributes), updatedBy: staffId })
+          .where(
+            and(
+              eq(turnaroundOptions.optionValueId, before.id),
+              eq(turnaroundOptions.minBusinessDays, was.minBusinessDays),
+              eq(turnaroundOptions.businessDays, was.businessDays),
+              eq(turnaroundOptions.pricePercent, was.pricePercent),
+            ),
+          );
+      }
       const changed = (Object.keys(patch) as (keyof LibraryValuePatch)[]).filter((k) => JSON.stringify(patch[k]) !== JSON.stringify(before[k]));
       await this.audit.record(tx, staffId, {
         action: 'catalog.value.update',
@@ -1306,7 +1335,19 @@ export class AdminCatalogService {
       .insert(productQuantityTiers)
       .values({ productId, quantity, isDefault: others.length === 0, createdBy: staffId, updatedBy: staffId })
       .returning({ id: productQuantityTiers.id });
-    if (closest) {
+    if (!closest) {
+      // The product's first quantity: the speeds it ticked apply with their library days and percent.
+      const speeds = await tx
+        .select({ id: optionValues.id, attributes: optionValues.attributes })
+        .from(productOptionValues)
+        .innerJoin(optionValues, eq(optionValues.id, productOptionValues.valueId))
+        .where(and(eq(productOptionValues.productId, productId), eq(productOptionValues.groupId, await this.groupId(tx, TURNAROUND_GROUP))));
+      if (speeds.length) {
+        await tx
+          .insert(turnaroundOptions)
+          .values(speeds.map((s) => ({ optionValueId: s.id, quantityTierId: tier!.id, ...speedCell(s.attributes), createdBy: staffId, updatedBy: staffId })));
+      }
+    } else {
       const cells = await tx.select().from(turnaroundOptions).where(eq(turnaroundOptions.quantityTierId, closest.id));
       if (cells.length) {
         await tx.insert(turnaroundOptions).values(
