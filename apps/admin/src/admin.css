@@ -877,8 +877,8 @@ a.btn-primary {
 }
 
 .money-changed {
-  background: #fff8e1;
-  border-color: #f2c94c;
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .money-invalid {

@@ -50,6 +50,7 @@ Cập nhật: 2026-10-20. Khi giải quyết xong một mục: ghi quyết đị
 | O14 | Admin chưa tạo được template mới, nên product trống chỉ có Upload và Design service (nếu thêm gói). Form brief cho designer dùng chung các trường của card | Hiện Upload; muốn có template thì copy từ product có template | Làm cùng O10 | Cao |
 | O15 | Kích thước tối đa 36 in, ảnh tối đa 100 MP (cỡ 24 × 36 in ở 300 DPI). Poster lớn hơn chưa làm được; thứ tự các nhóm add-on theo thứ tự thêm, chưa đổi được | Giới hạn trong `attribute-schemas.ts`, `formats.py` | Hỏi xưởng khổ in tối đa | Thấp |
 | O17 | Turnaround đã là khoảng ngày. Migration giữ số cũ làm ngày cuối và tạm đặt ngày đầu sớm hơn 1 ngày | Chỉ là giá trị tạm | Hỏi Alex khoảng thật, ví dụ Rush 1–2, Express 3–4, Standard 4–5; hiện ngày ship và ngày hứa dùng ngày cuối | Trung bình |
+| O18 | Printed side 4/1: Alex tự tạo được trong Option library, nhưng chưa có kiểu mặt sau "Black only", nên không chặn file mặt sau có màu và file in không báo xưởng | Để sau theo Rick | Làm khi Alex xác nhận dùng 4/1 | Trung bình |
 | O7 | Kiểm tra file chưa có: chữ quá nhỏ (dưới 6pt), màu đen 4 lớp (rich black) cho chữ nhỏ, tổng mực quá cao | Chỉ các mục trong spec 6.3 | Hỏi xưởng các ngưỡng thường dùng rồi thêm vào `preflight.py` | Thấp |
 
 ## Giao diện (storefront)
