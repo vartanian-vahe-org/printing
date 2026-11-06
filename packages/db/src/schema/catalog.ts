@@ -33,13 +33,11 @@ export const products = pgTable('products', {
   ...timestamps,
 });
 
+/** The option library: groups and options are created once and shared by every product. */
 export const optionGroups = pgTable(
   'option_groups',
   {
     id: id(),
-    productId: uuid('product_id')
-      .notNull()
-      .references(() => products.id, { onDelete: 'cascade' }),
     code: text('code').notNull(),
     label: text('label').notNull(),
     description: text('description'),
@@ -50,7 +48,7 @@ export const optionGroups = pgTable(
     ...timestamps,
   },
   (t) => [
-    unique('option_groups_product_code_key').on(t.productId, t.code),
+    unique('option_groups_code_key').on(t.code),
     check('option_groups_display_style_check', sql`${t.displayStyle} in ('dropdown', 'radio', 'swatch')`),
   ],
 );
@@ -61,8 +59,7 @@ export const optionGroups = pgTable(
  *   paper:       { thickness_pt, tier }
  *   coating:     { front, back, laminated }
  *   turnaround:  {} (days and price per quantity live in turnaround_options)
- * addon_percent: what an add-on adds to the core price. Core options are priced in core_prices and
- * turnaround in turnaround_options, so it stays 0 for them.
+ * A product uses an option through product_option_values.
  */
 export const optionValues = pgTable(
   'option_values',
@@ -75,17 +72,40 @@ export const optionValues = pgTable(
     label: text('label').notNull(),
     description: text('description'),
     sortOrder: integer('sort_order').notNull().default(0),
+    attributes: jsonb('attributes').$type<Record<string, unknown>>().notNull().default({}),
+    ...auditColumns,
+    ...timestamps,
+  },
+  (t) => [unique('option_values_group_code_key').on(t.groupId, t.code)],
+);
+
+/**
+ * The library options a product uses, with what is its own: hidden or not, its default in the group,
+ * and for add-ons the percent of the core price. Core options are priced in core_prices and turnaround
+ * in turnaround_options, so addon_percent stays 0 for them.
+ */
+export const productOptionValues = pgTable(
+  'product_option_values',
+  {
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => optionGroups.id, { onDelete: 'cascade' }),
+    valueId: uuid('value_id')
+      .notNull()
+      .references(() => optionValues.id, { onDelete: 'cascade' }),
     isActive: boolean('is_active').notNull().default(true),
     isDefault: boolean('is_default').notNull().default(false),
-    attributes: jsonb('attributes').$type<Record<string, unknown>>().notNull().default({}),
     addonPercent: numeric('addon_percent', { precision: 6, scale: 2, mode: 'number' }).notNull().default(0),
     ...auditColumns,
     ...timestamps,
   },
   (t) => [
-    unique('option_values_group_code_key').on(t.groupId, t.code),
-    uniqueIndex('option_values_one_default_per_group').on(t.groupId).where(sql`${t.isDefault}`),
-    check('option_values_addon_percent_check', sql`${t.addonPercent} between -90 and 500`),
+    primaryKey({ columns: [t.productId, t.valueId] }),
+    uniqueIndex('product_option_values_one_default_per_group').on(t.productId, t.groupId).where(sql`${t.isDefault}`),
+    check('product_option_values_addon_percent_check', sql`${t.addonPercent} between -90 and 500`),
   ],
 );
 
@@ -106,7 +126,7 @@ export const optionValueRules = pgTable(
     ...auditColumns,
     ...timestamps,
   },
-  (t) => [unique('option_value_rules_when_target_key').on(t.whenValueId, t.targetGroupId)],
+  (t) => [unique('option_value_rules_product_when_target_key').on(t.productId, t.whenValueId, t.targetGroupId)],
 );
 
 export const optionValueRuleAllowed = pgTable(

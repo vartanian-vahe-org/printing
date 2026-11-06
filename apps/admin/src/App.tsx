@@ -7,6 +7,7 @@ import { ActivityPage } from './pages/ActivityPage';
 import { LoginPage } from './pages/LoginPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { OptionsPage } from './pages/OptionsPage';
+import { ProductOptionsPage } from './pages/ProductOptionsPage';
 import { OrderDetailPage } from './pages/OrderDetailPage';
 import { OrdersPage } from './pages/OrdersPage';
 import { PricingPage } from './pages/PricingPage';
@@ -27,6 +28,7 @@ const ROUTES = [
   { path: '/products/new', element: <NewProductPage /> },
   { path: '/products/:code/setup/:step?', element: <ProductSetupPage /> },
   { path: '/options', element: <OptionsPage /> },
+  { path: '/product-options', element: <ProductOptionsPage /> },
   { path: '/rules', element: <RulesPage /> },
   { path: '/pricing', element: <PricingPage /> },
   { path: '/turnaround', element: <TurnaroundPage /> },
@@ -81,13 +83,14 @@ const NAV: { section?: string; product?: true; items: { to: string; label: strin
     items: [
       { to: '/orders', label: 'Orders', hint: 'Payments, printing, shipping' },
       { to: '/products', label: 'Products', hint: 'Add products, URLs and SEO' },
+      { to: '/options', label: 'Option library', hint: 'Shared by every product' },
     ],
   },
   {
     // Configuration of the product picked in the sidebar (Business Cards, Postcards…).
     product: true,
     items: [
-      { to: '/options', label: 'Options', hint: 'Sizes, papers, coatings…' },
+      { to: '/product-options', label: 'Options', hint: 'What this product offers' },
       { to: '/rules', label: 'Rules', hint: 'Which options go together' },
       { to: '/pricing', label: 'Pricing', hint: 'Core prices and add-ons' },
       { to: '/turnaround', label: 'Turnaround', hint: 'Days and % per quantity' },

@@ -483,6 +483,12 @@ a.btn-primary {
   border-radius: 12px;
 }
 
+.pick-check {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
 .editor-actions {
   justify-content: flex-end;
   margin-bottom: 12px;

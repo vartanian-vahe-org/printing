@@ -6,11 +6,12 @@ import {
   optionValueRuleAllowed,
   optionValueRules,
   optionValues,
+  productOptionValues,
   productQuantityTiers,
   products,
   turnaroundOptions,
 } from '@printing/db';
-import type { Catalog, OptionGroup } from '@printing/pricing';
+import { CORE_GROUPS, TURNAROUND_GROUP, type Catalog, type OptionGroup } from '@printing/pricing';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { Redis } from 'ioredis';
@@ -19,12 +20,15 @@ import { REDIS } from '../redis/redis.tokens.js';
 
 /** Catalog cache lifetime; admin edits clear it at once, so this only bounds a missed clear. */
 const CACHE_SECONDS = 300;
-const cacheKey = (productCode: string) => `catalog:v4:${productCode}`;
+const cacheKey = (productCode: string) => `catalog:v5:${productCode}`;
+
+/** Groups every product has, even before any of their options is picked. */
+const REQUIRED_GROUPS: string[] = [...CORE_GROUPS, TURNAROUND_GROUP];
 
 /**
  * Reads a product's configurator data from the DB in the shape @printing/pricing expects.
- * Only active values and quantity tiers are included, so whatever an admin hides disappears
- * from rules and prices too.
+ * Only the library options the product uses and has not hidden are included, and active quantity
+ * tiers, so whatever an admin hides disappears from rules and prices too.
  */
 @Injectable()
 export class CatalogService implements OnModuleInit {
@@ -60,6 +64,13 @@ export class CatalogService implements OnModuleInit {
     await this.redis?.del(cacheKey(productCode));
   }
 
+  /** Call after a change to the option library, which every product reads. */
+  async invalidateAll(): Promise<void> {
+    if (!this.redis) return;
+    const keys = await this.redis.keys(cacheKey('*'));
+    if (keys.length) await this.redis.del(...keys);
+  }
+
   /** Products on the storefront, in display order. */
   async listProducts() {
     return this.db
@@ -89,16 +100,13 @@ export class CatalogService implements OnModuleInit {
     const sideValue = alias(optionValues, 'side_value');
 
     const [groupRows, valueRows, ruleRows, allowedRows, tierRows, priceRows, turnaroundRows] = await Promise.all([
+      this.db.select().from(optionGroups).orderBy(asc(optionGroups.sortOrder)),
       this.db
-        .select()
-        .from(optionGroups)
-        .where(eq(optionGroups.productId, product.id))
-        .orderBy(asc(optionGroups.sortOrder)),
-      this.db
-        .select({ value: optionValues, groupCode: optionGroups.code })
-        .from(optionValues)
-        .innerJoin(optionGroups, eq(optionGroups.id, optionValues.groupId))
-        .where(and(eq(optionGroups.productId, product.id), eq(optionValues.isActive, true)))
+        .select({ value: optionValues, use: productOptionValues, groupCode: optionGroups.code })
+        .from(productOptionValues)
+        .innerJoin(optionValues, eq(optionValues.id, productOptionValues.valueId))
+        .innerJoin(optionGroups, eq(optionGroups.id, productOptionValues.groupId))
+        .where(and(eq(productOptionValues.productId, product.id), eq(productOptionValues.isActive, true)))
         .orderBy(asc(optionValues.sortOrder)),
       this.loadRules(product.id),
       this.loadRuleAllowed(product.id),
@@ -120,15 +128,7 @@ export class CatalogService implements OnModuleInit {
         .innerJoin(paperValue, eq(paperValue.id, corePrices.paperValueId))
         .innerJoin(sideValue, eq(sideValue.id, corePrices.printedSideValueId))
         .innerJoin(productQuantityTiers, eq(productQuantityTiers.id, corePrices.quantityTierId))
-        .where(
-          and(
-            eq(productQuantityTiers.productId, product.id),
-            eq(productQuantityTiers.isActive, true),
-            eq(sizeValue.isActive, true),
-            eq(paperValue.isActive, true),
-            eq(sideValue.isActive, true),
-          ),
-        ),
+        .where(and(eq(productQuantityTiers.productId, product.id), eq(productQuantityTiers.isActive, true))),
       this.db
         .select({
           value: optionValues.code,
@@ -139,39 +139,42 @@ export class CatalogService implements OnModuleInit {
         .from(turnaroundOptions)
         .innerJoin(optionValues, eq(optionValues.id, turnaroundOptions.optionValueId))
         .innerJoin(productQuantityTiers, eq(productQuantityTiers.id, turnaroundOptions.quantityTierId))
-        .where(
-          and(
-            eq(productQuantityTiers.productId, product.id),
-            eq(optionValues.isActive, true),
-            eq(productQuantityTiers.isActive, true),
-          ),
-        ),
+        .where(and(eq(productQuantityTiers.productId, product.id), eq(productQuantityTiers.isActive, true))),
     ]);
 
-    const groups: OptionGroup[] = groupRows.map((g) => ({
-      code: g.code,
-      label: g.label,
-      sortOrder: g.sortOrder,
-      displayStyle: g.displayStyle as OptionGroup['displayStyle'],
-      values: valueRows
-        .filter((row) => row.groupCode === g.code)
-        .map(({ value }) => ({
-          code: value.code,
-          label: value.label,
-          description: value.description,
-          sortOrder: value.sortOrder,
-          isDefault: value.isDefault,
-          attributes: value.attributes,
-          addonPercent: value.addonPercent,
-        })),
-    }));
+    // The required groups (empty on a product still being set up), and the add-ons the product uses.
+    const groups: OptionGroup[] = groupRows
+      .filter((g) => REQUIRED_GROUPS.includes(g.code) || valueRows.some((row) => row.groupCode === g.code))
+      .map((g) => ({
+        code: g.code,
+        label: g.label,
+        sortOrder: g.sortOrder,
+        displayStyle: g.displayStyle as OptionGroup['displayStyle'],
+        values: valueRows
+          .filter((row) => row.groupCode === g.code)
+          .map(({ value, use }) => ({
+            code: value.code,
+            label: value.label,
+            description: value.description,
+            sortOrder: value.sortOrder,
+            isDefault: use.isDefault,
+            attributes: value.attributes,
+            addonPercent: use.addonPercent,
+          })),
+      }));
 
-    const rules = ruleRows.map((rule) => ({
-      whenGroup: rule.whenGroup,
-      whenValue: rule.whenValue,
-      targetGroup: rule.targetGroup,
-      allowed: allowedRows.filter((a) => a.ruleId === rule.id).map((a) => a.value),
-    }));
+    // Options the product does not use, or has hidden, disappear from its rules and prices too.
+    const offered = (group: string) => new Set(groups.find((g) => g.code === group)?.values.map((v) => v.code));
+    const [sizes, papers, sides, speeds] = [offered('size'), offered('paper'), offered('printed_side'), offered(TURNAROUND_GROUP)];
+
+    const rules = ruleRows
+      .filter((rule) => offered(rule.whenGroup).has(rule.whenValue))
+      .map((rule) => ({
+        whenGroup: rule.whenGroup,
+        whenValue: rule.whenValue,
+        targetGroup: rule.targetGroup,
+        allowed: allowedRows.filter((a) => a.ruleId === rule.id && offered(rule.targetGroup).has(a.value)).map((a) => a.value),
+      }));
 
     return {
       product: { code: product.code, name: product.name, unitName: product.unitName, unitNamePlural: product.unitNamePlural },
@@ -182,12 +185,12 @@ export class CatalogService implements OnModuleInit {
         sortOrder: t.sortOrder,
         isDefault: t.isDefault,
       })),
-      corePrices: priceRows,
-      turnarounds: turnaroundRows,
+      corePrices: priceRows.filter((p) => sizes.has(p.size) && papers.has(p.paper) && sides.has(p.printedSide)),
+      turnarounds: turnaroundRows.filter((t) => speeds.has(t.value)),
     };
   }
 
-  /** Rules whose trigger value is active. */
+  /** Rules of a product, in display order. */
   private loadRules(productId: string) {
     const whenGroup = alias(optionGroups, 'when_group');
     const targetGroup = alias(optionGroups, 'target_group');
@@ -202,11 +205,11 @@ export class CatalogService implements OnModuleInit {
       .innerJoin(optionValues, eq(optionValues.id, optionValueRules.whenValueId))
       .innerJoin(whenGroup, eq(whenGroup.id, optionValues.groupId))
       .innerJoin(targetGroup, eq(targetGroup.id, optionValueRules.targetGroupId))
-      .where(and(eq(optionValueRules.productId, productId), eq(optionValues.isActive, true)))
+      .where(eq(optionValueRules.productId, productId))
       .orderBy(asc(whenGroup.sortOrder), asc(optionValues.sortOrder), asc(targetGroup.sortOrder));
   }
 
-  /** Allowed values of each rule, active values only, in sort order. */
+  /** Allowed values of each rule, in sort order. */
   private async loadRuleAllowed(productId: string) {
     const ruleIds = this.db
       .select({ id: optionValueRules.id })
@@ -216,7 +219,7 @@ export class CatalogService implements OnModuleInit {
       .select({ ruleId: optionValueRuleAllowed.ruleId, value: optionValues.code })
       .from(optionValueRuleAllowed)
       .innerJoin(optionValues, eq(optionValues.id, optionValueRuleAllowed.valueId))
-      .where(and(inArray(optionValueRuleAllowed.ruleId, ruleIds), eq(optionValues.isActive, true)))
+      .where(inArray(optionValueRuleAllowed.ruleId, ruleIds))
       .orderBy(asc(optionValues.sortOrder));
   }
 }

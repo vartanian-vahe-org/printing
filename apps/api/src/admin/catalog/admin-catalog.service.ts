@@ -7,6 +7,7 @@ import {
   optionValueRuleAllowed,
   optionValueRules,
   optionValues,
+  productOptionValues,
   productQuantityTiers,
   products,
   templateFacets,
@@ -36,21 +37,30 @@ import { attributeSchema } from './attribute-schemas.js';
 type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
 type Executor = Database | Tx;
 
+/** How a product uses a library option. */
 export interface ValuePatch {
-  label?: string;
-  description?: string | null;
-  sortOrder?: number;
   isActive?: boolean;
   isDefault?: boolean;
-  attributes?: Record<string, unknown>;
 }
 
-export interface ValueInput {
+/** Adds a library option to a product; `copyFrom` is an option of the product whose prices and rules it starts with. */
+export interface ValueUseInput {
+  value: string;
+  copyFrom?: string;
+}
+
+export interface LibraryValueInput {
   code?: string;
   label: string;
   description?: string | null;
   attributes: Record<string, unknown>;
-  copyFrom?: string;
+}
+
+export interface LibraryValuePatch {
+  label?: string;
+  description?: string | null;
+  sortOrder?: number;
+  attributes?: Record<string, unknown>;
 }
 
 export interface ProductInput {
@@ -178,14 +188,8 @@ export interface PricingInput {
 
 const isCoreGroup = (code: string) => (CORE_GROUPS as readonly string[]).includes(code);
 
-/** The groups every product has: the pricing engine needs them, so they can be renamed but not deleted. */
-const REQUIRED_GROUPS = [
-  { code: SIZE_GROUP, label: 'Size' },
-  { code: PAPER_GROUP, label: 'Paper' },
-  { code: PRINTED_SIDE_GROUP, label: 'Printed Side' },
-  { code: TURNAROUND_GROUP, label: 'Turnaround' },
-];
-const isRequiredGroup = (code: string) => REQUIRED_GROUPS.some((g) => g.code === code);
+/** The groups every product needs: the pricing engine uses them, so they can be renamed but not deleted. */
+const isRequiredGroup = (code: string) => isCoreGroup(code) || code === TURNAROUND_GROUP;
 
 /** Details of the first option of an add-on group the 3D preview reads; other groups have none. */
 const FIRST_OPTION_ATTRIBUTES: Record<string, Record<string, unknown>> = {
@@ -217,22 +221,25 @@ export class AdminCatalogService {
     return row.id;
   }
 
-  private async groupId(db: Executor, productId: string, code: string): Promise<string> {
-    const [row] = await db
-      .select({ id: optionGroups.id })
-      .from(optionGroups)
-      .where(and(eq(optionGroups.productId, productId), eq(optionGroups.code, code)))
-      .limit(1);
+  private async groupId(db: Executor, code: string): Promise<string> {
+    const [row] = await db.select({ id: optionGroups.id }).from(optionGroups).where(eq(optionGroups.code, code)).limit(1);
     if (!row) throw new NotFoundException(`Option group "${code}" not found`);
     return row.id;
   }
 
-  private async valueIds(db: Executor, groupId: string): Promise<Map<string, { id: string; isActive: boolean; isDefault: boolean }>> {
+  /** The options of a group this product uses, by code. */
+  private async valueIds(db: Executor, productId: string, groupId: string): Promise<Map<string, { id: string; isActive: boolean; isDefault: boolean }>> {
     const rows = await db
-      .select({ id: optionValues.id, code: optionValues.code, isActive: optionValues.isActive, isDefault: optionValues.isDefault })
-      .from(optionValues)
-      .where(eq(optionValues.groupId, groupId));
+      .select({ id: optionValues.id, code: optionValues.code, isActive: productOptionValues.isActive, isDefault: productOptionValues.isDefault })
+      .from(productOptionValues)
+      .innerJoin(optionValues, eq(optionValues.id, productOptionValues.valueId))
+      .where(and(eq(productOptionValues.productId, productId), eq(productOptionValues.groupId, groupId)));
     return new Map(rows.map((r) => [r.code, r]));
+  }
+
+  private async productTierIds(db: Executor, productId: string): Promise<string[]> {
+    const rows = await db.select({ id: productQuantityTiers.id }).from(productQuantityTiers).where(eq(productQuantityTiers.productId, productId));
+    return rows.map((r) => r.id);
   }
 
   /**
@@ -316,12 +323,13 @@ export class AdminCatalogService {
     const sideValue = alias(optionValues, 'side_value');
 
     const [groups, values, rules, allowed, tiers, prices, turnaroundRows, templateRows, facetRows, designRows] = await Promise.all([
-      this.db.select().from(optionGroups).where(eq(optionGroups.productId, productId)).orderBy(asc(optionGroups.sortOrder)),
+      this.db.select().from(optionGroups).orderBy(asc(optionGroups.sortOrder)),
       this.db
-        .select({ value: optionValues, groupCode: optionGroups.code })
-        .from(optionValues)
-        .innerJoin(optionGroups, eq(optionGroups.id, optionValues.groupId))
-        .where(eq(optionGroups.productId, productId))
+        .select({ value: optionValues, use: productOptionValues, groupCode: optionGroups.code })
+        .from(productOptionValues)
+        .innerJoin(optionValues, eq(optionValues.id, productOptionValues.valueId))
+        .innerJoin(optionGroups, eq(optionGroups.id, productOptionValues.groupId))
+        .where(eq(productOptionValues.productId, productId))
         .orderBy(asc(optionValues.sortOrder)),
       this.db
         .select({ id: optionValueRules.id, whenGroup: whenGroup.code, whenValue: optionValues.code, targetGroup: targetGroup.code })
@@ -374,25 +382,28 @@ export class AdminCatalogService {
 
     return {
       product: { code: productCode, name: product!.name },
-      groups: groups.map((g) => ({
-        code: g.code,
-        label: g.label,
-        sortOrder: g.sortOrder,
-        displayStyle: g.displayStyle,
-        values: values
-          .filter((v) => v.groupCode === g.code)
-          .map(({ value: v }) => ({
-            code: v.code,
-            label: v.label,
-            description: v.description,
-            sortOrder: v.sortOrder,
-            isActive: v.isActive,
-            isDefault: v.isDefault,
-            attributes: v.attributes,
-            addonPercent: v.addonPercent,
-            updatedAt: v.updatedAt,
-          })),
-      })),
+      // The required groups, and the add-on groups the product uses.
+      groups: groups
+        .filter((g) => isRequiredGroup(g.code) || values.some((v) => v.groupCode === g.code))
+        .map((g) => ({
+          code: g.code,
+          label: g.label,
+          sortOrder: g.sortOrder,
+          displayStyle: g.displayStyle,
+          values: values
+            .filter((v) => v.groupCode === g.code)
+            .map(({ value: v, use }) => ({
+              code: v.code,
+              label: v.label,
+              description: v.description,
+              sortOrder: v.sortOrder,
+              isActive: use.isActive,
+              isDefault: use.isDefault,
+              attributes: v.attributes,
+              addonPercent: use.addonPercent,
+              updatedAt: v.updatedAt,
+            })),
+        })),
       rules: rules.map((r) => ({
         whenGroup: r.whenGroup,
         whenValue: r.whenValue,
@@ -433,14 +444,14 @@ export class AdminCatalogService {
 
   // ---------------------------------------------------------------- writes
 
+  /** Shows, hides or makes default a library option on this product. */
   async updateValue(productCode: string, groupCode: string, valueCode: string, patch: ValuePatch, staffId: string) {
     await this.db.transaction(async (tx) => {
       const productId = await this.productId(tx, productCode);
-      const groupId = await this.groupId(tx, productId, groupCode);
-      const existing = (await this.valueIds(tx, groupId)).get(valueCode);
+      const groupId = await this.groupId(tx, groupCode);
+      const existing = (await this.valueIds(tx, productId, groupId)).get(valueCode);
       if (!existing) throw new NotFoundException(`Value "${valueCode}" not found in "${groupCode}"`);
 
-      if (patch.attributes) this.parseAttributes(groupCode, patch.attributes);
       const willBeActive = patch.isActive ?? existing.isActive;
       const willBeDefault = patch.isDefault ?? existing.isDefault;
       if (willBeDefault && !willBeActive) {
@@ -450,35 +461,18 @@ export class AdminCatalogService {
         throw new BadRequestException('Each option group needs a default. Make another option the default instead.');
       }
 
-      const [before] = await tx
-        .select({
-          label: optionValues.label,
-          description: optionValues.description,
-          sortOrder: optionValues.sortOrder,
-          isActive: optionValues.isActive,
-          isDefault: optionValues.isDefault,
-          attributes: optionValues.attributes,
-        })
-        .from(optionValues)
-        .where(eq(optionValues.id, existing.id));
+      const inGroup = and(eq(productOptionValues.productId, productId), eq(productOptionValues.groupId, groupId));
       if (patch.isDefault === true) {
-        await tx
-          .update(optionValues)
-          .set({ isDefault: false, updatedBy: staffId })
-          .where(and(eq(optionValues.groupId, groupId), ne(optionValues.code, valueCode)));
+        await tx.update(productOptionValues).set({ isDefault: false, updatedBy: staffId }).where(and(inGroup, ne(productOptionValues.valueId, existing.id)));
       }
-      await tx
-        .update(optionValues)
-        .set({ ...patch, updatedBy: staffId })
-        .where(and(eq(optionValues.groupId, groupId), eq(optionValues.code, valueCode)));
+      await tx.update(productOptionValues).set({ ...patch, updatedBy: staffId }).where(and(inGroup, eq(productOptionValues.valueId, existing.id)));
 
       await this.assertStorefrontStillWorks(tx, productCode);
-      const changed = Object.keys(patch).filter((k) => JSON.stringify(patch[k as keyof ValuePatch]) !== JSON.stringify(before?.[k as keyof typeof before]));
       await this.audit.record(tx, staffId, {
         action: 'catalog.value.update',
         target: `${productCode} · ${groupCode} / ${valueCode}`,
-        summary: `Changed ${changed.join(', ') || 'nothing'} of ${before?.label ?? valueCode}`,
-        changes: { before: Object.fromEntries(changed.map((k) => [k, before?.[k as keyof typeof before]])), after: Object.fromEntries(changed.map((k) => [k, patch[k as keyof ValuePatch]])) },
+        summary: `Changed ${Object.keys(patch).join(', ')} of ${valueCode}`,
+        changes: { before: { isActive: existing.isActive, isDefault: existing.isDefault }, after: patch },
       });
     });
   }
@@ -494,61 +488,42 @@ export class AdminCatalogService {
   }
 
   /**
-   * Adds an option at the end of its group, active and not the default (unless it is the group's first). With `copyFrom` it starts with
-   * that option's prices, turnaround days and rules (and, for sizes, its templates). Otherwise a new add-on
-   * is 0%, a new core option is not sold until it has prices, a new turnaround speed is offered at no
-   * quantity until set in the table, rules that limit its group leave it out, and every template supports
-   * a new size (layouts adapt to any size).
+   * Adds a library option to a product, active and not the default (unless it is the product's first in the
+   * group). With `copyFrom` it starts with that option's prices, turnaround days and rules (and, for sizes,
+   * its templates). Otherwise a new add-on is 0%, a new core option is not sold until it has prices, a new
+   * turnaround speed is offered at no quantity until set in the table, rules that limit its group leave it
+   * out, and every template supports a new size (layouts adapt to any size).
    */
-  async createValue(productCode: string, groupCode: string, input: ValueInput, staffId: string): Promise<{ code: string }> {
-    return this.db.transaction(async (tx) => {
+  async useValue(productCode: string, groupCode: string, input: ValueUseInput, staffId: string) {
+    await this.db.transaction(async (tx) => {
       const productId = await this.productId(tx, productCode);
-      const groupId = await this.groupId(tx, productId, groupCode);
-      const existing = await this.valueIds(tx, groupId);
-
-      let code = input.code ?? valueCodeFrom(input.label);
-      if (input.code) {
-        if (existing.has(code)) throw new BadRequestException(`An option with the code "${code}" already exists`);
-      } else {
-        const stem = code;
-        for (let n = 2; existing.has(code); n++) code = `${stem}_${n}`;
-      }
-      this.parseAttributes(groupCode, input.attributes);
-
-      const source = input.copyFrom ? existing.get(input.copyFrom) : undefined;
-      if (input.copyFrom && !source) throw new BadRequestException(`Option "${input.copyFrom}" not found in "${groupCode}"`);
-
-      const [last] = await tx
-        .select({ sortOrder: optionValues.sortOrder })
+      const groupId = await this.groupId(tx, groupCode);
+      const [value] = await tx
+        .select({ id: optionValues.id, label: optionValues.label })
         .from(optionValues)
-        .where(eq(optionValues.groupId, groupId))
-        .orderBy(desc(optionValues.sortOrder))
-        .limit(1);
-      const [created] = await tx
-        .insert(optionValues)
-        .values({
-          groupId,
-          code,
-          label: input.label,
-          description: input.description ?? null,
-          attributes: input.attributes,
-          sortOrder: (last?.sortOrder ?? 0) + 1,
-          isDefault: existing.size === 0,
-          createdBy: staffId,
-          updatedBy: staffId,
-        })
-        .returning({ id: optionValues.id });
-      const id = created!.id;
+        .where(and(eq(optionValues.groupId, groupId), eq(optionValues.code, input.value)));
+      if (!value) throw new NotFoundException(`Value "${input.value}" not found in "${groupCode}"`);
+      const used = await this.valueIds(tx, productId, groupId);
+      if (used.has(input.value)) throw new BadRequestException(`This product already uses ${value.label}.`);
+      const source = input.copyFrom ? used.get(input.copyFrom) : undefined;
+      if (input.copyFrom && !source) throw new BadRequestException(`Option "${input.copyFrom}" not found in "${groupCode}"`);
+      const id = value.id;
+
+      let addonPercent = 0;
+      if (source) {
+        const [row] = await tx
+          .select({ addonPercent: productOptionValues.addonPercent })
+          .from(productOptionValues)
+          .where(and(eq(productOptionValues.productId, productId), eq(productOptionValues.valueId, source.id)));
+        addonPercent = row?.addonPercent ?? 0;
+      }
+      await tx.insert(productOptionValues).values({ productId, groupId, valueId: id, isDefault: used.size === 0, addonPercent, createdBy: staffId, updatedBy: staffId });
 
       if (source) {
-        const [{ addonPercent } = { addonPercent: 0 }] = await tx
-          .select({ addonPercent: optionValues.addonPercent })
-          .from(optionValues)
-          .where(eq(optionValues.id, source.id));
-        await tx.update(optionValues).set({ addonPercent }).where(eq(optionValues.id, id));
-        if (isCoreGroup(groupCode)) {
+        const tierIds = await this.productTierIds(tx, productId);
+        if (isCoreGroup(groupCode) && tierIds.length) {
           const column = CORE_COLUMN[groupCode as keyof typeof CORE_COLUMN];
-          const prices = await tx.select().from(corePrices).where(eq(corePrices[column], source.id));
+          const prices = await tx.select().from(corePrices).where(and(eq(corePrices[column], source.id), inArray(corePrices.quantityTierId, tierIds)));
           if (prices.length) {
             await tx.insert(corePrices).values(
               prices.map(({ sizeValueId, paperValueId, printedSideValueId, quantityTierId, priceCents }) => ({
@@ -564,14 +539,16 @@ export class AdminCatalogService {
             );
           }
         }
-        const cells = await tx.select().from(turnaroundOptions).where(eq(turnaroundOptions.optionValueId, source.id));
+        const cells = tierIds.length
+          ? await tx.select().from(turnaroundOptions).where(and(eq(turnaroundOptions.optionValueId, source.id), inArray(turnaroundOptions.quantityTierId, tierIds)))
+          : [];
         if (cells.length) {
           await tx.insert(turnaroundOptions).values(
             cells.map((c) => ({ optionValueId: id, quantityTierId: c.quantityTierId, businessDays: c.businessDays, pricePercent: c.pricePercent, createdBy: staffId, updatedBy: staffId })),
           );
         }
         // Its own rules: "when the customer picks <source>, only … in group Y".
-        const ownRules = await tx.select().from(optionValueRules).where(eq(optionValueRules.whenValueId, source.id));
+        const ownRules = await tx.select().from(optionValueRules).where(and(eq(optionValueRules.productId, productId), eq(optionValueRules.whenValueId, source.id)));
         for (const rule of ownRules) {
           const allowed = await tx.select().from(optionValueRuleAllowed).where(eq(optionValueRuleAllowed.ruleId, rule.id));
           const [copy] = await tx
@@ -584,7 +561,8 @@ export class AdminCatalogService {
         const allowing = await tx
           .select({ ruleId: optionValueRuleAllowed.ruleId })
           .from(optionValueRuleAllowed)
-          .where(eq(optionValueRuleAllowed.valueId, source.id));
+          .innerJoin(optionValueRules, eq(optionValueRules.id, optionValueRuleAllowed.ruleId))
+          .where(and(eq(optionValueRules.productId, productId), eq(optionValueRuleAllowed.valueId, source.id)));
         if (allowing.length) await tx.insert(optionValueRuleAllowed).values(allowing.map((a) => ({ ruleId: a.ruleId, valueId: id })));
       }
 
@@ -592,44 +570,42 @@ export class AdminCatalogService {
         const rows = await tx.select({ id: templates.id, sizes: templates.supportedSizeCodes }).from(templates).where(eq(templates.productId, productId));
         for (const row of rows) {
           if (input.copyFrom && !row.sizes.includes(input.copyFrom)) continue;
-          await tx.update(templates).set({ supportedSizeCodes: [...row.sizes, code], updatedBy: staffId }).where(eq(templates.id, row.id));
+          await tx.update(templates).set({ supportedSizeCodes: [...row.sizes, input.value], updatedBy: staffId }).where(eq(templates.id, row.id));
         }
       }
 
       await this.assertStorefrontStillWorks(tx, productCode);
       await this.audit.record(tx, staffId, {
-        action: 'catalog.value.create',
-        target: `${productCode} · ${groupCode} / ${code}`,
-        summary: `Added ${input.label}${input.copyFrom ? ` (prices and rules copied from ${input.copyFrom})` : ''}`,
-        changes: { before: null, after: { code, label: input.label, description: input.description ?? null, attributes: input.attributes, copyFrom: input.copyFrom ?? null } },
+        action: 'catalog.value.use',
+        target: `${productCode} · ${groupCode} / ${input.value}`,
+        summary: `Added ${value.label}${input.copyFrom ? ` (prices and rules copied from ${input.copyFrom})` : ''}`,
+        changes: { before: null, after: { value: input.value, copyFrom: input.copyFrom ?? null } },
       });
-      return { code };
     });
   }
 
   /**
-   * Deletes an option with its prices and rules. Carts holding it ask the customer to choose again;
-   * placed orders keep their own copy of the configuration. Refused for the default, and when a rule
-   * would be left allowing nothing.
+   * Takes a library option off a product, with its prices and rules on that product. The option stays in the
+   * library. Carts holding it ask the customer to choose again; placed orders keep their own copy of the
+   * configuration. Refused for the default while the group has other options, and when a rule would be left
+   * allowing nothing. Removing the last option takes an add-on group off the product.
    */
-  async deleteValue(productCode: string, groupCode: string, valueCode: string, staffId: string) {
+  async removeValue(productCode: string, groupCode: string, valueCode: string, staffId: string) {
     await this.db.transaction(async (tx) => {
       const productId = await this.productId(tx, productCode);
-      const groupId = await this.groupId(tx, productId, groupCode);
-      const [value] = await tx
-        .select()
-        .from(optionValues)
-        .where(and(eq(optionValues.groupId, groupId), eq(optionValues.code, valueCode)))
-        .for('update');
+      const groupId = await this.groupId(tx, groupCode);
+      const used = await this.valueIds(tx, productId, groupId);
+      const value = used.get(valueCode);
       if (!value) throw new NotFoundException(`Value "${valueCode}" not found in "${groupCode}"`);
-      if (value.isDefault) throw new BadRequestException('This is the default option. Make another option the default before deleting it.');
+      if (value.isDefault && used.size > 1) throw new BadRequestException('This is the default option. Make another option the default before removing it.');
+      const [{ label } = { label: valueCode }] = await tx.select({ label: optionValues.label }).from(optionValues).where(eq(optionValues.id, value.id));
 
       // Rules whose only allowed option is this one would leave customers nothing to pick.
       const restricting = await tx
         .select({ ruleId: optionValueRuleAllowed.ruleId, valueId: optionValueRuleAllowed.valueId })
         .from(optionValueRuleAllowed)
         .innerJoin(optionValueRules, eq(optionValueRules.id, optionValueRuleAllowed.ruleId))
-        .where(eq(optionValueRules.targetGroupId, groupId));
+        .where(and(eq(optionValueRules.productId, productId), eq(optionValueRules.targetGroupId, groupId)));
       const onlyHere = [...new Set(restricting.filter((r) => r.valueId === value.id).map((r) => r.ruleId))].filter(
         (ruleId) => restricting.filter((r) => r.ruleId === ruleId).length === 1,
       );
@@ -639,12 +615,21 @@ export class AdminCatalogService {
           .from(optionValueRules)
           .innerJoin(optionValues, eq(optionValues.id, optionValueRules.whenValueId))
           .where(inArray(optionValueRules.id, onlyHere));
-        throw new BadRequestException(
-          `${value.label} is the only option allowed with ${blockers.map((b) => b.label).join(', ')}. Change that rule first.`,
-        );
+        throw new BadRequestException(`${label} is the only option allowed with ${blockers.map((b) => b.label).join(', ')}. Change that rule first.`);
       }
 
-      await tx.delete(optionValues).where(eq(optionValues.id, value.id));
+      await tx.delete(productOptionValues).where(and(eq(productOptionValues.productId, productId), eq(productOptionValues.valueId, value.id)));
+      await tx.delete(optionValueRules).where(and(eq(optionValueRules.productId, productId), eq(optionValueRules.whenValueId, value.id)));
+      const ruleIds = (await tx.select({ id: optionValueRules.id }).from(optionValueRules).where(eq(optionValueRules.productId, productId))).map((r) => r.id);
+      if (ruleIds.length) await tx.delete(optionValueRuleAllowed).where(and(inArray(optionValueRuleAllowed.ruleId, ruleIds), eq(optionValueRuleAllowed.valueId, value.id)));
+      const tierIds = await this.productTierIds(tx, productId);
+      if (tierIds.length) {
+        await tx.delete(turnaroundOptions).where(and(eq(turnaroundOptions.optionValueId, value.id), inArray(turnaroundOptions.quantityTierId, tierIds)));
+        if (isCoreGroup(groupCode)) {
+          const column = CORE_COLUMN[groupCode as keyof typeof CORE_COLUMN];
+          await tx.delete(corePrices).where(and(eq(corePrices[column], value.id), inArray(corePrices.quantityTierId, tierIds)));
+        }
+      }
 
       if (groupCode === SIZE_GROUP) {
         const rows = await tx.select({ id: templates.id, sizes: templates.supportedSizeCodes }).from(templates).where(eq(templates.productId, productId));
@@ -655,13 +640,10 @@ export class AdminCatalogService {
 
       await this.assertStorefrontStillWorks(tx, productCode);
       await this.audit.record(tx, staffId, {
-        action: 'catalog.value.delete',
+        action: 'catalog.value.remove',
         target: `${productCode} · ${groupCode} / ${valueCode}`,
-        summary: `Deleted ${value.label}`,
-        changes: {
-          before: { code: value.code, label: value.label, description: value.description, isActive: value.isActive, attributes: value.attributes, addonPercent: value.addonPercent },
-          after: null,
-        },
+        summary: `Removed ${label}`,
+        changes: { before: { code: valueCode, label, isActive: value.isActive }, after: null },
       });
     });
   }
@@ -670,22 +652,22 @@ export class AdminCatalogService {
     if (input.whenGroup === input.targetGroup) throw new BadRequestException('A rule cannot target its own group');
     await this.db.transaction(async (tx) => {
       const productId = await this.productId(tx, productCode);
-      const whenValue = (await this.valueIds(tx, await this.groupId(tx, productId, input.whenGroup))).get(input.whenValue);
+      const whenValue = (await this.valueIds(tx, productId, await this.groupId(tx, input.whenGroup))).get(input.whenValue);
       if (!whenValue) throw new NotFoundException(`Value "${input.whenValue}" not found in "${input.whenGroup}"`);
-      const targetGroupId = await this.groupId(tx, productId, input.targetGroup);
-      const targetValues = await this.valueIds(tx, targetGroupId);
+      const targetGroupId = await this.groupId(tx, input.targetGroup);
+      const targetValues = await this.valueIds(tx, productId, targetGroupId);
 
       const codeById = new Map([...targetValues].map(([code, v]) => [v.id, code]));
       const beforeAllowed = await tx
         .select({ valueId: optionValueRuleAllowed.valueId })
         .from(optionValueRuleAllowed)
         .innerJoin(optionValueRules, eq(optionValueRules.id, optionValueRuleAllowed.ruleId))
-        .where(and(eq(optionValueRules.whenValueId, whenValue.id), eq(optionValueRules.targetGroupId, targetGroupId)));
+        .where(and(eq(optionValueRules.productId, productId), eq(optionValueRules.whenValueId, whenValue.id), eq(optionValueRules.targetGroupId, targetGroupId)));
       const before = beforeAllowed.length ? beforeAllowed.map((r) => codeById.get(r.valueId)).sort() : null;
 
       await tx
         .delete(optionValueRules)
-        .where(and(eq(optionValueRules.whenValueId, whenValue.id), eq(optionValueRules.targetGroupId, targetGroupId)));
+        .where(and(eq(optionValueRules.productId, productId), eq(optionValueRules.whenValueId, whenValue.id), eq(optionValueRules.targetGroupId, targetGroupId)));
 
       if (input.allowed !== null) {
         if (input.allowed.length === 0) throw new BadRequestException('Allow at least one option, or remove the rule');
@@ -711,20 +693,52 @@ export class AdminCatalogService {
     });
   }
 
-  /** Adds an add-on group with its first option, at 0% and listed before turnaround. */
-  async createGroup(productCode: string, input: GroupInput, staffId: string): Promise<{ code: string }> {
+  // ---------------------------------------------------------------- option library
+
+  /** Every group and option, and which products use each option. */
+  async getLibrary() {
+    const [groups, values, uses] = await Promise.all([
+      this.db.select().from(optionGroups).orderBy(asc(optionGroups.sortOrder)),
+      this.db.select().from(optionValues).orderBy(asc(optionValues.sortOrder)),
+      this.db
+        .select({ valueId: productOptionValues.valueId, name: products.name })
+        .from(productOptionValues)
+        .innerJoin(products, eq(products.id, productOptionValues.productId))
+        .orderBy(asc(products.sortOrder)),
+    ]);
+    return {
+      groups: groups.map((g) => ({
+        code: g.code,
+        label: g.label,
+        sortOrder: g.sortOrder,
+        required: isRequiredGroup(g.code),
+        values: values
+          .filter((v) => v.groupId === g.id)
+          .map((v) => ({
+            code: v.code,
+            label: v.label,
+            description: v.description,
+            sortOrder: v.sortOrder,
+            attributes: v.attributes,
+            usedBy: uses.filter((u) => u.valueId === v.id).map((u) => u.name),
+          })),
+      })),
+    };
+  }
+
+  /** Adds an add-on group with its first option, listed before turnaround. */
+  async createGroup(input: GroupInput, staffId: string): Promise<{ code: string }> {
     return this.db.transaction(async (tx) => {
-      const productId = await this.productId(tx, productCode);
-      const groups = await tx.select().from(optionGroups).where(eq(optionGroups.productId, productId)).orderBy(asc(optionGroups.sortOrder));
+      const groups = await tx.select().from(optionGroups).orderBy(asc(optionGroups.sortOrder));
       const code = input.code ?? valueCodeFrom(input.label);
-      if (groups.some((g) => g.code === code)) throw new BadRequestException(`This product already has a "${code}" group.`);
+      if (groups.some((g) => g.code === code)) throw new BadRequestException(`A "${code}" group already exists.`);
 
       const turnaround = groups.find((g) => g.code === TURNAROUND_GROUP);
       const sortOrder = turnaround?.sortOrder ?? (groups.at(-1)?.sortOrder ?? 0) + 1;
       if (turnaround) await tx.update(optionGroups).set({ sortOrder: sortOrder + 1, updatedBy: staffId }).where(eq(optionGroups.id, turnaround.id));
       const [group] = await tx
         .insert(optionGroups)
-        .values({ productId, code, label: input.label, sortOrder, createdBy: staffId, updatedBy: staffId })
+        .values({ code, label: input.label, sortOrder, createdBy: staffId, updatedBy: staffId })
         .returning({ id: optionGroups.id });
       await tx.insert(optionValues).values({
         groupId: group!.id,
@@ -732,15 +746,13 @@ export class AdminCatalogService {
         label: input.firstOption,
         attributes: FIRST_OPTION_ATTRIBUTES[code] ?? {},
         sortOrder: 1,
-        isDefault: true,
         createdBy: staffId,
         updatedBy: staffId,
       });
 
-      await this.assertStorefrontStillWorks(tx, productCode);
       await this.audit.record(tx, staffId, {
         action: 'catalog.group.create',
-        target: `${productCode} · ${code}`,
+        target: code,
         summary: `Added the ${input.label} group`,
         changes: { before: null, after: { code, label: input.label, firstOption: input.firstOption } },
       });
@@ -748,48 +760,139 @@ export class AdminCatalogService {
     });
   }
 
-  async updateGroup(productCode: string, groupCode: string, label: string, staffId: string) {
+  async updateGroup(groupCode: string, label: string, staffId: string) {
     await this.db.transaction(async (tx) => {
-      const productId = await this.productId(tx, productCode);
-      const groupId = await this.groupId(tx, productId, groupCode);
+      const groupId = await this.groupId(tx, groupCode);
       const [before] = await tx.select({ label: optionGroups.label }).from(optionGroups).where(eq(optionGroups.id, groupId));
       await tx.update(optionGroups).set({ label, updatedBy: staffId }).where(eq(optionGroups.id, groupId));
       await this.audit.record(tx, staffId, {
         action: 'catalog.group.update',
-        target: `${productCode} · ${groupCode}`,
+        target: groupCode,
         summary: `Renamed ${before!.label} to ${label}`,
         changes: { before: { label: before!.label }, after: { label } },
       });
     });
   }
 
-  /** Deletes an add-on group with its options and rules. Placed orders keep their own copy of the configuration. */
-  async deleteGroup(productCode: string, groupCode: string, staffId: string) {
+  /** The products using an option, or any option of a group. */
+  private async usedBy(db: Executor, where: ReturnType<typeof eq>): Promise<string[]> {
+    const rows = await db
+      .selectDistinct({ name: products.name })
+      .from(productOptionValues)
+      .innerJoin(products, eq(products.id, productOptionValues.productId))
+      .where(where);
+    return rows.map((r) => r.name);
+  }
+
+  /** Deletes an add-on group nothing uses, with its options. */
+  async deleteGroup(groupCode: string, staffId: string) {
     await this.db.transaction(async (tx) => {
-      const productId = await this.productId(tx, productCode);
-      const groupId = await this.groupId(tx, productId, groupCode);
+      const groupId = await this.groupId(tx, groupCode);
       if (isRequiredGroup(groupCode)) throw new BadRequestException('Size, paper, printed sides and turnaround are needed by every product. You can rename them instead.');
+      const using = await this.usedBy(tx, eq(productOptionValues.groupId, groupId));
+      if (using.length) throw new BadRequestException(`Used by ${using.join(', ')}. Remove it from those products first.`);
 
       const [group] = await tx.select({ label: optionGroups.label }).from(optionGroups).where(eq(optionGroups.id, groupId));
       await tx.delete(optionGroups).where(eq(optionGroups.id, groupId));
-      const rest = await tx.select({ id: optionGroups.id }).from(optionGroups).where(eq(optionGroups.productId, productId)).orderBy(asc(optionGroups.sortOrder));
+      const rest = await tx.select({ id: optionGroups.id }).from(optionGroups).orderBy(asc(optionGroups.sortOrder));
       for (const [index, row] of rest.entries()) {
         await tx.update(optionGroups).set({ sortOrder: index + 1, updatedBy: staffId }).where(eq(optionGroups.id, row.id));
       }
-      await this.assertStorefrontStillWorks(tx, productCode);
       await this.audit.record(tx, staffId, {
         action: 'catalog.group.delete',
-        target: `${productCode} · ${groupCode}`,
+        target: groupCode,
         summary: `Deleted the ${group!.label} group`,
         changes: { before: { code: groupCode, label: group!.label }, after: null },
       });
     });
   }
 
+  /** Adds an option to the library, at the end of its group. Products choose whether to use it. */
+  async createLibraryValue(groupCode: string, input: LibraryValueInput, staffId: string): Promise<{ code: string }> {
+    return this.db.transaction(async (tx) => {
+      const groupId = await this.groupId(tx, groupCode);
+      const rows = await tx.select({ code: optionValues.code }).from(optionValues).where(eq(optionValues.groupId, groupId));
+      const existing = new Set(rows.map((r) => r.code));
+
+      let code = input.code ?? valueCodeFrom(input.label);
+      if (input.code) {
+        if (existing.has(code)) throw new BadRequestException(`An option with the code "${code}" already exists`);
+      } else {
+        const stem = code;
+        for (let n = 2; existing.has(code); n++) code = `${stem}_${n}`;
+      }
+      this.parseAttributes(groupCode, input.attributes);
+
+      const [last] = await tx
+        .select({ sortOrder: optionValues.sortOrder })
+        .from(optionValues)
+        .where(eq(optionValues.groupId, groupId))
+        .orderBy(desc(optionValues.sortOrder))
+        .limit(1);
+      await tx.insert(optionValues).values({
+        groupId,
+        code,
+        label: input.label,
+        description: input.description ?? null,
+        attributes: input.attributes,
+        sortOrder: (last?.sortOrder ?? 0) + 1,
+        createdBy: staffId,
+        updatedBy: staffId,
+      });
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.value.create',
+        target: `${groupCode} / ${code}`,
+        summary: `Added ${input.label} to the library`,
+        changes: { before: null, after: { code, label: input.label, description: input.description ?? null, attributes: input.attributes } },
+      });
+      return { code };
+    });
+  }
+
+  /** Edits an option for every product that uses it. */
+  async updateLibraryValue(groupCode: string, valueCode: string, patch: LibraryValuePatch, staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const groupId = await this.groupId(tx, groupCode);
+      const [before] = await tx.select().from(optionValues).where(and(eq(optionValues.groupId, groupId), eq(optionValues.code, valueCode)));
+      if (!before) throw new NotFoundException(`Value "${valueCode}" not found in "${groupCode}"`);
+      if (patch.attributes) this.parseAttributes(groupCode, patch.attributes);
+
+      await tx.update(optionValues).set({ ...patch, updatedBy: staffId }).where(eq(optionValues.id, before.id));
+      const changed = (Object.keys(patch) as (keyof LibraryValuePatch)[]).filter((k) => JSON.stringify(patch[k]) !== JSON.stringify(before[k]));
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.value.update',
+        target: `${groupCode} / ${valueCode}`,
+        summary: `Changed ${changed.join(', ') || 'nothing'} of ${before.label}`,
+        changes: { before: Object.fromEntries(changed.map((k) => [k, before[k]])), after: Object.fromEntries(changed.map((k) => [k, patch[k]])) },
+      });
+    });
+  }
+
+  /** Deletes an option no product uses. */
+  async deleteLibraryValue(groupCode: string, valueCode: string, staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const groupId = await this.groupId(tx, groupCode);
+      const [value] = await tx.select().from(optionValues).where(and(eq(optionValues.groupId, groupId), eq(optionValues.code, valueCode))).for('update');
+      if (!value) throw new NotFoundException(`Value "${valueCode}" not found in "${groupCode}"`);
+      const using = await this.usedBy(tx, eq(productOptionValues.valueId, value.id));
+      if (using.length) throw new BadRequestException(`Used by ${using.join(', ')}. Remove it from those products first.`);
+
+      await tx.delete(optionValues).where(eq(optionValues.id, value.id));
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.value.delete',
+        target: `${groupCode} / ${valueCode}`,
+        summary: `Deleted ${value.label}`,
+        changes: { before: { code: value.code, label: value.label, description: value.description, attributes: value.attributes }, after: null },
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------- products
+
   /**
    * Adds a product, off the storefront until it is shown. With `copyFrom` it starts as a full copy of
-   * that product: options, rules, quantities, prices, turnaround, templates and design packages.
-   * Without it, it starts blank: only the required groups, with nothing in them.
+   * that product: the options it uses, rules, quantities, prices, turnaround, templates and design
+   * packages. Without it, it starts with no options picked from the library.
    */
   async createProduct(input: ProductInput, staffId: string): Promise<{ code: string }> {
     return this.db.transaction(async (tx) => {
@@ -816,13 +919,7 @@ export class AdminCatalogService {
           updatedBy: staffId,
         })
         .returning({ id: products.id });
-      if (source) {
-        await this.copyConfiguration(tx, source.id, product!.id, staffId);
-      } else {
-        await tx.insert(optionGroups).values(
-          REQUIRED_GROUPS.map((g, index) => ({ ...g, productId: product!.id, sortOrder: index + 1, createdBy: staffId, updatedBy: staffId })),
-        );
-      }
+      if (source) await this.copyConfiguration(tx, source.id, product!.id, staffId);
 
       await this.audit.record(tx, staffId, {
         action: 'catalog.product.create',
@@ -835,19 +932,8 @@ export class AdminCatalogService {
   }
 
   private async copyConfiguration(tx: Tx, sourceId: string, targetId: string, staffId: string) {
-    const groups = await tx.select().from(optionGroups).where(eq(optionGroups.productId, sourceId));
-    const newGroups = await tx
-      .insert(optionGroups)
-      .values(groups.map((g) => ({ ...copyRow(g, staffId), productId: targetId })))
-      .returning({ id: optionGroups.id, code: optionGroups.code });
-    const groupId = new Map(groups.map((g) => [g.id, newGroups.find((n) => n.code === g.code)!.id]));
-
-    const values = await tx.select().from(optionValues).where(inArray(optionValues.groupId, [...groupId.keys()]));
-    const newValues = await tx
-      .insert(optionValues)
-      .values(values.map((v) => ({ ...copyRow(v, staffId), groupId: groupId.get(v.groupId)! })))
-      .returning({ id: optionValues.id, groupId: optionValues.groupId, code: optionValues.code });
-    const valueId = new Map(values.map((v) => [v.id, newValues.find((n) => n.groupId === groupId.get(v.groupId) && n.code === v.code)!.id]));
+    const uses = await tx.select().from(productOptionValues).where(eq(productOptionValues.productId, sourceId));
+    if (uses.length) await tx.insert(productOptionValues).values(uses.map((u) => ({ ...copyRow(u, staffId), productId: targetId })));
 
     const tiers = await tx.select().from(productQuantityTiers).where(eq(productQuantityTiers.productId, sourceId));
     const newTiers = await tx
@@ -859,24 +945,14 @@ export class AdminCatalogService {
     const prices = await tx.select().from(corePrices).where(inArray(corePrices.quantityTierId, [...tierId.keys()]));
     if (prices.length) {
       await tx.insert(corePrices).values(
-        prices.map((p) => ({
-          ...copyRow(p, staffId),
-          sizeValueId: valueId.get(p.sizeValueId)!,
-          paperValueId: valueId.get(p.paperValueId)!,
-          printedSideValueId: valueId.get(p.printedSideValueId)!,
-          quantityTierId: tierId.get(p.quantityTierId)!,
-        })),
+        prices.map((p) => ({ ...copyRow(p, staffId), quantityTierId: tierId.get(p.quantityTierId)! })),
       );
     }
 
     const speeds = await tx.select().from(turnaroundOptions).where(inArray(turnaroundOptions.quantityTierId, [...tierId.keys()]));
     if (speeds.length) {
       await tx.insert(turnaroundOptions).values(
-        speeds.map((c) => ({
-          ...copyRow(c, staffId),
-          optionValueId: valueId.get(c.optionValueId)!,
-          quantityTierId: tierId.get(c.quantityTierId)!,
-        })),
+        speeds.map((c) => ({ ...copyRow(c, staffId), quantityTierId: tierId.get(c.quantityTierId)! })),
       );
     }
 
@@ -885,23 +961,18 @@ export class AdminCatalogService {
       const newRules = await tx
         .insert(optionValueRules)
         .values(
-          rules.map((r) => ({
-            ...copyRow(r, staffId),
-            productId: targetId,
-            whenValueId: valueId.get(r.whenValueId)!,
-            targetGroupId: groupId.get(r.targetGroupId)!,
-          })),
+          rules.map((r) => ({ ...copyRow(r, staffId), productId: targetId })),
         )
         .returning({ id: optionValueRules.id, whenValueId: optionValueRules.whenValueId, targetGroupId: optionValueRules.targetGroupId });
       const ruleId = new Map(
         rules.map((r) => [
           r.id,
-          newRules.find((n) => n.whenValueId === valueId.get(r.whenValueId) && n.targetGroupId === groupId.get(r.targetGroupId))!.id,
+          newRules.find((n) => n.whenValueId === r.whenValueId && n.targetGroupId === r.targetGroupId)!.id,
         ]),
       );
       const allowed = await tx.select().from(optionValueRuleAllowed).where(inArray(optionValueRuleAllowed.ruleId, [...ruleId.keys()]));
       if (allowed.length) {
-        await tx.insert(optionValueRuleAllowed).values(allowed.map((a) => ({ ruleId: ruleId.get(a.ruleId)!, valueId: valueId.get(a.valueId)! })));
+        await tx.insert(optionValueRuleAllowed).values(allowed.map((a) => ({ ruleId: ruleId.get(a.ruleId)!, valueId: a.valueId })));
       }
     }
 
@@ -1100,10 +1171,11 @@ export class AdminCatalogService {
       }
 
       const valueRows = await tx
-        .select({ id: optionValues.id, code: optionValues.code, group: optionGroups.code, addonPercent: optionValues.addonPercent })
-        .from(optionValues)
-        .innerJoin(optionGroups, eq(optionGroups.id, optionValues.groupId))
-        .where(eq(optionGroups.productId, productId));
+        .select({ id: optionValues.id, code: optionValues.code, group: optionGroups.code, addonPercent: productOptionValues.addonPercent })
+        .from(productOptionValues)
+        .innerJoin(optionValues, eq(optionValues.id, productOptionValues.valueId))
+        .innerJoin(optionGroups, eq(optionGroups.id, productOptionValues.groupId))
+        .where(eq(productOptionValues.productId, productId));
       const valueOf = (group: string, code: string) => {
         const value = valueRows.find((v) => v.group === group && v.code === code);
         if (!value) throw new BadRequestException(`Option "${group}.${code}" does not exist`);
@@ -1147,7 +1219,10 @@ export class AdminCatalogService {
         if (addon.group === TURNAROUND_GROUP) throw new BadRequestException('Turnaround is priced in the turnaround table.');
         const value = valueOf(addon.group, addon.value);
         addonChanges.push({ key: `${addon.group}.${addon.value}`, before: value.addonPercent, after: addon.percent });
-        await tx.update(optionValues).set({ addonPercent: addon.percent, updatedBy: staffId }).where(eq(optionValues.id, value.id));
+        await tx
+          .update(productOptionValues)
+          .set({ addonPercent: addon.percent, updatedBy: staffId })
+          .where(and(eq(productOptionValues.productId, productId), eq(productOptionValues.valueId, value.id)));
       }
 
       const [defaultTier] = await tx
@@ -1182,8 +1257,8 @@ export class AdminCatalogService {
   async setTurnarounds(productCode: string, cells: TurnaroundCell[], staffId: string) {
     await this.db.transaction(async (tx) => {
       const productId = await this.productId(tx, productCode);
-      const groupId = await this.groupId(tx, productId, TURNAROUND_GROUP);
-      const values = await this.valueIds(tx, groupId);
+      const groupId = await this.groupId(tx, TURNAROUND_GROUP);
+      const values = await this.valueIds(tx, productId, groupId);
       const tiers = await tx
         .select({ id: productQuantityTiers.id, quantity: productQuantityTiers.quantity })
         .from(productQuantityTiers)
@@ -1197,17 +1272,18 @@ export class AdminCatalogService {
         if (!tierByQty.has(cell.quantity)) throw new BadRequestException(`Quantity tier ${cell.quantity} does not exist`);
       }
 
+      const tierIds = tiers.map((t) => t.id);
       const valueIds = [...values.values()].map((v) => v.id);
       const codeById = new Map([...values].map(([code, v]) => [v.id, code]));
       const qtyById = new Map(tiers.map((t) => [t.id, t.quantity]));
       const beforeRows = valueIds.length
-        ? await tx.select().from(turnaroundOptions).where(inArray(turnaroundOptions.optionValueId, valueIds))
+        ? await tx.select().from(turnaroundOptions).where(and(inArray(turnaroundOptions.optionValueId, valueIds), inArray(turnaroundOptions.quantityTierId, tierIds)))
         : [];
       const before = new Map(
         beforeRows.map((r) => [`${codeById.get(r.optionValueId)}@${qtyById.get(r.quantityTierId)}`, { businessDays: r.businessDays, percent: r.pricePercent }]),
       );
 
-      if (valueIds.length) await tx.delete(turnaroundOptions).where(inArray(turnaroundOptions.optionValueId, valueIds));
+      if (valueIds.length) await tx.delete(turnaroundOptions).where(and(inArray(turnaroundOptions.optionValueId, valueIds), inArray(turnaroundOptions.quantityTierId, tierIds)));
       if (cells.length) {
         await tx.insert(turnaroundOptions).values(
           cells.map((c) => ({

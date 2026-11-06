@@ -25,7 +25,7 @@ export function RulesPage() {
           <h1>Rules</h1>
         </header>
         <p className="muted">
-          This product has no options yet. Add them on the <Link to="/options">Options</Link> page first.
+          This product has no options yet. Pick them on the <Link to="/product-options">Options</Link> page first.
         </p>
       </div>
     );
@@ -38,7 +38,7 @@ export function RulesPage() {
         <div>
           <h1>Rules</h1>
           <p className="muted">
-            Choose an option on the left, then tick what customers can combine it with. Unticked options are hidden on the storefront. Add or delete options on the Options page.
+            Choose an option on the left, then tick what customers can combine it with. Unticked options are hidden on the storefront. Pick options on the Options page.
           </p>
         </div>
       </header>

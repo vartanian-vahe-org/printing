@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { api, errorText, type AdminCatalog, type AdminProduct } from './api';
+import { api, errorText, type AdminCatalog, type AdminProduct, type LibraryGroup } from './api';
 
 /** Where product pages live, from the "View storefront" setting. */
 export const STOREFRONT_ORIGIN = new URL(import.meta.env.VITE_STOREFRONT_URL ?? 'http://localhost:3000').origin;
@@ -13,6 +13,8 @@ interface CatalogState {
   /** API path of the picked product, e.g. /admin/products/business-cards. */
   path: string;
   catalog: AdminCatalog | null;
+  /** The option library, shared by every product. */
+  library: LibraryGroup[];
   error: string | null;
   reload: () => Promise<void>;
   /** After adding, editing or deleting a product. */
@@ -38,6 +40,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [productCode, setProductCode] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<AdminCatalog | null>(null);
+  const [library, setLibrary] = useState<LibraryGroup[]>([]);
   const [error, setError] = useState<string | null>(null);
   const path = productCode ? `/admin/products/${productCode}` : '';
   const pathRef = useRef(path);
@@ -62,7 +65,8 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
     const current = pathRef.current;
     if (!current) return;
     try {
-      const data = await api<AdminCatalog>(`${current}/catalog`);
+      const [data, options] = await Promise.all([api<AdminCatalog>(`${current}/catalog`), api<{ groups: LibraryGroup[] }>('/admin/options')]);
+      setLibrary(options.groups);
       if (current !== pathRef.current) return;
       setCatalog(data);
       setError(null);
@@ -87,7 +91,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
 
   const product = products.find((p) => p.code === productCode) ?? null;
   return (
-    <CatalogContext.Provider value={{ products, product, selectProduct, path, catalog, error, reload, reloadProducts }}>{children}</CatalogContext.Provider>
+    <CatalogContext.Provider value={{ products, product, selectProduct, path, catalog, library, error, reload, reloadProducts }}>{children}</CatalogContext.Provider>
   );
 }
 

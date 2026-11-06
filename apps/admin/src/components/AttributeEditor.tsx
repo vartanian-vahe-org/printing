@@ -30,7 +30,10 @@ interface Props {
 }
 
 export function AttributeEditor({ groupCode, value, onChange }: Props) {
-  const keys = Object.keys(value);
+  // Stored JSON does not keep the key order: show known fields in the order of LABELS.
+  const order = Object.keys(LABELS);
+  const rank = (key: string) => (order.includes(key) ? order.indexOf(key) : order.length);
+  const keys = Object.keys(value).sort((a, b) => rank(a) - rank(b));
   if (keys.length === 0) return <p className="muted">No attributes.</p>;
 
   return (

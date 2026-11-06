@@ -4,8 +4,9 @@ import { api, type AdminCatalog } from '../api';
 import { STOREFRONT_ORIGIN, useCatalog, useSaver } from '../catalog';
 import { QuantityList } from '../components/QuantityList';
 import { Toast } from '../components/Toast';
-import { AddGroup, OptionList } from './OptionsPage';
+import { AddGroup } from './OptionsPage';
 import { PricingEditor } from './PricingPage';
+import { OptionPicker } from './ProductOptionsPage';
 import { ProductDetailsForm } from './ProductsPage';
 import { TurnaroundEditor } from './TurnaroundPage';
 
@@ -13,13 +14,13 @@ const REQUIRED_GROUPS = ['size', 'paper', 'printed_side', 'turnaround'];
 
 const STEPS = [
   { code: 'details', label: 'Details', title: 'Product details', text: 'What customers see on the product page and in search results.' },
-  { code: 'size', label: 'Size', title: 'Sizes', text: 'Add every finished size you sell. Bleed is the extra printed around the edge; keep text inside the safe margin.' },
-  { code: 'paper', label: 'Paper', title: 'Paper', text: 'Add the papers or stocks you sell.' },
+  { code: 'size', label: 'Size', title: 'Sizes', text: 'Tick the sizes this product comes in, or add a new one to the library.' },
+  { code: 'paper', label: 'Paper', title: 'Paper', text: 'Tick the papers or stocks for this product.' },
   { code: 'printed_side', label: 'Printed sides', title: 'Printed sides', text: 'For example front only (4/0) or both sides (4/4).' },
   { code: 'quantity', label: 'Quantity', title: 'Quantities', text: 'Add the quantities customers can order.' },
-  { code: 'turnaround', label: 'Turnaround', title: 'Turnaround', text: 'Add your speeds, then tick which quantities offer each one, with its production days and percent.' },
+  { code: 'turnaround', label: 'Turnaround', title: 'Turnaround', text: 'Tick your speeds, then set which quantities offer each one, with its production days and percent.' },
   { code: 'prices', label: 'Prices', title: 'Prices', text: 'One price per combination and quantity, in US dollars. Leave a cell empty if it is not sold.' },
-  { code: 'addons', label: 'Add-ons', title: 'Add-ons (optional)', text: 'Extras such as folding or coating, each adding a percent of the price. Skip this step if there are none.' },
+  { code: 'addons', label: 'Add-ons', title: 'Add-ons (optional)', text: 'Tick extras such as folding or coating, each adding a percent of the price. Skip this step if there are none.' },
   { code: 'review', label: 'Review', title: 'Review and publish', text: 'Check the product, then put it on the storefront.' },
 ] as const;
 
@@ -227,12 +228,13 @@ export function ProductSetupPage() {
 }
 
 function SetupStep({ step, onDirty }: { step: StepCode; onDirty: (dirty: boolean) => void }) {
-  const { catalog, product } = useCatalog();
+  const { catalog, library, product } = useCatalog();
   const saver = useSaver();
   if (!catalog || !product) return null;
-  const group = catalog.groups.find((g) => g.code === step);
-  const addons = catalog.groups.filter((g) => !REQUIRED_GROUPS.includes(g.code));
-  const speeds = catalog.groups.find((g) => g.code === 'turnaround');
+  const group = library.find((g) => g.code === step);
+  const addons = library.filter((g) => !g.required);
+  const speeds = library.find((g) => g.code === 'turnaround');
+  const usesAddons = catalog.groups.some((g) => !REQUIRED_GROUPS.includes(g.code));
 
   return (
     <>
@@ -241,37 +243,24 @@ function SetupStep({ step, onDirty }: { step: StepCode; onDirty: (dirty: boolean
           <ProductDetailsForm product={product} saver={saver} onDirty={onDirty} />
         </div>
       )}
-      {(step === 'size' || step === 'paper' || step === 'printed_side') && group && (
-        <div className="card">
-          <OptionList group={group} saver={saver} guided />
-        </div>
-      )}
+      {(step === 'size' || step === 'paper' || step === 'printed_side') && group && <OptionPicker group={group} saver={saver} />}
       {step === 'quantity' && <QuantityList saver={saver} />}
       {step === 'turnaround' && speeds && (
         <>
-          <div className="card">
-            <OptionList group={speeds} saver={saver} guided />
-          </div>
-          {speeds.values.length > 0 && <TurnaroundEditor onDirty={onDirty} />}
+          <OptionPicker group={speeds} saver={saver} />
+          {valuesOf(catalog, 'turnaround').length > 0 && <TurnaroundEditor onDirty={onDirty} />}
         </>
       )}
       {step === 'prices' && <PricingEditor show="core" onDirty={onDirty} />}
       {step === 'addons' && (
         <>
           {addons.map((g) => (
-            <div key={g.code} className="card">
-              <div className="value-row">
-                <div className="value-summary">
-                  <div className="value-label">{g.label}</div>
-                </div>
-              </div>
-              <OptionList group={g} saver={saver} guided />
-            </div>
+            <OptionPicker key={g.code} group={g} saver={saver} title={g.label} />
           ))}
           <div className="tabs">
             <AddGroup saver={saver} onAdded={() => undefined} />
           </div>
-          {addons.length > 0 && <PricingEditor show="addons" onDirty={onDirty} />}
+          {usesAddons && <PricingEditor show="addons" onDirty={onDirty} />}
         </>
       )}
       {step === 'review' && <Review saver={saver} />}

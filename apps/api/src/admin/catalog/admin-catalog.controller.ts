@@ -8,12 +8,15 @@ import { AdminCatalogService } from './admin-catalog.service.js';
 const code = z.string().min(1).max(100);
 
 const valuePatchSchema = z
+  .object({ isActive: z.boolean().optional(), isDefault: z.boolean().optional() })
+  .strict()
+  .refine((p) => Object.keys(p).length > 0, { message: 'Nothing to update' });
+
+const libraryValuePatchSchema = z
   .object({
     label: z.string().trim().min(1).max(120).optional(),
     description: z.string().trim().max(300).nullable().optional(),
     sortOrder: z.number().int().min(0).max(10_000).optional(),
-    isActive: z.boolean().optional(),
-    isDefault: z.boolean().optional(),
     attributes: z.record(z.string(), z.unknown()).optional(),
   })
   .strict()
@@ -30,7 +33,13 @@ const valueCreateSchema = z
     label: z.string().trim().min(1).max(120),
     description: z.string().trim().max(300).nullable().optional(),
     attributes: z.record(z.string(), z.unknown()),
-    /** Existing value of the same group whose prices and rules the new one starts with. */
+  })
+  .strict();
+
+const valueUseSchema = z
+  .object({
+    value: code,
+    /** Option of the product whose prices and rules this one starts with. */
     copyFrom: code.optional(),
   })
   .strict();
@@ -209,36 +218,6 @@ export class AdminCatalogController {
     return this.catalog.getCatalog(productCode);
   }
 
-  @Post('groups')
-  async createGroup(
-    @Param('code') productCode: string,
-    @Body(new ZodValidationPipe(groupCreateSchema)) body: z.infer<typeof groupCreateSchema>,
-    @Req() request: AdminRequest,
-  ) {
-    const created = await this.catalog.createGroup(productCode, body, request.staff!.id);
-    await this.storefront.invalidate(productCode);
-    return created;
-  }
-
-  @Patch('groups/:group')
-  @HttpCode(204)
-  async updateGroup(
-    @Param('code') productCode: string,
-    @Param('group') group: string,
-    @Body(new ZodValidationPipe(groupPatchSchema)) body: z.infer<typeof groupPatchSchema>,
-    @Req() request: AdminRequest,
-  ) {
-    await this.catalog.updateGroup(productCode, group, body.label, request.staff!.id);
-    await this.storefront.invalidate(productCode);
-  }
-
-  @Delete('groups/:group')
-  @HttpCode(204)
-  async deleteGroup(@Param('code') productCode: string, @Param('group') group: string, @Req() request: AdminRequest) {
-    await this.catalog.deleteGroup(productCode, group, request.staff!.id);
-    await this.storefront.invalidate(productCode);
-  }
-
   @Patch('groups/:group/values/:value')
   @HttpCode(204)
   async updateValue(
@@ -253,26 +232,26 @@ export class AdminCatalogController {
   }
 
   @Post('groups/:group/values')
-  async createValue(
+  @HttpCode(204)
+  async useValue(
     @Param('code') productCode: string,
     @Param('group') group: string,
-    @Body(new ZodValidationPipe(valueCreateSchema)) body: z.infer<typeof valueCreateSchema>,
+    @Body(new ZodValidationPipe(valueUseSchema)) body: z.infer<typeof valueUseSchema>,
     @Req() request: AdminRequest,
   ) {
-    const created = await this.catalog.createValue(productCode, group, body, request.staff!.id);
+    await this.catalog.useValue(productCode, group, body, request.staff!.id);
     await this.storefront.invalidate(productCode);
-    return created;
   }
 
   @Delete('groups/:group/values/:value')
   @HttpCode(204)
-  async deleteValue(
+  async removeValue(
     @Param('code') productCode: string,
     @Param('group') group: string,
     @Param('value') value: string,
     @Req() request: AdminRequest,
   ) {
-    await this.catalog.deleteValue(productCode, group, value, request.staff!.id);
+    await this.catalog.removeValue(productCode, group, value, request.staff!.id);
     await this.storefront.invalidate(productCode);
   }
 
@@ -388,6 +367,70 @@ export class AdminCatalogController {
 }
 
 /** The products the admin can configure (the product picker in the sidebar). */
+/** The option library: every product picks from it, so a change reaches them all. */
+@Controller('admin/options')
+@UseGuards(AdminGuard)
+export class AdminOptionsController {
+  constructor(
+    private readonly catalog: AdminCatalogService,
+    private readonly storefront: CatalogService,
+  ) {}
+
+  @Get()
+  list() {
+    return this.catalog.getLibrary();
+  }
+
+  @Post('groups')
+  createGroup(@Body(new ZodValidationPipe(groupCreateSchema)) body: z.infer<typeof groupCreateSchema>, @Req() request: AdminRequest) {
+    return this.catalog.createGroup(body, request.staff!.id);
+  }
+
+  @Patch('groups/:group')
+  @HttpCode(204)
+  async updateGroup(
+    @Param('group') group: string,
+    @Body(new ZodValidationPipe(groupPatchSchema)) body: z.infer<typeof groupPatchSchema>,
+    @Req() request: AdminRequest,
+  ) {
+    await this.catalog.updateGroup(group, body.label, request.staff!.id);
+    await this.storefront.invalidateAll();
+  }
+
+  @Delete('groups/:group')
+  @HttpCode(204)
+  async deleteGroup(@Param('group') group: string, @Req() request: AdminRequest) {
+    await this.catalog.deleteGroup(group, request.staff!.id);
+  }
+
+  @Post('groups/:group/values')
+  createValue(
+    @Param('group') group: string,
+    @Body(new ZodValidationPipe(valueCreateSchema)) body: z.infer<typeof valueCreateSchema>,
+    @Req() request: AdminRequest,
+  ) {
+    return this.catalog.createLibraryValue(group, body, request.staff!.id);
+  }
+
+  @Patch('groups/:group/values/:value')
+  @HttpCode(204)
+  async updateValue(
+    @Param('group') group: string,
+    @Param('value') value: string,
+    @Body(new ZodValidationPipe(libraryValuePatchSchema)) body: z.infer<typeof libraryValuePatchSchema>,
+    @Req() request: AdminRequest,
+  ) {
+    await this.catalog.updateLibraryValue(group, value, body, request.staff!.id);
+    await this.storefront.invalidateAll();
+  }
+
+  @Delete('groups/:group/values/:value')
+  @HttpCode(204)
+  async deleteValue(@Param('group') group: string, @Param('value') value: string, @Req() request: AdminRequest) {
+    await this.catalog.deleteLibraryValue(group, value, request.staff!.id);
+  }
+}
+
 @Controller('admin/products')
 @UseGuards(AdminGuard)
 export class AdminProductsController {

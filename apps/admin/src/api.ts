@@ -67,6 +67,25 @@ export interface AdminGroup {
   values: AdminValue[];
 }
 
+/** An option of the shared library, and the products using it. */
+export interface LibraryValue {
+  code: string;
+  label: string;
+  description: string | null;
+  sortOrder: number;
+  attributes: Record<string, unknown>;
+  usedBy: string[];
+}
+
+export interface LibraryGroup {
+  code: string;
+  label: string;
+  sortOrder: number;
+  /** Every product needs it: it can be renamed, not deleted. */
+  required: boolean;
+  values: LibraryValue[];
+}
+
 export interface AdminRule {
   whenGroup: string;
   whenValue: string;

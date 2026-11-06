@@ -59,7 +59,7 @@ export function TurnaroundPage() {
           <h1>Turnaround · {productName}</h1>
         </header>
         <p className="muted">
-          {productName} has no turnaround speeds. Add them on the <Link to="/options">Options</Link> page first.
+          {productName} has no turnaround speeds. Pick them on the <Link to="/product-options">Options</Link> page first.
         </p>
       </div>
     );
@@ -73,7 +73,7 @@ export function TurnaroundPage() {
           <p className="muted">
             Production days and price of each speed at each quantity. The percent is added to the printing price (core price and
             add-ons); use a negative percent for a discount. Untick a cell to stop offering that speed at that quantity. Every
-            quantity needs at least one speed. Add, rename or reorder speeds on the <Link to="/options">Options</Link> page.
+            quantity needs at least one speed. Pick speeds on the <Link to="/product-options">Options</Link> page.
           </p>
         </div>
       </header>
