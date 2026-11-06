@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { type Database, designServiceTiers, products, templateFacets, templates } from '@printing/db';
+import { type Database, designServiceTiers, productDesignServices, products, templateFacets, templates } from '@printing/db';
 import { parseLayout, type DesignServiceTier, type Template, type TemplateFacet } from '@printing/templates';
 import { and, asc, eq } from 'drizzle-orm';
 import { DATABASE } from '../database/database.tokens.js';
@@ -71,15 +71,16 @@ export class TemplatesService {
   async listDesignServices(productCode: string, db: Executor = this.db): Promise<DesignServiceTier[]> {
     const productId = await this.productId(productCode, db);
     const rows = await db
-      .select()
-      .from(designServiceTiers)
-      .where(and(eq(designServiceTiers.productId, productId), eq(designServiceTiers.isActive, true)))
+      .select({ row: designServiceTiers, use: productDesignServices })
+      .from(productDesignServices)
+      .innerJoin(designServiceTiers, eq(designServiceTiers.id, productDesignServices.tierId))
+      .where(and(eq(productDesignServices.productId, productId), eq(productDesignServices.isActive, true)))
       .orderBy(asc(designServiceTiers.sortOrder));
-    return rows.map((row) => ({
+    return rows.map(({ row, use }) => ({
       code: row.code,
-      name: row.name,
+      name: use.displayName ?? row.name,
       description: row.description,
-      priceCents: row.priceCents,
+      priceCents: use.priceCents,
       features: row.features,
       designDays: row.designDays,
       revisions: row.revisions,

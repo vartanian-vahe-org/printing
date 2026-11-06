@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { api, errorText, type AdminCatalog, type AdminProduct, type LibraryGroup, type LibraryQuantity } from './api';
+import { api, errorText, type AdminCatalog, type AdminProduct, type LibraryDesignService, type LibraryGroup, type LibraryQuantity } from './api';
 
 /** Where product pages live, from the "View storefront" setting. */
 export const STOREFRONT_ORIGIN = new URL(import.meta.env.VITE_STOREFRONT_URL ?? 'http://localhost:3000').origin;
@@ -16,6 +16,7 @@ interface CatalogState {
   /** The option library, shared by every product. */
   library: LibraryGroup[];
   libraryQuantities: LibraryQuantity[];
+  libraryDesignServices: LibraryDesignService[];
   error: string | null;
   reload: () => Promise<void>;
   /** After adding, editing or deleting a product. */
@@ -49,6 +50,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   const [catalog, setCatalog] = useState<AdminCatalog | null>(null);
   const [library, setLibrary] = useState<LibraryGroup[]>([]);
   const [libraryQuantities, setLibraryQuantities] = useState<LibraryQuantity[]>([]);
+  const [libraryDesignServices, setLibraryDesignServices] = useState<LibraryDesignService[]>([]);
   const [error, setError] = useState<string | null>(null);
   const path = productCode ? `/admin/products/${productCode}` : '';
   const pathRef = useRef(path);
@@ -72,9 +74,10 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   const reload = useCallback(async () => {
     const current = pathRef.current;
     try {
-      const [data, options] = await Promise.all([current ? api<AdminCatalog>(`${current}/catalog`) : null, api<{ groups: LibraryGroup[]; quantities: LibraryQuantity[] }>('/admin/options')]);
+      const [data, options] = await Promise.all([current ? api<AdminCatalog>(`${current}/catalog`) : null, api<{ groups: LibraryGroup[]; quantities: LibraryQuantity[]; designServices: LibraryDesignService[] }>('/admin/options')]);
       setLibrary(options.groups);
       setLibraryQuantities(options.quantities);
+      setLibraryDesignServices(options.designServices);
       if (!data || current !== pathRef.current) return;
       setCatalog(data);
       setError(null);
@@ -99,7 +102,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
 
   const product = products.find((p) => p.code === productCode) ?? null;
   return (
-    <CatalogContext.Provider value={{ products, product, selectProduct, path, catalog, library, libraryQuantities, error, reload, reloadProducts }}>{children}</CatalogContext.Provider>
+    <CatalogContext.Provider value={{ products, product, selectProduct, path, catalog, library, libraryQuantities, libraryDesignServices, error, reload, reloadProducts }}>{children}</CatalogContext.Provider>
   );
 }
 

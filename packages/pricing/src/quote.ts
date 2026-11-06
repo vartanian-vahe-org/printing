@@ -24,6 +24,8 @@ export interface Quote {
   /** Core price + add-ons, before turnaround. */
   printingCents: number;
   /** Production days of the selected turnaround at this quantity. */
+  /** Production days of the turnaround: the range customers see; `businessDays`, the latest, sets the dates. */
+  minBusinessDays: number | null;
   businessDays: number | null;
   totalCents: number;
   /** total / quantity, rounded to the nearest cent (display only) */
@@ -117,6 +119,7 @@ export function quote(catalog: Catalog, config: Configuration): Quote {
     corePriceCents,
     lines,
     printingCents,
+    minBusinessDays: turnaround?.minBusinessDays ?? null,
     businessDays: turnaround?.businessDays ?? null,
     totalCents,
     unitPriceCents: Math.round(totalCents / quantity),

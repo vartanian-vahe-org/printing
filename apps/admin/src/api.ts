@@ -118,6 +118,7 @@ export interface AdminCorePrice {
 export interface AdminTurnaround {
   value: string;
   quantity: number;
+  minBusinessDays: number;
   businessDays: number;
   /** Added to the printing price, in percent; negative for a discount. */
   percent: number;
@@ -142,15 +143,31 @@ export interface AdminFacet {
 }
 
 /** A "let us design it for you" package. */
-export interface AdminDesignService {
+/** A package of the design library. */
+export interface LibraryDesignService {
   code: string;
+  /** The standard name. */
   name: string;
   description: string | null;
+  /** The suggested price; each product sets its own. */
   priceCents: number;
   features: string[];
   designDays: number;
   /** Rounds of changes included; null = unlimited. */
   revisions: number | null;
+  sortOrder: number;
+  usedBy: string[];
+}
+
+/** A library package a product offers. */
+export interface AdminDesignService {
+  code: string;
+  /** What customers see. */
+  name: string;
+  standardName: string;
+  /** The product's own name, when it has one. */
+  displayName: string | null;
+  priceCents: number;
   sortOrder: number;
   isActive: boolean;
 }

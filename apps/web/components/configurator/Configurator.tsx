@@ -50,6 +50,7 @@ import {
 } from '../../lib/design-state';
 import { editingItemId, loadItemToEdit } from '../../lib/edit-cart-item';
 import { isEnabled } from '../../lib/features';
+import { formatBusinessDays } from '../../lib/format';
 import { loadTemplateFonts } from '../../lib/template-fonts';
 import { formatShopDate } from '../../lib/schedule-text';
 import { useNow } from '../../lib/use-now';
@@ -204,10 +205,12 @@ export function Configurator({ catalog, defaults, calendar, templates, facets, d
   const tiers = useMemo(() => tierPrices(catalog, state), [catalog, state]);
   const speeds = useMemo(() => speedChoices(catalog, state), [catalog, state]);
   const now = useNow();
-  // "Ships Thu, Nov 6" under each speed (production days until mounted, see useNow).
+  // "3–4 business days" and the latest ship date under each speed (the date after mount, see useNow).
   const speedNotes = Object.fromEntries(
-    speeds.flatMap(({ code, businessDays: days }) =>
-      days ? [[code, now ? `Ships ${formatShopDate(productionSchedule(now, days, calendar).shipDate)}` : `${days} business day${days === 1 ? '' : 's'}`]] : [],
+    speeds.flatMap(({ code, minBusinessDays, businessDays: days }) =>
+      days && minBusinessDays
+        ? [[code, `${formatBusinessDays(minBusinessDays, days)}${now ? `\nShips by ${formatShopDate(productionSchedule(now, days, calendar).shipDate)}` : ''}`]]
+        : [],
     ),
   );
   const speedUnavailable = Object.fromEntries(speeds.flatMap(({ code, unavailable }) => (unavailable ? [[code, unavailable]] : [])));

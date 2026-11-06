@@ -49,7 +49,7 @@ afterAll(async () => {
   await call('PUT', `${admin}/pricing`, { corePrices: [{ ...defaultCore, quantity: 500, priceCents: 3948 }, { ...paper16, quantity: 500, priceCents: 4573 }, { ...paper16, quantity: 250, priceCents: 3658 }], addons: [{ group: 'corners', value: 'rounded_quarter', percent: 30 }] });
   await call('PATCH', `${admin}/templates/minimal`, { isActive: true });
   await call('PUT', `${admin}/rules`, { whenGroup: 'paper', whenValue: '16pt', targetGroup: 'turnaround', allowed: null });
-  await call('DELETE', `${admin}/design-services/e2e_pkg`);
+  await call('DELETE', `${base}/admin/options/design-services/e2e_pkg`);
   for (const [group, value] of [['paper', 'e2e_paper'], ['turnaround', 'e2e_rush'], ['turnaround', 'e2e_speed'], ['size', 'e2e_size']]) {
     await call('DELETE', `${admin}/groups/${group}/values/${value}`);
     await call('DELETE', `${library}/${group}/values/${value}`);
@@ -523,7 +523,7 @@ describe('admin catalog: turnaround table', () => {
   const selection = { size: 'std_3_5x2', paper: '14pt', coating: 'matte_both', printed_side: 'front_back', corners: 'square' };
   const quote = (turnaround: string, quantity: number) =>
     call('POST', `${base}/quotes`, { productCode: 'business-cards', selection: { ...selection, turnaround }, quantity }, false);
-  let original: { value: string; quantity: number; businessDays: number; percent: number }[] = [];
+  let original: { value: string; quantity: number; minBusinessDays: number; businessDays: number; percent: number }[] = [];
 
   beforeAll(async () => {
     original = (await call('GET', `${admin}/catalog`)).body.turnarounds;
@@ -544,12 +544,13 @@ describe('admin catalog: turnaround table', () => {
   it('replaces the table; the storefront follows', async () => {
     const cells = original
       .filter((c) => !(c.value === 'rush' && c.quantity === 500))
-      .map((c) => (c.value === 'express' && c.quantity === 500 ? { ...c, businessDays: 3, percent: 12.5 } : c));
+      .map((c) => (c.value === 'express' && c.quantity === 500 ? { ...c, minBusinessDays: 3, businessDays: 3, percent: 12.5 } : c));
     expect((await call('PUT', `${admin}/turnarounds`, { cells })).status).toBe(204);
     expect((await quote('rush', 500)).status).toBe(400);
     const standard = (await quote('standard', 500)).body;
     const express = (await quote('express', 500)).body;
     expect(express.businessDays).toBe(3);
+    expect(express.minBusinessDays).toBe(3);
     expect(express.totalCents).toBe(standard.totalCents + Math.round(standard.totalCents * 0.125));
     await call('PUT', `${admin}/turnarounds`, { cells: original });
   });
@@ -560,6 +561,8 @@ describe('admin catalog: turnaround table', () => {
     expect(none.body.message).toMatch(/No turnaround would be offered at quantity 50/);
     expect((await call('GET', `${admin}/catalog`)).body.turnarounds).toHaveLength(original.length);
 
+    const backwards = await call('PUT', `${admin}/turnarounds`, { cells: original.map((c) => ({ ...c, minBusinessDays: c.businessDays + 1 })) });
+    expect(backwards.status).toBe(400);
     const unknown = await call('PUT', `${admin}/turnarounds`, { cells: [...original, { value: 'warp', quantity: 50, businessDays: 1, percent: 0 }] });
     expect(unknown.status).toBe(400);
   });
@@ -672,25 +675,41 @@ describe('admin products and design packages', () => {
     expect((await call('GET', `${admin}/catalog`)).body.product).toEqual({ code: 'business-cards', name: expect.any(String) });
   });
 
-  it('adds a package to one product, then deletes it', async () => {
+  it('shares a package through the library, with a name and price per product', async () => {
+    const packages = `${base}/admin/options/design-services`;
     const body = { code: 'e2e_pkg', name: 'E2E Rush', description: null, priceCents: 1500, features: ['1 concept'], designDays: 1, revisions: 0 };
-    const created = await call('POST', `${admin}/design-services`, body);
+    const created = await call('POST', packages, body);
     expect(created.status).toBe(201);
     expect(created.body).toEqual({ code: 'e2e_pkg' });
-    const tiers = await offered();
-    expect(tiers.at(-1)).toMatchObject({ code: 'e2e_pkg', name: 'E2E Rush', priceCents: 1500, revisions: 0 });
-
-    const taken = await call('POST', `${admin}/design-services`, body);
+    expect((await offered()).map((t: any) => t.code)).not.toContain('e2e_pkg');
+    const taken = await call('POST', packages, body);
     expect(taken.status).toBe(400);
     expect(taken.body.message).toMatch(/already exists/);
 
-    expect((await call('DELETE', `${admin}/design-services/e2e_pkg`)).status).toBe(204);
+    const current = (await call('GET', `${admin}/catalog`)).body.designServices.map(({ code, displayName, priceCents, isActive }: any) => ({ code, displayName, priceCents, isActive }));
+    const put = (services: unknown[]) => call('PUT', `${admin}/design-services`, { services });
+    expect((await put([...current, { code: 'e2e_pkg', displayName: 'Card Rush', priceCents: 1900 }])).status).toBe(204);
+    expect((await offered()).at(-1)).toMatchObject({ code: 'e2e_pkg', name: 'Card Rush', priceCents: 1900, revisions: 0 });
+    const library = (await call('GET', `${base}/admin/options`)).body.designServices.find((d: any) => d.code === 'e2e_pkg');
+    expect(library).toMatchObject({ name: 'E2E Rush', priceCents: 1500, usedBy: [expect.any(String)] });
+
+    // Edited in the library for everyone; the product keeps its own name and price.
+    expect((await call('PATCH', `${packages}/e2e_pkg`, { name: 'E2E Express', revisions: 2 })).status).toBe(204);
+    expect((await offered()).at(-1)).toMatchObject({ name: 'Card Rush', priceCents: 1900, revisions: 2 });
+
+    const used = await call('DELETE', `${packages}/e2e_pkg`);
+    expect(used.status).toBe(400);
+    expect(used.body.message).toMatch(/Used by/);
+    expect((await put([...current, { code: 'e2e_pkg', priceCents: 1900 }])).status).toBe(204);
+    expect((await offered()).at(-1).name).toBe('E2E Express');
+    expect((await put(current)).status).toBe(204);
     expect((await offered()).map((t: any) => t.code)).not.toContain('e2e_pkg');
-    expect((await call('DELETE', `${admin}/design-services/e2e_pkg`)).status).toBe(404);
+    expect((await call('DELETE', `${packages}/e2e_pkg`)).status).toBe(204);
+    expect((await call('DELETE', `${packages}/e2e_pkg`)).status).toBe(404);
   });
 
   it('validates a new package', async () => {
-    const res = await call('POST', `${admin}/design-services`, { name: 'Bad', description: null, priceCents: -1, features: [], designDays: 0, revisions: null });
+    const res = await call('POST', `${base}/admin/options/design-services`, { name: 'Bad', description: null, priceCents: -1, features: [], designDays: 0, revisions: null });
     expect(res.status).toBe(400);
   });
 });

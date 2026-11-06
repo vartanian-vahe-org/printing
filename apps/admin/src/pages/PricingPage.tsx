@@ -55,6 +55,9 @@ export function PricingEditor({ show = 'all', register }: { show?: 'all' | 'core
   const initial = useMemo(() => (catalog ? initialGrid(catalog) : null), [catalog]);
   const [core, setCore] = useState<Grid>({});
   const [addons, setAddons] = useState<Grid>({});
+  const [sizeCode, setSizeCode] = useState('');
+  const [paperCode, setPaperCode] = useState('');
+  const [addonCode, setAddonCode] = useState('');
   useEffect(() => {
     if (initial) {
       setCore(initial.core);
@@ -92,12 +95,20 @@ export function PricingEditor({ show = 'all', register }: { show?: 'all' | 'core
     );
   }
 
-  const setTier = (quantity: number, body: Record<string, unknown>, text: string) =>
-    saver.save(() => api(`${productPath}/pricing`, { method: 'PUT', body: { tiers: [{ quantity, ...body }] } }), text);
-
   const hidden = (...values: AdminValue[]) => (values.some((v) => !v.isActive) ? 'row-hidden' : '');
+  const sizes = valuesOf('size');
+  const papers = valuesOf('paper');
+  const sides = valuesOf('printed_side');
+  const size = sizes.find((v) => v.code === sizeCode) ?? sizes[0];
+  const paper = papers.find((v) => v.code === paperCode) ?? papers[0];
+  /** "12/24": prices entered out of the cells of these sizes and papers. */
+  const filled = (sizeList: AdminValue[], paperList: AdminValue[]) => {
+    const cells = sizeList.flatMap((a) => paperList.flatMap((b) => sides.flatMap((c) => tiers.map((t) => core[coreCell(a.code, b.code, c.code, t.quantity)] ?? ''))));
+    return `${cells.filter((text) => text.trim() !== '').length}/${cells.length}`;
+  };
 
   const addonGroups = catalog.groups.filter((g) => isAddon(g.code));
+  const addonGroup = addonGroups.find((g) => g.code === addonCode) ?? addonGroups[0];
 
   return (
     <>
@@ -117,76 +128,67 @@ export function PricingEditor({ show = 'all', register }: { show?: 'all' | 'core
 
       {show !== 'addons' && <section className="card price-section">
         <h2>Core prices</h2>
-        <p className="muted">Leave a cell empty if that combination is not sold at that quantity.</p>
-        <div className="table-scroll">
-          <table className="price-table">
-            <thead>
-              <tr>
-                <th>Quantity</th>
-                {tiers.map((t) => (
-                  <th key={t.quantity} className={t.isActive ? '' : 'col-hidden'}>
-                    {t.quantity.toLocaleString('en-US')}
-                    {t.isDefault && <span className="badge badge-default">Default</span>}
-                  </th>
+        <p className="muted">Pick a size and a paper, then enter a price per printed side and quantity. Leave a cell empty if it is not sold.</p>
+        <PriceTabs title="Size" values={sizes} current={size?.code} onPick={setSizeCode} count={(v) => filled([v], papers)} />
+        <PriceTabs title="Paper" values={papers} current={paper?.code} onPick={setPaperCode} count={(v) => (size ? filled([size], [v]) : '')} />
+        {size && paper && (
+          <div className="table-scroll">
+            <table className="price-table">
+              <thead>
+                <tr>
+                  <th>Printed side</th>
+                  {tiers.map((t) => (
+                    <th key={t.quantity} className={t.isActive ? '' : 'col-hidden'}>
+                      {t.quantity.toLocaleString('en-US')}
+                      {t.isDefault && <span className="badge badge-default">Default</span>}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sides.map((side) => (
+                  <tr key={side.code} className={hidden(size, paper, side)}>
+                    <th className="row-label">{side.label}</th>
+                    {tiers.map((t) => {
+                      const key = coreCell(size.code, paper.code, side.code, t.quantity);
+                      const value = core[key] ?? '';
+                      return (
+                        <td key={t.quantity}>
+                          <AmountInput
+                            value={value}
+                            changed={value.trim() !== (initial.core[key] ?? '')}
+                            valid={validPrice(value)}
+                            onChange={(v) => setCore((grid) => ({ ...grid, [key]: v }))}
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <th>Tier</th>
-                {tiers.map((t) => (
-                  <td key={t.quantity} className="tier-actions">
-                    {!t.isDefault && (
-                      <button
-                        type="button"
-                        className="link-btn"
-                        disabled={saver.saving}
-                        onClick={() => void setTier(t.quantity, { isActive: !t.isActive }, t.isActive ? `${t.quantity} hidden` : `${t.quantity} shown`)}
-                      >
-                        {t.isActive ? 'Hide' : 'Show'}
-                      </button>
-                    )}
-                    {!t.isDefault && t.isActive && (
-                      <button
-                        type="button"
-                        className="link-btn"
-                        disabled={saver.saving}
-                        onClick={() => void setTier(t.quantity, { isDefault: true }, `Default quantity is now ${t.quantity}`)}
-                      >
-                        Default
-                      </button>
-                    )}
-                  </td>
-                ))}
-              </tr>
-              {valuesOf('size').map((size) => (
-                <SizeRows
-                  key={size.code}
-                  size={size}
-                  papers={valuesOf('paper')}
-                  sides={valuesOf('printed_side')}
-                  tiers={tiers}
-                  core={core}
-                  initial={initial.core}
-                  hidden={hidden}
-                  setCore={setCore}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>}
 
       {show !== 'core' && addonGroups.length > 0 && <section className="card price-section">
         <h2>Add-ons</h2>
         <p className="muted">Percent of the core price, the same at every quantity. Use a negative percent for a discount.</p>
-        <table className="price-table addon-table">
-          <tbody>
-            {addonGroups.map((group) => (
-              <AddonRows key={group.code} group={group} addons={addons} initial={initial.addons} setAddons={setAddons} />
-            ))}
-          </tbody>
-        </table>
+        <div className="tabs">
+          {addonGroups.map((g) => (
+            <button key={g.code} type="button" className={`tab ${g.code === addonGroup?.code ? 'tab-active' : ''}`} onClick={() => setAddonCode(g.code)}>
+              {g.label}
+              <span className="tab-count">{g.values.length}</span>
+            </button>
+          ))}
+        </div>
+        {addonGroup && (
+          <table className="price-table addon-table">
+            <tbody>
+              <AddonRows group={addonGroup} addons={addons} initial={initial.addons} setAddons={setAddons} />
+            </tbody>
+          </table>
+        )}
       </section>}
 
       <Toast status={saver.status} onClose={saver.clearStatus} />
@@ -194,54 +196,33 @@ export function PricingEditor({ show = 'all', register }: { show?: 'all' | 'core
   );
 }
 
-function SizeRows({
-  size,
-  papers,
-  sides,
-  tiers,
-  core,
-  initial,
-  hidden,
-  setCore,
+/** A labelled row of tabs, like the option tabs: which size or paper the table below shows. */
+function PriceTabs({
+  title,
+  values,
+  current,
+  onPick,
+  count,
 }: {
-  size: AdminValue;
-  papers: AdminValue[];
-  sides: AdminValue[];
-  tiers: AdminCatalog['quantityTiers'];
-  core: Grid;
-  initial: Grid;
-  hidden: (...values: AdminValue[]) => string;
-  setCore: (update: (grid: Grid) => Grid) => void;
+  title: string;
+  values: AdminValue[];
+  current: string | undefined;
+  onPick: (code: string) => void;
+  count: (value: AdminValue) => string;
 }) {
   return (
-    <>
-      <tr className="row-group">
-        <th colSpan={tiers.length + 1}>{size.label}</th>
-      </tr>
-      {papers.flatMap((paper) =>
-        sides.map((side) => (
-          <tr key={`${paper.code}|${side.code}`} className={hidden(size, paper, side)}>
-            <th className="row-label">
-              {paper.label} · {side.label}
-            </th>
-            {tiers.map((t) => {
-              const key = coreCell(size.code, paper.code, side.code, t.quantity);
-              const value = core[key] ?? '';
-              return (
-                <td key={t.quantity}>
-                  <AmountInput
-                    value={value}
-                    changed={value.trim() !== (initial[key] ?? '')}
-                    valid={validPrice(value)}
-                    onChange={(v) => setCore((grid) => ({ ...grid, [key]: v }))}
-                  />
-                </td>
-              );
-            })}
-          </tr>
-        )),
-      )}
-    </>
+    <div className="price-tabs">
+      <span className="price-tabs-title">{title}</span>
+      <div className="tabs">
+        {values.map((value) => (
+          <button key={value.code} type="button" className={`tab ${value.code === current ? 'tab-active' : ''}`} onClick={() => onPick(value.code)}>
+            {value.label}
+            {!value.isActive && ' (hidden)'}
+            <span className="tab-count">{count(value)}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -258,9 +239,6 @@ function AddonRows({
 }) {
   return (
     <>
-      <tr className="row-group">
-        <th colSpan={2}>{group.label}</th>
-      </tr>
       {group.values.map((value) => {
         const key = addonCell(group.code, value.code);
         const text = addons[key] ?? '';

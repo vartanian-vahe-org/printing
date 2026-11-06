@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router';
 import { api, type AdminCatalog } from '../api';
 import { STOREFRONT_ORIGIN, useCatalog, useSaver, type RegisterSave } from '../catalog';
 import { Toast } from '../components/Toast';
+import { DesignServicePicker } from './DesignServicesPage';
 import { AddGroup } from './OptionsPage';
 import { PricingEditor } from './PricingPage';
 import { OptionPicker, QuantityPicker } from './ProductOptionsPage';
@@ -20,6 +21,7 @@ const STEPS = [
   { code: 'turnaround', label: 'Turnaround', title: 'Turnaround', text: 'Tick your speeds, then set which quantities offer each one, with its production days and percent.' },
   { code: 'prices', label: 'Prices', title: 'Prices', text: 'One price per combination and quantity, in US dollars. Leave a cell empty if it is not sold.' },
   { code: 'addons', label: 'Add-ons', title: 'Add-ons (optional)', text: 'Tick extras such as folding or coating, each adding a percent of the price. Skip this step if there are none.' },
+  { code: 'design', label: 'Design service', title: 'Design service (optional)', text: 'Tick the packages customers can buy for this product. Give one its own name if you like, and set its price.' },
   { code: 'review', label: 'Review', title: 'Review and publish', text: 'Check the product, then put it on the storefront.' },
 ] as const;
 
@@ -290,6 +292,7 @@ function SetupStep({ step, register }: { step: StepCode; register: RegisterSave 
           </div>
         </>
       )}
+      {step === 'design' && <DesignServicePicker saver={saver} register={register} />}
       {step === 'review' && <Review saver={saver} />}
       <Toast status={saver.status} onClose={saver.clearStatus} />
     </>
@@ -384,8 +387,7 @@ function Review({ saver }: { saver: ReturnType<typeof useSaver> }) {
         </div>
       )}
       <p className="muted">
-        Optional: limit which options go together on <Link to={`/products/${product.code}/rules`}>Rules</Link>, or add packages on{' '}
-        <Link to={`/products/${product.code}/design-services`}>Design services</Link>.
+        Optional: limit which options go together on <Link to={`/products/${product.code}/rules`}>Rules</Link>.
       </p>
     </>
   );

@@ -3,11 +3,13 @@ import { api, type LibraryGroup, type LibraryQuantity, type LibraryValue } from 
 import { useCatalog, useSaver } from '../catalog';
 import { AttributeEditor } from '../components/AttributeEditor';
 import { Toast } from '../components/Toast';
+import { LibraryDesignServices } from './DesignServicesPage';
 
 type Saver = ReturnType<typeof useSaver>;
 
 /** Quantities are not an option group, so their tab sits after the groups. */
 const QUANTITY_TAB = 'quantity';
+const DESIGN_TAB = 'design-services';
 const shown = (quantity: number) => quantity.toLocaleString('en-US');
 
 /** Details to fill in for the first option of an empty group; later ones start from an existing option. */
@@ -19,13 +21,14 @@ const BLANK_ATTRIBUTES: Record<string, Record<string, unknown>> = {
 
 /** The option library: created once here, then each product picks what it uses. */
 export function OptionsPage() {
-  const { library, libraryQuantities } = useCatalog();
+  const { library, libraryDesignServices, libraryQuantities } = useCatalog();
   const [groupCode, setGroupCode] = useState('size');
   const saver = useSaver();
 
   const group = library.find((g) => g.code === groupCode) ?? library[0];
   if (!group) return <p className="page-loading">Loading…</p>;
   const showQuantities = groupCode === QUANTITY_TAB;
+  const showDesign = groupCode === DESIGN_TAB;
 
   return (
     <div className="page">
@@ -33,7 +36,7 @@ export function OptionsPage() {
         <div>
           <h1>Option library</h1>
           <p className="muted">
-            Every size, paper, add-on and quantity is created once here and shared by all products. A change reaches every product using it. What
+            Every size, paper, add-on, quantity and design service is created once here and shared by all products. A change reaches every product using it. What
             a product offers, and its prices, are set on the product.
           </p>
         </div>
@@ -41,7 +44,7 @@ export function OptionsPage() {
 
       <div className="tabs">
         {library.map((g) => (
-          <button key={g.code} type="button" className={`tab ${!showQuantities && g.code === group.code ? 'tab-active' : ''}`} onClick={() => setGroupCode(g.code)}>
+          <button key={g.code} type="button" className={`tab ${!showQuantities && !showDesign && g.code === group.code ? 'tab-active' : ''}`} onClick={() => setGroupCode(g.code)}>
             {g.label}
             <span className="tab-count">{g.values.length}</span>
           </button>
@@ -50,10 +53,16 @@ export function OptionsPage() {
           Quantity
           <span className="tab-count">{libraryQuantities.length}</span>
         </button>
+        <button type="button" className={`tab ${showDesign ? 'tab-active' : ''}`} onClick={() => setGroupCode(DESIGN_TAB)}>
+          Design services
+          <span className="tab-count">{libraryDesignServices.length}</span>
+        </button>
         <AddGroup saver={saver} onAdded={setGroupCode} />
       </div>
 
-      {showQuantities ? (
+      {showDesign ? (
+        <LibraryDesignServices saver={saver} />
+      ) : showQuantities ? (
         <div className="card">
           {libraryQuantities.map((q) => (
             <QuantityRow key={q.quantity} value={q} saver={saver} />

@@ -246,6 +246,20 @@
       "when": 1793982056691,
       "tag": "0034_library_quantities",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1793983133635,
+      "tag": "0035_turnaround_day_range",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1793983624037,
+      "tag": "0036_design_service_library",
+      "breakpoints": true
     }
   ]
 }

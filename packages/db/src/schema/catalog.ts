@@ -219,6 +219,8 @@ export const turnaroundOptions = pgTable(
     quantityTierId: uuid('quantity_tier_id')
       .notNull()
       .references(() => productQuantityTiers.id, { onDelete: 'cascade' }),
+    /** The range customers see: at the earliest, and the latest, which dates and orders promise. */
+    minBusinessDays: integer('min_business_days').notNull(),
     businessDays: integer('business_days').notNull(),
     pricePercent: numeric('price_percent', { precision: 6, scale: 2, mode: 'number' }).notNull(),
     ...auditColumns,
@@ -227,6 +229,7 @@ export const turnaroundOptions = pgTable(
   (t) => [
     primaryKey({ columns: [t.optionValueId, t.quantityTierId] }),
     check('turnaround_options_days_check', sql`${t.businessDays} between 1 and 60`),
+    check('turnaround_options_min_days_check', sql`${t.minBusinessDays} between 1 and ${t.businessDays}`),
     check('turnaround_options_percent_check', sql`${t.pricePercent} between -90 and 500`),
   ],
 );

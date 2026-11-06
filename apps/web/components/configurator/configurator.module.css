@@ -434,6 +434,7 @@
 }
 
 .tileNote {
+  white-space: pre-line;
   font-size: 12px;
   color: var(--color-text);
 }

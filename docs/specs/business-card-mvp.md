@@ -366,6 +366,8 @@ Phụ phí trong `0003` được tính sẵn ra cent cho từng mức số lư�
 | Option library | Kho chung của mọi product, không đổi theo product đang chọn: thêm nhóm và option, sửa tên và thông số (áp dụng cho mọi product đang dùng), xem product nào đang dùng; chỉ xóa được khi không product nào dùng |
 | Trang product (`/products/:code`) | Mở từ danh sách Products, tên product ở đầu trang, các tab Options, Prices, Turnaround, Rules, Templates, Design services, Details. Sidebar không có ô chọn product |
 | Product → Options | Tick option từ kho chung cho product, chọn mặc định, ẩn/hiện, thêm option mới ngay tại đây. Chỉ lưu khi bấm Save changes |
+| Option library → Design services | Gói thiết kế dùng chung: tên chuẩn, giá gợi ý, nội dung, ngày, số lần sửa |
+| Product → Design services | Tick gói, đặt tên riêng và giá riêng cho product |
 | Option library → Quantity | Thêm, sửa, xóa số lượng dùng chung; sửa số thì áp dụng cho mọi product, giữ nguyên giá |
 | Product → Options → Quantity | Tick số lượng từ kho chung, ẩn, đặt mặc định; giá và turnaround riêng từng product |
 | Products | Danh sách product; sửa tên, tên đơn vị (flyer/flyers), mô tả, SEO; đổi thứ tự, ẩn/hiện, xóa. Product chưa xong có nút Continue setup |
@@ -374,7 +376,7 @@ Phụ phí trong `0003` được tính sẵn ra cent cho từng mức số lư�
 | Coating detail | Tab "Turnaround available" |
 | Size detail | Kích thước, bleed, safe zone. |
 | Rules | Xem toàn bộ ràng buộc dạng bảng |
-| Pricing | Trên cùng: bảng giá option gốc (tổ hợp Size × Paper × Printed Side theo số lượng), sửa trực tiếp, ô trống là không bán. Dưới: % của từng add-on. |
+| Prices | Chọn Size và Paper bằng tab như trang Options, bảng bên dưới là Printed Side × Quantity, ô trống là không bán, mỗi tab đếm số ô đã có giá. Dưới: % add-on, mỗi nhóm một tab. |
 | Production settings | Giờ chốt đơn, ngày làm việc, danh sách ngày lễ |
 | Shipping methods | Phương thức, thời gian vận chuyển, giá, ngưỡng miễn phí |
 | Preview | Configurator chạy thử với cấu hình hiện tại, hiện giá và ngày giao |

@@ -478,6 +478,29 @@ a.btn-primary {
   margin: 0 0 8px;
 }
 
+.design-pick {
+  margin: 10px 0 4px 34px;
+}
+
+.price-tabs {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin-top: 12px;
+}
+
+.price-tabs-title {
+  flex: none;
+  width: 44px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.price-tabs .tabs {
+  margin-bottom: 6px;
+}
+
 .pick-check {
   width: 18px;
   height: 18px;

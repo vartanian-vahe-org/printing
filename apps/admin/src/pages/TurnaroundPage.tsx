@@ -8,6 +8,8 @@ const TURNAROUND = 'turnaround';
 
 interface Cell {
   offered: boolean;
+  /** The range customers see, e.g. 3 to 4 business days. */
+  minDays: string;
   days: string;
   percent: string;
 }
@@ -21,8 +23,8 @@ function initialTable(catalog: AdminCatalog): Table {
     for (const tier of catalog.quantityTiers) {
       const found = catalog.turnarounds.find((t) => t.value === speed.code && t.quantity === tier.quantity);
       table[key(speed.code, tier.quantity)] = found
-        ? { offered: true, days: String(found.businessDays), percent: String(found.percent) }
-        : { offered: false, days: '', percent: '' };
+        ? { offered: true, minDays: String(found.minBusinessDays), days: String(found.businessDays), percent: String(found.percent) }
+        : { offered: false, minDays: '', days: '', percent: '' };
     }
   }
   return table;
@@ -30,8 +32,10 @@ function initialTable(catalog: AdminCatalog): Table {
 
 function cellError(cell: Cell): string | null {
   if (!cell.offered) return null;
+  const minDays = Number(cell.minDays);
   const days = Number(cell.days);
-  if (!Number.isInteger(days) || days < 1 || days > 60) return 'Days: a whole number from 1 to 60';
+  if (!Number.isInteger(minDays) || !Number.isInteger(days) || minDays < 1 || days > 60) return 'Days: whole numbers from 1 to 60';
+  if (minDays > days) return 'Days: the first day cannot be after the last';
   const percent = Number(cell.percent);
   if (cell.percent.trim() === '' || !Number.isFinite(percent) || percent < -90 || percent > 500 || Math.abs(Math.round(percent * 100) - percent * 100) > 1e-6) {
     return 'Percent: from -90 to 500, at most 2 decimals';
@@ -40,7 +44,8 @@ function cellError(cell: Cell): string | null {
 }
 
 const same = (a: Cell | undefined, b: Cell | undefined) =>
-  a?.offered === b?.offered && (!a?.offered || (Number(a.days) === Number(b?.days) && Number(a.percent) === Number(b?.percent)));
+  a?.offered === b?.offered &&
+  (!a?.offered || (Number(a.minDays) === Number(b?.minDays) && Number(a.days) === Number(b?.days) && Number(a.percent) === Number(b?.percent)));
 
 /**
  * Quantity × speed table of the product picked in the sidebar: production days and a percent of the
@@ -71,7 +76,7 @@ export function TurnaroundPage() {
         <div>
           <h1>Turnaround</h1>
           <p className="muted">
-            Production days and price of each speed at each quantity. The percent is added to the printing price (core price and
+            Production days, as a range such as 3–4, and price of each speed at each quantity. Ship dates use the last day. The percent is added to the printing price (core price and
             add-ons); use a negative percent for a discount. Untick a cell to stop offering that speed at that quantity. Every
             quantity needs at least one speed.
           </p>
@@ -82,7 +87,7 @@ export function TurnaroundPage() {
   );
 }
 
-const NOT_OFFERED: Cell = { offered: false, days: '', percent: '' };
+const NOT_OFFERED: Cell = { offered: false, minDays: '', days: '', percent: '' };
 
 /**
  * The quantity × speed table. `register`: the setup wizard saves it on Next, so it shows no Save button;
@@ -127,7 +132,7 @@ export function TurnaroundEditor({ register, speedCodes }: { register?: Register
     if (cell.offered || cell.days) return update(k, { offered: !cell.offered });
     const column = tiers.flatMap((t) => table[key(value, t.quantity)] ?? []).filter((c) => c.offered);
     const nearest = column.at(-1);
-    update(k, { offered: true, days: nearest?.days ?? '1', percent: nearest?.percent ?? '0' });
+    update(k, { offered: true, minDays: nearest?.minDays ?? '1', days: nearest?.days ?? '1', percent: nearest?.percent ?? '0' });
   }
 
   /** Copies the first offered percent of a speed to every quantity that offers it. */
@@ -144,7 +149,7 @@ export function TurnaroundEditor({ register, speedCodes }: { register?: Register
       .filter(([k, c]) => c.offered && (!speedCodes || speedCodes.includes(k.split('@')[0]!)))
       .map(([k, c]) => {
         const [value, quantity] = k.split('@');
-        return { value: value!, quantity: Number(quantity), businessDays: Number(c.days), percent: Number(c.percent) };
+        return { value: value!, quantity: Number(quantity), minBusinessDays: Number(c.minDays), businessDays: Number(c.days), percent: Number(c.percent) };
       });
     touched.current = false;
     return saver.save(() => api(`${productPath}/turnarounds`, { method: 'PUT', body: { cells } }), `Saved ${changed.length} change${changed.length === 1 ? '' : 's'}`);
@@ -215,9 +220,17 @@ export function TurnaroundEditor({ register, speedCodes }: { register?: Register
                           <input
                             className={`money turnaround-days ${isChanged ? 'money-changed' : ''} ${invalid ? 'money-invalid' : ''}`}
                             inputMode="numeric"
+                            value={cell.minDays}
+                            onChange={(e) => update(k, { minDays: e.target.value })}
+                            aria-label={`${speed.label} at ${tier.quantity}: first business day`}
+                          />
+                          <span className="muted">–</span>
+                          <input
+                            className={`money turnaround-days ${isChanged ? 'money-changed' : ''} ${invalid ? 'money-invalid' : ''}`}
+                            inputMode="numeric"
                             value={cell.days}
                             onChange={(e) => update(k, { days: e.target.value })}
-                            aria-label={`${speed.label} at ${tier.quantity}: business days`}
+                            aria-label={`${speed.label} at ${tier.quantity}: last business day`}
                           />
                           <span className="muted">d</span>
                           <input

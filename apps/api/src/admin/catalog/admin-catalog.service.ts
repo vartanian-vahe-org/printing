@@ -8,6 +8,7 @@ import {
   optionValueRuleAllowed,
   optionValueRules,
   optionValues,
+  productDesignServices,
   productOptionValues,
   productQuantityTiers,
   products,
@@ -170,7 +171,6 @@ export interface DesignTierPatch {
   designDays?: number;
   revisions?: number | null;
   sortOrder?: number;
-  isActive?: boolean;
 }
 
 export interface DesignTierInput {
@@ -181,13 +181,18 @@ export interface DesignTierInput {
   features: string[];
   designDays: number;
   revisions: number | null;
-  isActive?: boolean;
+}
+
+/** What a product offers from the design library: its own name for a package, when set, and its price. */
+export interface ProductDesignServicesInput {
+  services: { code: string; displayName?: string | null; priceCents: number; isActive?: boolean }[];
 }
 
 /** One offered cell of the quantity × speed table; cells left out are not offered. */
 export interface TurnaroundCell {
   value: string;
   quantity: number;
+  minBusinessDays?: number;
   businessDays: number;
   percent: number;
 }
@@ -381,6 +386,7 @@ export class AdminCatalogService {
         .select({
           value: optionValues.code,
           quantity: productQuantityTiers.quantity,
+          minBusinessDays: turnaroundOptions.minBusinessDays,
           businessDays: turnaroundOptions.businessDays,
           percent: turnaroundOptions.pricePercent,
         })
@@ -390,7 +396,12 @@ export class AdminCatalogService {
         .where(eq(productQuantityTiers.productId, productId)),
       this.db.select().from(templates).where(eq(templates.productId, productId)).orderBy(asc(templates.sortOrder)),
       this.db.select().from(templateFacets).where(eq(templateFacets.productId, productId)).orderBy(asc(templateFacets.sortOrder)),
-      this.db.select().from(designServiceTiers).where(eq(designServiceTiers.productId, productId)).orderBy(asc(designServiceTiers.sortOrder)),
+      this.db
+        .select({ tier: designServiceTiers, use: productDesignServices })
+        .from(productDesignServices)
+        .innerJoin(designServiceTiers, eq(designServiceTiers.id, productDesignServices.tierId))
+        .where(eq(productDesignServices.productId, productId))
+        .orderBy(asc(designServiceTiers.sortOrder)),
     ]);
 
     return {
@@ -441,16 +452,14 @@ export class AdminCatalogService {
         tags: t.tags,
       })),
       templateFacets: facetRows.map((f) => ({ code: f.code, name: f.name, values: f.values })),
-      designServices: designRows.map((d) => ({
-        code: d.code,
-        name: d.name,
-        description: d.description,
-        priceCents: d.priceCents,
-        features: d.features,
-        designDays: d.designDays,
-        revisions: d.revisions,
-        sortOrder: d.sortOrder,
-        isActive: d.isActive,
+      designServices: designRows.map(({ tier, use }) => ({
+        code: tier.code,
+        name: use.displayName ?? tier.name,
+        standardName: tier.name,
+        displayName: use.displayName,
+        priceCents: use.priceCents,
+        sortOrder: tier.sortOrder,
+        isActive: use.isActive,
       })),
     };
   }
@@ -569,7 +578,7 @@ export class AdminCatalogService {
         : [];
       if (cells.length) {
         await tx.insert(turnaroundOptions).values(
-          cells.map((c) => ({ optionValueId: id, quantityTierId: c.quantityTierId, businessDays: c.businessDays, pricePercent: c.pricePercent, createdBy: staffId, updatedBy: staffId })),
+          cells.map((c) => ({ optionValueId: id, quantityTierId: c.quantityTierId, minBusinessDays: c.minBusinessDays, businessDays: c.businessDays, pricePercent: c.pricePercent, createdBy: staffId, updatedBy: staffId })),
         );
       }
       // Its own rules: "when the customer picks <source>, only … in group Y".
@@ -767,7 +776,7 @@ export class AdminCatalogService {
 
   /** Every group and option, and which products use each option. */
   async getLibrary() {
-    const [groups, values, uses, quantities, tiers] = await Promise.all([
+    const [groups, values, uses, quantities, tiers, packages, packageUses] = await Promise.all([
       this.db.select().from(optionGroups).orderBy(asc(optionGroups.sortOrder)),
       this.db.select().from(optionValues).orderBy(asc(optionValues.sortOrder)),
       this.db
@@ -781,8 +790,25 @@ export class AdminCatalogService {
         .from(productQuantityTiers)
         .innerJoin(products, eq(products.id, productQuantityTiers.productId))
         .orderBy(asc(products.sortOrder)),
+      this.db.select().from(designServiceTiers).orderBy(asc(designServiceTiers.sortOrder)),
+      this.db
+        .select({ tierId: productDesignServices.tierId, name: products.name })
+        .from(productDesignServices)
+        .innerJoin(products, eq(products.id, productDesignServices.productId))
+        .orderBy(asc(products.sortOrder)),
     ]);
     return {
+      designServices: packages.map((p) => ({
+        code: p.code,
+        name: p.name,
+        description: p.description,
+        priceCents: p.priceCents,
+        features: p.features,
+        designDays: p.designDays,
+        revisions: p.revisions,
+        sortOrder: p.sortOrder,
+        usedBy: packageUses.filter((u) => u.tierId === p.id).map((u) => u.name),
+      })),
       quantities: quantities.map(({ quantity }) => ({ quantity, usedBy: tiers.filter((t) => t.quantity === quantity).map((t) => t.name) })),
       groups: groups.map((g) => ({
         code: g.code,
@@ -1119,8 +1145,8 @@ export class AdminCatalogService {
     if (templateRows.length) await tx.insert(templates).values(templateRows.map((t) => ({ ...copyRow(t, staffId), productId: targetId })));
     const facets = await tx.select().from(templateFacets).where(eq(templateFacets.productId, sourceId));
     if (facets.length) await tx.insert(templateFacets).values(facets.map((f) => ({ ...copyRow(f, staffId), productId: targetId })));
-    const packages = await tx.select().from(designServiceTiers).where(eq(designServiceTiers.productId, sourceId));
-    if (packages.length) await tx.insert(designServiceTiers).values(packages.map((p) => ({ ...copyRow(p, staffId), productId: targetId })));
+    const packages = await tx.select().from(productDesignServices).where(eq(productDesignServices.productId, sourceId));
+    if (packages.length) await tx.insert(productDesignServices).values(packages.map((p) => ({ ...copyRow(p, staffId), productId: targetId })));
   }
 
   private async assertAnotherProductIsLive(tx: Tx, productId: string) {
@@ -1287,6 +1313,7 @@ export class AdminCatalogService {
           cells.map((c) => ({
             optionValueId: c.optionValueId,
             quantityTierId: tier!.id,
+            minBusinessDays: c.minBusinessDays,
             businessDays: c.businessDays,
             pricePercent: c.pricePercent,
             createdBy: staffId,
@@ -1469,7 +1496,7 @@ export class AdminCatalogService {
         ? await tx.select().from(turnaroundOptions).where(and(inArray(turnaroundOptions.optionValueId, valueIds), inArray(turnaroundOptions.quantityTierId, tierIds)))
         : [];
       const before = new Map(
-        beforeRows.map((r) => [`${codeById.get(r.optionValueId)}@${qtyById.get(r.quantityTierId)}`, { businessDays: r.businessDays, percent: r.pricePercent }]),
+        beforeRows.map((r) => [`${codeById.get(r.optionValueId)}@${qtyById.get(r.quantityTierId)}`, { minBusinessDays: r.minBusinessDays, businessDays: r.businessDays, percent: r.pricePercent }]),
       );
 
       if (valueIds.length) await tx.delete(turnaroundOptions).where(and(inArray(turnaroundOptions.optionValueId, valueIds), inArray(turnaroundOptions.quantityTierId, tierIds)));
@@ -1478,6 +1505,7 @@ export class AdminCatalogService {
           cells.map((c) => ({
             optionValueId: values.get(c.value)!.id,
             quantityTierId: tierByQty.get(c.quantity)!,
+            minBusinessDays: c.minBusinessDays ?? c.businessDays,
             businessDays: c.businessDays,
             pricePercent: c.percent,
             createdBy: staffId,
@@ -1487,7 +1515,7 @@ export class AdminCatalogService {
       }
 
       await this.assertStorefrontStillWorks(tx, productCode);
-      const after = new Map(cells.map((c) => [`${c.value}@${c.quantity}`, { businessDays: c.businessDays, percent: c.percent }]));
+      const after = new Map(cells.map((c) => [`${c.value}@${c.quantity}`, { minBusinessDays: c.minBusinessDays ?? c.businessDays, businessDays: c.businessDays, percent: c.percent }]));
       const changes = [...new Set([...before.keys(), ...after.keys()])]
         .map((key) => ({ key, before: before.get(key) ?? null, after: after.get(key) ?? null }))
         .filter((c) => JSON.stringify(c.before) !== JSON.stringify(c.after));
@@ -1585,14 +1613,10 @@ export class AdminCatalogService {
     });
   }
 
-  /** Adds a "let us design it" package at the end of this product's list. Codes only need to be unique per product. */
-  async createDesignTier(productCode: string, input: DesignTierInput, staffId: string): Promise<{ code: string }> {
+  /** Adds a "let us design it" package to the library, at the end. Products choose whether to offer it. */
+  async createDesignTier(input: DesignTierInput, staffId: string): Promise<{ code: string }> {
     return this.db.transaction(async (tx) => {
-      const productId = await this.productId(tx, productCode);
-      const rows = await tx
-        .select({ code: designServiceTiers.code, sortOrder: designServiceTiers.sortOrder })
-        .from(designServiceTiers)
-        .where(eq(designServiceTiers.productId, productId));
+      const rows = await tx.select({ code: designServiceTiers.code, sortOrder: designServiceTiers.sortOrder }).from(designServiceTiers);
       const taken = new Set(rows.map((r) => r.code));
       let code = input.code ?? valueCodeFrom(input.name);
       if (input.code) {
@@ -1603,7 +1627,6 @@ export class AdminCatalogService {
       }
       const { code: _code, ...fields } = input;
       await tx.insert(designServiceTiers).values({
-        productId,
         code,
         ...fields,
         sortOrder: Math.max(0, ...rows.map((r) => r.sortOrder)) + 1,
@@ -1612,53 +1635,83 @@ export class AdminCatalogService {
       });
       await this.audit.record(tx, staffId, {
         action: 'catalog.design_service.create',
-        target: `${productCode} · design service ${code}`,
-        summary: `Added the ${input.name} design service ($${(input.priceCents / 100).toFixed(2)})`,
+        target: `design service ${code}`,
+        summary: `Added the ${input.name} design service to the library`,
         changes: { before: null, after: { code, ...fields } },
       });
       return { code };
     });
   }
 
-  /** Deletes a package. Carts holding it ask the customer to choose again; placed orders keep their copy. */
-  async deleteDesignTier(productCode: string, tierCode: string, staffId: string) {
+  /** Deletes a package no product offers. */
+  async deleteDesignTier(tierCode: string, staffId: string) {
     await this.db.transaction(async (tx) => {
-      const productId = await this.productId(tx, productCode);
-      const [before] = await tx
-        .delete(designServiceTiers)
-        .where(and(eq(designServiceTiers.productId, productId), eq(designServiceTiers.code, tierCode)))
-        .returning();
-      if (!before) throw new NotFoundException(`Design service "${tierCode}" not found`);
-      const { id: _id, productId: _p, createdAt: _c, updatedAt: _u, createdBy: _cb, updatedBy: _ub, ...kept } = before;
+      const [tier] = await tx.select().from(designServiceTiers).where(eq(designServiceTiers.code, tierCode)).for('update');
+      if (!tier) throw new NotFoundException(`Design service "${tierCode}" not found`);
+      const using = await tx
+        .select({ name: products.name })
+        .from(productDesignServices)
+        .innerJoin(products, eq(products.id, productDesignServices.productId))
+        .where(eq(productDesignServices.tierId, tier.id));
+      if (using.length) throw new BadRequestException(`Used by ${using.map((u) => u.name).join(', ')}. Remove it from those products first.`);
+
+      await tx.delete(designServiceTiers).where(eq(designServiceTiers.id, tier.id));
+      const { id: _id, createdAt: _c, updatedAt: _u, createdBy: _cb, updatedBy: _ub, ...kept } = tier;
       await this.audit.record(tx, staffId, {
         action: 'catalog.design_service.delete',
-        target: `${productCode} · design service ${tierCode}`,
-        summary: `Deleted the ${before.name} design service`,
+        target: `design service ${tierCode}`,
+        summary: `Deleted the ${tier.name} design service`,
         changes: { before: kept, after: null },
       });
     });
   }
 
-  /** Edits a "let us design it" package (price, what it includes, turnaround, rounds of changes). */
-  async updateDesignTier(productCode: string, tierCode: string, patch: DesignTierPatch, staffId: string) {
+  /** Edits a package for every product offering it. Their own names and prices stay. */
+  async updateDesignTier(tierCode: string, patch: DesignTierPatch, staffId: string) {
     await this.db.transaction(async (tx) => {
-      const productId = await this.productId(tx, productCode);
-      const [before] = await tx
-        .select()
-        .from(designServiceTiers)
-        .where(and(eq(designServiceTiers.productId, productId), eq(designServiceTiers.code, tierCode)))
-        .for('update');
+      const [before] = await tx.select().from(designServiceTiers).where(eq(designServiceTiers.code, tierCode)).for('update');
       if (!before) throw new NotFoundException(`Design service "${tierCode}" not found`);
       await tx.update(designServiceTiers).set({ ...patch, updatedBy: staffId }).where(eq(designServiceTiers.id, before.id));
       const changed = Object.keys(patch) as (keyof DesignTierPatch)[];
       await this.audit.record(tx, staffId, {
         action: 'catalog.design_service.update',
-        target: `${productCode} · design service ${tierCode}`,
-        summary:
-          patch.priceCents !== undefined && patch.priceCents !== before.priceCents
-            ? `${before.name} design service: price $${(before.priceCents / 100).toFixed(2)} → $${(patch.priceCents / 100).toFixed(2)}`
-            : `Updated the ${patch.name ?? before.name} design service`,
+        target: `design service ${tierCode}`,
+        summary: `Updated the ${patch.name ?? before.name} design service`,
         changes: { before: Object.fromEntries(changed.map((k) => [k, before[k]])), after: patch },
+      });
+    });
+  }
+
+  /** Saves the packages a product offers in one go. Carts holding one left out ask the customer to choose again; placed orders keep their copy. */
+  async setDesignServices(productCode: string, input: ProductDesignServicesInput, staffId: string) {
+    await this.db.transaction(async (tx) => {
+      const productId = await this.productId(tx, productCode);
+      const codes = input.services.map((s) => s.code);
+      if (new Set(codes).size !== codes.length) throw new BadRequestException('A package is listed twice');
+      const tiers = codes.length ? await tx.select().from(designServiceTiers).where(inArray(designServiceTiers.code, codes)) : [];
+      const unknown = codes.filter((code) => !tiers.some((t) => t.code === code));
+      if (unknown.length) throw new BadRequestException(`Design service "${unknown[0]}" not found`);
+
+      const before = await tx.select().from(productDesignServices).where(eq(productDesignServices.productId, productId));
+      await tx.delete(productDesignServices).where(eq(productDesignServices.productId, productId));
+      if (input.services.length) {
+        await tx.insert(productDesignServices).values(
+          input.services.map((s) => ({
+            productId,
+            tierId: tiers.find((t) => t.code === s.code)!.id,
+            displayName: s.displayName?.trim() || null,
+            priceCents: s.priceCents,
+            isActive: s.isActive ?? true,
+            createdBy: staffId,
+            updatedBy: staffId,
+          })),
+        );
+      }
+      await this.audit.record(tx, staffId, {
+        action: 'catalog.design_service.pick',
+        target: `${productCode} · design services`,
+        summary: `Offers ${input.services.length} design service(s)`,
+        changes: { before: before.map(({ tierId, displayName, priceCents, isActive }) => ({ tierId, displayName, priceCents, isActive })), after: input.services },
       });
     });
   }

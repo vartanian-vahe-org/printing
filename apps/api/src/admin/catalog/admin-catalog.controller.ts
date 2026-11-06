@@ -156,10 +156,13 @@ const turnaroundSchema = z.object({
         .object({
           value: code,
           quantity: z.number().int().positive(),
+          /** The earliest day; the same as businessDays when left out. */
+          minBusinessDays: z.number().int().min(1).max(60).optional(),
           businessDays: z.number().int().min(1).max(60),
           percent: z.number().min(-90).max(500).multipleOf(0.01),
         })
-        .strict(),
+        .strict()
+        .refine((c) => (c.minBusinessDays ?? c.businessDays) <= c.businessDays, { message: 'The first day of a range cannot be after the last' }),
     )
     .max(2000),
 });
@@ -192,7 +195,6 @@ const designTierFields = {
   features: z.array(z.string().trim().min(1).max(200)).max(12),
   designDays: z.number().int().min(1).max(60),
   revisions: z.number().int().min(0).max(100).nullable(),
-  isActive: z.boolean(),
 };
 
 const designTierCreateSchema = z
@@ -203,7 +205,24 @@ const designTierCreateSchema = z
       .max(60)
       .optional(),
     ...designTierFields,
-    isActive: designTierFields.isActive.optional(),
+  })
+  .strict();
+
+const productDesignServicesSchema = z
+  .object({
+    services: z
+      .array(
+        z
+          .object({
+            code,
+            /** Its name on this product; the standard name when empty. */
+            displayName: z.string().trim().max(60).nullable().optional(),
+            priceCents: designTierFields.priceCents,
+            isActive: z.boolean().optional(),
+          })
+          .strict(),
+      )
+      .max(50),
   })
   .strict();
 
@@ -216,7 +235,6 @@ const designTierPatchSchema = z
     designDays: z.number().int().min(1).max(60).optional(),
     revisions: z.number().int().min(0).max(100).nullable().optional(),
     sortOrder: z.number().int().min(0).max(10_000).optional(),
-    isActive: z.boolean().optional(),
   })
   .strict()
   .refine((p) => Object.keys(p).length > 0, { message: 'Nothing to update' });
@@ -378,30 +396,14 @@ export class AdminCatalogController {
     await this.catalog.setFacets(productCode, body.facets, request.staff!.id);
   }
 
-  @Post('design-services')
-  async createDesignService(
+  @Put('design-services')
+  @HttpCode(204)
+  async setDesignServices(
     @Param('code') productCode: string,
-    @Body(new ZodValidationPipe(designTierCreateSchema)) body: z.infer<typeof designTierCreateSchema>,
+    @Body(new ZodValidationPipe(productDesignServicesSchema)) body: z.infer<typeof productDesignServicesSchema>,
     @Req() request: AdminRequest,
   ) {
-    return this.catalog.createDesignTier(productCode, body, request.staff!.id);
-  }
-
-  @Delete('design-services/:tier')
-  @HttpCode(204)
-  async deleteDesignService(@Param('code') productCode: string, @Param('tier') tier: string, @Req() request: AdminRequest) {
-    await this.catalog.deleteDesignTier(productCode, tier, request.staff!.id);
-  }
-
-  @Patch('design-services/:tier')
-  @HttpCode(204)
-  async updateDesignService(
-    @Param('code') productCode: string,
-    @Param('tier') tier: string,
-    @Body(new ZodValidationPipe(designTierPatchSchema)) body: z.infer<typeof designTierPatchSchema>,
-    @Req() request: AdminRequest,
-  ) {
-    await this.catalog.updateDesignTier(productCode, tier, body, request.staff!.id);
+    await this.catalog.setDesignServices(productCode, body, request.staff!.id);
   }
 }
 
@@ -440,6 +442,27 @@ export class AdminOptionsController {
   @HttpCode(204)
   async deleteGroup(@Param('group') group: string, @Req() request: AdminRequest) {
     await this.catalog.deleteGroup(group, request.staff!.id);
+  }
+
+  @Post('design-services')
+  createDesignService(@Body(new ZodValidationPipe(designTierCreateSchema)) body: z.infer<typeof designTierCreateSchema>, @Req() request: AdminRequest) {
+    return this.catalog.createDesignTier(body, request.staff!.id);
+  }
+
+  @Patch('design-services/:tier')
+  @HttpCode(204)
+  async updateDesignService(
+    @Param('tier') tier: string,
+    @Body(new ZodValidationPipe(designTierPatchSchema)) body: z.infer<typeof designTierPatchSchema>,
+    @Req() request: AdminRequest,
+  ) {
+    await this.catalog.updateDesignTier(tier, body, request.staff!.id);
+  }
+
+  @Delete('design-services/:tier')
+  @HttpCode(204)
+  async deleteDesignService(@Param('tier') tier: string, @Req() request: AdminRequest) {
+    await this.catalog.deleteDesignTier(tier, request.staff!.id);
   }
 
   @Post('quantities')

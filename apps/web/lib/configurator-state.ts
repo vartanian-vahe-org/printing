@@ -122,6 +122,7 @@ export function tierPrices(catalog: Catalog, state: ConfiguratorState) {
 /** A turnaround speed as the tiles show it: production days at this quantity, or why it cannot be picked. */
 export interface SpeedChoice {
   code: string;
+  minBusinessDays: number | null;
   businessDays: number | null;
   /** Set when the speed is not offered at the current quantity, e.g. "Up to 5,000 cards". */
   unavailable: string | null;
@@ -137,13 +138,13 @@ export function speedChoices(catalog: Catalog, state: ConfiguratorState): SpeedC
   const quantities = sortedTiers(catalog).map((t) => t.quantity);
   return (ruleAllowedValues(catalog, state.selection)[TURNAROUND_GROUP] ?? []).flatMap((code): SpeedChoice[] => {
     const here = turnaroundAt(catalog, code, state.quantity);
-    if (here) return [{ code, businessDays: here.businessDays, unavailable: null }];
+    if (here) return [{ code, minBusinessDays: here.minBusinessDays, businessDays: here.businessDays, unavailable: null }];
     const offered = quantities.filter((q) => turnaroundAt(catalog, code, q));
     if (offered.length === 0) return [];
     const below = offered.filter((q) => q < state.quantity);
     const unit = catalog.product.unitNamePlural;
     const unavailable = below.length ? `Up to ${count.format(below.at(-1)!)} ${unit}` : `From ${count.format(offered[0]!)} ${unit}`;
-    return [{ code, businessDays: null, unavailable }];
+    return [{ code, minBusinessDays: null, businessDays: null, unavailable }];
   });
 }
 

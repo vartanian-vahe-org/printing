@@ -175,13 +175,17 @@ describe('design choices', () => {
     const before = (await request('GET', '/admin/products/business-cards/catalog', undefined, { cookie: admin })).body;
     const elite = before.designServices.find((t: any) => t.code === 'elite');
 
-    expect((await request('PATCH', '/admin/products/business-cards/design-services/elite', { priceCents: 12_345 }, { cookie: admin })).status).toBe(204);
-    const offered = (await request('GET', '/products/business-cards/design-services')).body.tiers;
-    expect(offered.find((t: any) => t.code === 'elite').priceCents).toBe(12_345);
-    expect((await request('PATCH', '/admin/products/business-cards/design-services/elite', { isActive: false }, { cookie: admin })).status).toBe(204);
-    expect((await request('GET', '/products/business-cards/design-services')).body.tiers.map((t: any) => t.code)).not.toContain('elite');
-    expect((await request('PATCH', '/admin/products/business-cards/design-services/elite', { priceCents: elite.priceCents, isActive: true }, { cookie: admin })).status).toBe(204);
-    expect((await request('PATCH', '/admin/products/business-cards/design-services/elite', { designDays: 0 }, { cookie: admin })).status).toBe(400);
+    const put = (services: unknown[]) => request('PUT', '/admin/products/business-cards/design-services', { services }, { cookie: admin });
+    const others = before.designServices.filter((t: any) => t.code !== 'elite').map(({ code, displayName, priceCents, isActive }: any) => ({ code, displayName, priceCents, isActive }));
+    const offeredTiers = async () => (await request('GET', '/products/business-cards/design-services')).body.tiers;
+
+    expect((await put([...others, { code: 'elite', displayName: 'Business Elite', priceCents: 12_345 }])).status).toBe(204);
+    expect((await offeredTiers()).find((t: any) => t.code === 'elite')).toMatchObject({ name: 'Business Elite', priceCents: 12_345 });
+    expect((await put([...others, { code: 'elite', priceCents: elite.priceCents, isActive: false }])).status).toBe(204);
+    expect((await offeredTiers()).map((t: any) => t.code)).not.toContain('elite');
+    expect((await put([...others, { code: 'elite', priceCents: elite.priceCents }])).status).toBe(204);
+    expect((await offeredTiers()).find((t: any) => t.code === 'elite').name).toBe(elite.standardName);
+    expect((await request('PATCH', '/admin/options/design-services/elite', { designDays: 0 }, { cookie: admin })).status).toBe(400);
 
     const classic = before.templates.find((t: any) => t.code === 'classic');
     expect((await request('PATCH', '/admin/products/business-cards/templates/classic', { tags: { mood: ['happy'] } }, { cookie: admin })).status).toBe(400);

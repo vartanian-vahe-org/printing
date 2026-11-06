@@ -59,7 +59,8 @@ export interface TurnaroundOption {
   /** Turnaround value code, e.g. 'rush'. */
   value: string;
   quantity: number;
-  /** Production days at this quantity. */
+  /** Production days at this quantity: a range, and `businessDays`, the latest, is what dates promise. */
+  minBusinessDays: number;
   businessDays: number;
   /** Added to the printing price (core price and add-ons) in percent; negative for a discount. */
   percent: number;

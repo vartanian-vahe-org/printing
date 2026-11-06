@@ -135,6 +135,7 @@ export const businessCards: Catalog = {
     TIERS.filter(([quantity]) => !(value === 'rush' && quantity > 5000)).map(([quantity]) => ({
       value,
       quantity,
+      minBusinessDays: Math.max(days + extraDays(quantity) - 1, 1),
       businessDays: days + extraDays(quantity),
       percent,
     })),

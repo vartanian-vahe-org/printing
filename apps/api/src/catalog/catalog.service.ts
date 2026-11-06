@@ -133,6 +133,7 @@ export class CatalogService implements OnModuleInit {
         .select({
           value: optionValues.code,
           quantity: productQuantityTiers.quantity,
+          minBusinessDays: turnaroundOptions.minBusinessDays,
           businessDays: turnaroundOptions.businessDays,
           percent: turnaroundOptions.pricePercent,
         })

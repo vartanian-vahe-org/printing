@@ -80,7 +80,7 @@ describe('turnaround by quantity', () => {
       ['express', 2],
       ['rush', 1],
     ]);
-    expect(at(10000).find((s) => s.code === 'rush')).toEqual({ code: 'rush', businessDays: null, unavailable: 'Up to 5,000 cards' });
+    expect(at(10000).find((s) => s.code === 'rush')).toEqual({ code: 'rush', minBusinessDays: null, businessDays: null, unavailable: 'Up to 5,000 cards' });
   });
 
   it('leaves out speeds hidden by a rule', () => {
