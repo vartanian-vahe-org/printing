@@ -221,6 +221,17 @@ select {
   cursor: default;
 }
 
+a.btn {
+  display: inline-flex;
+  align-items: center;
+  color: inherit;
+  text-decoration: none;
+}
+
+a.btn-primary {
+  color: #ffffff;
+}
+
 .btn-primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -472,10 +483,98 @@ select {
   border-radius: 12px;
 }
 
-.value-issue {
-  margin: 4px 0 0;
-  color: var(--danger, #b42318);
-  font-size: 13px;
+.editor-actions {
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.setup-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 20px;
+  padding: 0;
+  list-style: none;
+}
+
+.setup-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.setup-step:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.setup-step[aria-current='step'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.setup-step-number {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--border);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.setup-step-done .setup-step-number {
+  background: var(--ok);
+  color: #ffffff;
+}
+
+.setup-card {
+  padding: 18px;
+}
+
+.setup-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.setup-footer .muted {
+  margin: 0 0 0 auto;
+}
+
+.setup-summary {
+  margin: 0;
+  padding: 6px 18px;
+}
+
+.setup-summary > div {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.setup-summary > div:last-child {
+  border-bottom: 0;
+}
+
+.setup-summary dt {
+  color: var(--muted);
+}
+
+.setup-summary dd {
+  margin: 0;
 }
 
 .form-actions-spacer {

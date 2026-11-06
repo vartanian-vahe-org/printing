@@ -365,7 +365,8 @@ Phụ phí trong `0003` được tính sẵn ra cent cho từng mức số lư�
 | Product → Option groups | Danh sách nhóm, đổi thứ tự, đổi label, kiểu hiển thị |
 | Option group → Values | Thêm/sửa/ẩn value, chọn mặc định, sửa attributes (form theo loại nhóm) |
 | Options → Quantity | Thêm, sửa số, ẩn, đặt mặc định, xóa số lượng |
-| Products | Thêm product trống hoặc copy toàn bộ từ product có sẵn; sửa tên, tên đơn vị (flyer/flyers), mô tả, SEO; đổi thứ tự, ẩn/hiện, xóa. Product ẩn được phép chưa đủ dữ liệu: danh sách báo phần còn thiếu, chỉ Show được khi bán được |
+| Products | Danh sách product; sửa tên, tên đơn vị (flyer/flyers), mô tả, SEO; đổi thứ tự, ẩn/hiện, xóa. Product chưa xong có nút Continue setup |
+| Products → New / Setup | Wizard tạo product: Details, Size, Paper, Printed sides, Quantity, Turnaround, Prices, Add-ons (tùy chọn), Review và Publish. Bắt đầu trống hoặc copy từ product có sẵn. Mỗi bước lưu ngay, chưa đủ thì không qua bước sau được |
 | Options → Group | Thêm, xóa nhóm add-on; đổi tên mọi nhóm. Size, Paper, Printed Side, Turnaround là bắt buộc, không xóa được |
 | **Paper detail** | Tab "Coatings available" (checkbox), tab "Turnaround available". Lưu vào `option_value_rules`. |
 | Coating detail | Tab "Turnaround available" |

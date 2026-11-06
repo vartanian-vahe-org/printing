@@ -14,7 +14,7 @@ const REQUIRED_GROUPS = ['size', 'paper', 'printed_side', 'turnaround'];
 /** Details to fill in for the first option of an empty group; later ones start from an existing option. */
 const BLANK_ATTRIBUTES: Record<string, Record<string, unknown>> = {
   size: { trim_w_in: Number.NaN, trim_h_in: Number.NaN, bleed_in: Number.NaN, safe_in: Number.NaN },
-  paper: { thickness_pt: Number.NaN, tier: '' },
+  paper: { thickness_pt: Number.NaN },
   printed_side: { back: 'separate' },
 };
 
@@ -60,23 +60,32 @@ export function OptionsPage() {
       ) : (
         <div className="card">
           <GroupHeader key={`header.${group.code}`} group={group} saver={saver} />
-          {group.values.map((value, index) => (
-            <ValueRow
-              key={`${group.code}.${value.code}`}
-              group={group}
-              value={value}
-              first={index === 0}
-              last={index === group.values.length - 1}
-              neighbours={[group.values[index - 1], group.values[index + 1]]}
-              saver={saver}
-            />
-          ))}
-          <AddValue key={group.code} group={group} saver={saver} />
+          <OptionList key={group.code} group={group} saver={saver} />
         </div>
       )}
 
       <Toast status={saver.status} onClose={saver.clearStatus} />
     </div>
+  );
+}
+
+/** The options of a group, then the form for a new one. `guided`: the setup wizard, with the form open on an empty group. */
+export function OptionList({ group, saver, guided = false }: { group: AdminGroup; saver: ReturnType<typeof useSaver>; guided?: boolean }) {
+  return (
+    <>
+      {group.values.map((value, index) => (
+        <ValueRow
+          key={`${group.code}.${value.code}`}
+          group={group}
+          value={value}
+          first={index === 0}
+          last={index === group.values.length - 1}
+          neighbours={[group.values[index - 1], group.values[index + 1]]}
+          saver={saver}
+        />
+      ))}
+      <AddValue key={group.code} group={group} saver={saver} guided={guided} />
+    </>
   );
 }
 
@@ -168,7 +177,7 @@ function GroupHeader({ group, saver }: { group: AdminGroup; saver: ReturnType<ty
 }
 
 /** "Add group": a new add-on such as Binding or Grommets, priced as a percent on the Pricing page. */
-function AddGroup({ saver, onAdded }: { saver: ReturnType<typeof useSaver>; onAdded: (code: string) => void }) {
+export function AddGroup({ saver, onAdded }: { saver: ReturnType<typeof useSaver>; onAdded: (code: string) => void }) {
   const { path: productPath, product } = useCatalog();
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState('');
@@ -406,11 +415,11 @@ function ValueRow({
  * prices and rules), so nothing new has to be invented and the storefront keeps working. The first
  * option of an empty group starts blank and becomes the default.
  */
-function AddValue({ group, saver }: { group: AdminGroup; saver: ReturnType<typeof useSaver> }) {
+function AddValue({ group, saver, guided }: { group: AdminGroup; saver: ReturnType<typeof useSaver>; guided: boolean }) {
   const { path: productPath } = useCatalog();
   const sources = group.values;
   const initial = sources.find((v) => v.isDefault) ?? sources[0];
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(guided && sources.length === 0);
   const [label, setLabel] = useState('');
   const [description, setDescription] = useState('');
   const [code, setCode] = useState('');
@@ -498,17 +507,19 @@ function AddValue({ group, saver }: { group: AdminGroup; saver: ReturnType<typeo
               </select>
             </label>
           )}
-          <label className="field">
-            <span>Code (optional)</span>
-            <input
-              value={code}
-              onChange={(e) => setCode(e.target.value.toLowerCase())}
-              pattern="[a-z0-9]+(_[a-z0-9]+)*"
-              title="Lowercase letters, numbers and underscores"
-              maxLength={60}
-              placeholder="Made from the label"
-            />
-          </label>
+          {!guided && (
+            <label className="field">
+              <span>Code (optional)</span>
+              <input
+                value={code}
+                onChange={(e) => setCode(e.target.value.toLowerCase())}
+                pattern="[a-z0-9]+(_[a-z0-9]+)*"
+                title="Lowercase letters, numbers and underscores"
+                maxLength={60}
+                placeholder="Made from the label"
+              />
+            </label>
+          )}
         </div>
         {source && (
           <label className="field field-inline">

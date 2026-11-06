@@ -323,7 +323,7 @@ describe('admin products', () => {
   it('builds a blank product from nothing and shows it once it can be sold', async () => {
     const flyers = `${base}/admin/products/e2e-flyers`;
     const issue = async () => (await call('GET', `${base}/admin/products`)).body.products.find((p: any) => p.code === 'e2e-flyers').setupIssue;
-    const created = await call('POST', `${base}/admin/products`, { name: 'E2E Flyers', unitName: 'flyer', unitNamePlural: 'flyers' });
+    const created = await call('POST', `${base}/admin/products`, { name: 'E2E Flyers' });
     expect(created.body.code).toBe('e2e-flyers');
     const blank = (await call('GET', `${flyers}/catalog`)).body;
     expect(blank.groups.map((g: any) => [g.code, g.values.length])).toEqual([['size', 0], ['paper', 0], ['printed_side', 0], ['turnaround', 0]]);
@@ -335,7 +335,7 @@ describe('admin products', () => {
     const add = (group: string, label: string, attributes: Record<string, unknown>) => call('POST', `${flyers}/groups/${group}/values`, { label, attributes });
     expect((await add('size', 'Letter', { trim_w_in: 8.5, trim_h_in: 11, bleed_in: 0.125, safe_in: 0.125 })).status).toBe(201);
     expect((await add('size', 'Too big', { trim_w_in: 40, trim_h_in: 11, bleed_in: 0.125, safe_in: 0.125 })).status).toBe(400);
-    expect((await add('paper', '100lb Text', { thickness_pt: 4, tier: 'standard' })).status).toBe(201);
+    expect((await add('paper', '100lb Text', { thickness_pt: 4 })).status).toBe(201);
     expect((await add('printed_side', 'Front only', { back: 'blank' })).status).toBe(201);
     expect((await add('turnaround', 'Standard', {})).status).toBe(201);
     expect((await call('POST', `${flyers}/quantities`, { quantity: 250 })).status).toBe(204);
@@ -352,7 +352,7 @@ describe('admin products', () => {
 
     expect((await call('PATCH', flyers, { isActive: true })).status).toBe(204);
     const page = (await call('GET', `${base}/products/e2e-flyers/configurator`, undefined, false)).body;
-    expect(page.catalog.product).toMatchObject({ unitName: 'flyer', unitNamePlural: 'flyers' });
+    expect(page.catalog.product).toMatchObject({ unitName: 'e2e flyer', unitNamePlural: 'e2e flyers' });
     expect(page.defaults.quantity).toBe(250);
     const priced = await call('POST', `${base}/quotes`, { productCode: 'e2e-flyers', selection: page.defaults.selection, quantity: 250 }, false);
     expect(priced.body.totalCents).toBe(8900);

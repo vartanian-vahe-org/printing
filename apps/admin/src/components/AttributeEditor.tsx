@@ -8,6 +8,7 @@ const ENUMS: Record<string, string[]> = {
   back: ['matte', 'gloss', 'uv', 'soft_touch', 'silk', 'none'],
 };
 const PRINTED_SIDE_BACK = ['separate', 'blank', 'same_as_front'];
+const OPTION_LABELS: Record<string, string> = { separate: 'Own design', blank: 'Left blank', same_as_front: 'Same as the front' };
 
 const LABELS: Record<string, string> = {
   trim_w_in: 'Trim width (in)',
@@ -77,7 +78,7 @@ export function AttributeEditor({ groupCode, value, onChange }: Props) {
               <select value={String(current)} onChange={(e) => set(e.target.value)}>
                 {options.map((o) => (
                   <option key={o} value={o}>
-                    {o}
+                    {OPTION_LABELS[o] ?? o}
                   </option>
                 ))}
               </select>

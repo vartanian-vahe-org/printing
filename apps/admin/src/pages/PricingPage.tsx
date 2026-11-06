@@ -31,6 +31,24 @@ function validPercent(text: string) {
 }
 
 export function PricingPage() {
+  return (
+    <div className="page">
+      <header className="page-header">
+        <div>
+          <h1>Pricing</h1>
+          <p className="muted">
+            Each combination of size, paper and printed sides has its own price per quantity, in US dollars. Add-ons then add a percent of that
+            price, and the speed its percent from the <Link to="/turnaround">Turnaround</Link> page.
+          </p>
+        </div>
+      </header>
+      <PricingEditor />
+    </div>
+  );
+}
+
+/** The price tables and their Save button; `onDirty` tells a page around it about unsaved changes. */
+export function PricingEditor({ show = 'all', onDirty }: { show?: 'all' | 'core' | 'addons'; onDirty?: (dirty: boolean) => void }) {
   const { catalog, path: productPath } = useCatalog();
   const saver = useSaver();
   const initial = useMemo(() => (catalog ? initialGrid(catalog) : null), [catalog]);
@@ -43,14 +61,15 @@ export function PricingPage() {
     }
   }, [initial]);
 
+  const changedCore = initial ? Object.keys(core).filter((k) => core[k]!.trim() !== (initial.core[k] ?? '')) : [];
+  const changedAddons = initial ? Object.keys(addons).filter((k) => Number(addons[k]) !== Number(initial.addons[k]) || addons[k]!.trim() === '') : [];
+  const changes = changedCore.length + changedAddons.length;
+  useEffect(() => onDirty?.(changes > 0), [changes, onDirty]);
+
   if (!catalog || !initial) return <p className="page-loading">Loading…</p>;
   const tiers = catalog.quantityTiers;
   const valuesOf = (code: string) => catalog.groups.find((g) => g.code === code)?.values ?? [];
-
-  const changedCore = Object.keys(core).filter((k) => core[k]!.trim() !== (initial.core[k] ?? ''));
-  const changedAddons = Object.keys(addons).filter((k) => Number(addons[k]) !== Number(initial.addons[k]) || addons[k]!.trim() === '');
   const invalid = changedCore.some((k) => !validPrice(core[k]!)) || changedAddons.some((k) => !validPercent(addons[k]!));
-  const changes = changedCore.length + changedAddons.length;
 
   function save() {
     void saver.save(
@@ -77,30 +96,23 @@ export function PricingPage() {
 
   const hidden = (...values: AdminValue[]) => (values.some((v) => !v.isActive) ? 'row-hidden' : '');
 
+  const addonGroups = catalog.groups.filter((g) => isAddon(g.code));
+
   return (
-    <div className="page">
-      <header className="page-header">
-        <div>
-          <h1>Pricing</h1>
-          <p className="muted">
-            Each combination of size, paper and printed sides has its own price per quantity, in US dollars. Add-ons then add a percent of that
-            price, and the speed its percent from the <Link to="/turnaround">Turnaround</Link> page.
-          </p>
-        </div>
-        <div className="header-actions">
-          {changes > 0 && (
-            <button type="button" className="btn btn-ghost" onClick={() => (setCore(initial.core), setAddons(initial.addons))}>
-              Discard
-            </button>
-          )}
-          <button type="button" className="btn btn-primary" disabled={changes === 0 || invalid || saver.saving} onClick={save}>
-            {changes > 0 ? `Save changes (${changes})` : 'No changes'}
+    <>
+      <div className="header-actions editor-actions">
+        {changes > 0 && (
+          <button type="button" className="btn btn-ghost" onClick={() => (setCore(initial.core), setAddons(initial.addons))}>
+            Discard
           </button>
-        </div>
-      </header>
+        )}
+        <button type="button" className="btn btn-primary" disabled={changes === 0 || invalid || saver.saving} onClick={save}>
+          {changes > 0 ? `Save changes (${changes})` : 'No changes'}
+        </button>
+      </div>
       {invalid && <div className="banner banner-error">Some amounts are not valid. Use e.g. 26.60 for a price and 15 for a percent.</div>}
 
-      <section className="card price-section">
+      {show !== 'addons' && <section className="card price-section">
         <h2>Core prices</h2>
         <p className="muted">Leave a cell empty if that combination is not sold at that quantity.</p>
         <div className="table-scroll">
@@ -160,24 +172,22 @@ export function PricingPage() {
             </tbody>
           </table>
         </div>
-      </section>
+      </section>}
 
-      <section className="card price-section">
+      {show !== 'core' && addonGroups.length > 0 && <section className="card price-section">
         <h2>Add-ons</h2>
         <p className="muted">Percent of the core price, the same at every quantity. Use a negative percent for a discount.</p>
         <table className="price-table addon-table">
           <tbody>
-            {catalog.groups
-              .filter((g) => isAddon(g.code))
-              .map((group) => (
-                <AddonRows key={group.code} group={group} addons={addons} initial={initial.addons} setAddons={setAddons} />
-              ))}
+            {addonGroups.map((group) => (
+              <AddonRows key={group.code} group={group} addons={addons} initial={initial.addons} setAddons={setAddons} />
+            ))}
           </tbody>
         </table>
-      </section>
+      </section>}
 
       <Toast status={saver.status} onClose={saver.clearStatus} />
-    </div>
+    </>
   );
 }
 

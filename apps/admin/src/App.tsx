@@ -13,6 +13,7 @@ import { PricingPage } from './pages/PricingPage';
 import { TurnaroundPage } from './pages/TurnaroundPage';
 import { RulesPage } from './pages/RulesPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { NewProductPage, ProductSetupPage } from './pages/ProductSetupPage';
 import { ProductsPage } from './pages/ProductsPage';
 import { StaffPage } from './pages/StaffPage';
 import { TemplatesPage } from './pages/TemplatesPage';
@@ -23,6 +24,8 @@ const ROUTES = [
   { path: '/orders', element: <OrdersPage /> },
   { path: '/orders/:number', element: <OrderDetailPage /> },
   { path: '/products', element: <ProductsPage /> },
+  { path: '/products/new', element: <NewProductPage /> },
+  { path: '/products/:code/setup/:step?', element: <ProductSetupPage /> },
   { path: '/options', element: <OptionsPage /> },
   { path: '/rules', element: <RulesPage /> },
   { path: '/pricing', element: <PricingPage /> },

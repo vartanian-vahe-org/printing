@@ -18,7 +18,7 @@ const size = z
 
 const schemas: Record<string, () => z.ZodType> = {
   size: () => size,
-  paper: () => z.object({ thickness_pt: z.number().min(1).max(60), tier: z.string().min(1).max(40) }).strict(),
+  paper: () => z.object({ thickness_pt: z.number().min(1).max(60), tier: z.string().min(1).max(40).optional() }).strict(),
   coating: () => z.object({ front: finish, back: finish, laminated: z.boolean() }).strict(),
   printed_side: () => z.object({ back: z.enum(['separate', 'blank', 'same_as_front']) }).strict(),
   corners: () => z.object({ radius_in: inches(1) }).strict(),

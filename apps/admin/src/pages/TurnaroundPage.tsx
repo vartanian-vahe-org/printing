@@ -47,7 +47,44 @@ const same = (a: Cell | undefined, b: Cell | undefined) =>
  * printing price for each speed at each quantity. Speeds are added, renamed and hidden on the Options page.
  */
 export function TurnaroundPage() {
-  const { catalog, product, path: productPath } = useCatalog();
+  const { catalog, product } = useCatalog();
+  if (!catalog) return <p className="page-loading">Loading…</p>;
+  const productName = product?.name ?? catalog.product.name;
+  const hasSpeeds = catalog.groups.some((g) => g.code === TURNAROUND && g.values.length > 0);
+
+  if (!hasSpeeds) {
+    return (
+      <div className="page">
+        <header className="page-header">
+          <h1>Turnaround · {productName}</h1>
+        </header>
+        <p className="muted">
+          {productName} has no turnaround speeds. Add them on the <Link to="/options">Options</Link> page first.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page">
+      <header className="page-header">
+        <div>
+          <h1>Turnaround · {productName}</h1>
+          <p className="muted">
+            Production days and price of each speed at each quantity. The percent is added to the printing price (core price and
+            add-ons); use a negative percent for a discount. Untick a cell to stop offering that speed at that quantity. Every
+            quantity needs at least one speed. Add, rename or reorder speeds on the <Link to="/options">Options</Link> page.
+          </p>
+        </div>
+      </header>
+      <TurnaroundEditor />
+    </div>
+  );
+}
+
+/** The quantity × speed table and its Save button; `onDirty` tells a page around it about unsaved changes. */
+export function TurnaroundEditor({ onDirty }: { onDirty?: (dirty: boolean) => void }) {
+  const { catalog, path: productPath } = useCatalog();
   const saver = useSaver();
   const initial = useMemo(() => (catalog ? initialTable(catalog) : null), [catalog]);
   const [table, setTable] = useState<Table>({});
@@ -55,14 +92,15 @@ export function TurnaroundPage() {
     if (initial) setTable(initial);
   }, [initial]);
 
+  const changed = initial ? Object.keys(table).filter((k) => !same(table[k], initial[k])) : [];
+  const dirty = changed.length > 0;
+  useEffect(() => onDirty?.(dirty), [dirty, onDirty]);
+
   if (!catalog || !initial) return <p className="page-loading">Loading…</p>;
-  const productName = product?.name ?? catalog.product.name;
   const speeds = [...(catalog.groups.find((g) => g.code === TURNAROUND)?.values ?? [])].sort((a, b) => a.sortOrder - b.sortOrder);
   const tiers = catalog.quantityTiers;
 
-  const changed = Object.keys(table).filter((k) => !same(table[k], initial[k]));
   const errors = Object.keys(table).filter((k) => cellError(table[k]!));
-  const dirty = changed.length > 0;
 
   const update = (k: string, patch: Partial<Cell>) => setTable((t) => ({ ...t, [k]: { ...t[k]!, ...patch } }));
 
@@ -94,41 +132,18 @@ export function TurnaroundPage() {
     void saver.save(() => api(`${productPath}/turnarounds`, { method: 'PUT', body: { cells } }), `Saved ${changed.length} change${changed.length === 1 ? '' : 's'}`);
   }
 
-  if (speeds.length === 0) {
-    return (
-      <div className="page">
-        <header className="page-header">
-          <h1>Turnaround · {productName}</h1>
-        </header>
-        <p className="muted">
-          {productName} has no turnaround speeds. Add them on the <Link to="/options">Options</Link> page first.
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <div className="page">
-      <header className="page-header">
-        <div>
-          <h1>Turnaround · {productName}</h1>
-          <p className="muted">
-            Production days and price of each speed at each quantity. The percent is added to the printing price (core price and
-            add-ons); use a negative percent for a discount. Untick a cell to stop offering that speed at that quantity. Every
-            quantity needs at least one speed. Add, rename or reorder speeds on the <Link to="/options">Options</Link> page.
-          </p>
-        </div>
-        <div className="header-actions">
-          {dirty && (
-            <button type="button" className="btn btn-ghost" onClick={() => setTable(initial)}>
-              Discard
-            </button>
-          )}
-          <button type="button" className="btn btn-primary" disabled={!dirty || errors.length > 0 || saver.saving} onClick={save}>
-            {dirty ? `Save changes (${changed.length})` : 'No changes'}
+    <>
+      <div className="header-actions editor-actions">
+        {dirty && (
+          <button type="button" className="btn btn-ghost" onClick={() => setTable(initial)}>
+            Discard
           </button>
-        </div>
-      </header>
+        )}
+        <button type="button" className="btn btn-primary" disabled={!dirty || errors.length > 0 || saver.saving} onClick={save}>
+          {dirty ? `Save changes (${changed.length})` : 'No changes'}
+        </button>
+      </div>
       {errors.length > 0 && <div className="banner banner-error">{cellError(table[errors[0]!]!)} (highlighted cells).</div>}
 
       <div className="card table-scroll">
@@ -200,6 +215,6 @@ export function TurnaroundPage() {
         </table>
       </div>
       <Toast status={saver.status} onClose={saver.clearStatus} />
-    </div>
+    </>
   );
 }

@@ -153,8 +153,8 @@ function QuantityRow({ tier, priced, combinations, saver }: { tier: AdminTier; p
 }
 
 function AddQuantity({ saver }: { saver: Saver }) {
-  const { path: productPath } = useCatalog();
-  const [open, setOpen] = useState(false);
+  const { catalog, path: productPath } = useCatalog();
+  const [open, setOpen] = useState(catalog?.quantityTiers.length === 0);
   const [text, setText] = useState('');
 
   if (!open) {
@@ -190,9 +190,7 @@ function AddQuantity({ saver }: { saver: Saver }) {
         <div className="form-grid">
           <QuantityField value={text} onChange={setText} autoFocus />
         </div>
-        <p className="muted">
-          It starts with the turnaround of the closest quantity. Customers see it once you enter its prices on the <Link to="/pricing">Pricing</Link> page.
-        </p>
+        <p className="muted">It starts with the turnaround of the closest quantity. Customers see it once it has prices.</p>
         <div className="form-actions">
           <button type="submit" className="btn btn-primary" disabled={saver.saving || !text.trim()}>
             Add quantity

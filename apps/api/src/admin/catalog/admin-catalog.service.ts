@@ -95,6 +95,13 @@ export function productCodeFrom(name: string): string {
   return code || 'product';
 }
 
+/** "Envelopes" -> envelope / envelopes, "Flyer" -> flyer / flyers. Admins can correct it on the product. */
+export function unitNamesFrom(name: string): { unitName: string; unitNamePlural: string } {
+  const lower = name.trim().toLowerCase();
+  if (lower.endsWith('s') && !lower.endsWith('ss')) return { unitName: lower.slice(0, -1), unitNamePlural: lower };
+  return { unitName: lower, unitNamePlural: lower.endsWith('ss') ? `${lower}es` : `${lower}s` };
+}
+
 /** The values of `row` for a copy: the database gives it a new id and dates. */
 function copyRow<T extends { createdAt: Date; updatedAt: Date }>(row: T, staffId: string) {
   const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...values } = row as T & { id?: string };
@@ -800,7 +807,7 @@ export class AdminCatalogService {
           code,
           name: input.name,
           description: input.description ?? null,
-          ...(source ? { unitName: source.unitName, unitNamePlural: source.unitNamePlural } : {}),
+          ...(source ? { unitName: source.unitName, unitNamePlural: source.unitNamePlural } : unitNamesFrom(input.name)),
           ...(input.unitName ? { unitName: input.unitName } : {}),
           ...(input.unitNamePlural ? { unitNamePlural: input.unitNamePlural } : {}),
           sortOrder: (last?.sortOrder ?? 0) + 1,
