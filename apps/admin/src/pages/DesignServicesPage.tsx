@@ -22,7 +22,7 @@ export function DesignServicesPage() {
     <div className="page">
       <header className="page-header">
         <div>
-          <h1>Design services · {productName}</h1>
+          <h1>Design services</h1>
           <p className="muted">
             Packages customers of {productName} can buy instead of designing it themselves. The fee is added once per design. Every
             product has its own packages and prices. Hidden or deleted packages disappear from the storefront; orders already placed

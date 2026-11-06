@@ -56,10 +56,10 @@ export function TurnaroundPage() {
     return (
       <div className="page">
         <header className="page-header">
-          <h1>Turnaround · {productName}</h1>
+          <h1>Turnaround</h1>
         </header>
         <p className="muted">
-          {productName} has no turnaround speeds. Pick them on the <Link to="/product-options">Options</Link> page first.
+          {productName} has no turnaround speeds. Pick them on the <Link to={`/products/${catalog.product.code}/options`}>Options</Link> tab first.
         </p>
       </div>
     );
@@ -69,11 +69,11 @@ export function TurnaroundPage() {
     <div className="page">
       <header className="page-header">
         <div>
-          <h1>Turnaround · {productName}</h1>
+          <h1>Turnaround</h1>
           <p className="muted">
             Production days and price of each speed at each quantity. The percent is added to the printing price (core price and
             add-ons); use a negative percent for a discount. Untick a cell to stop offering that speed at that quantity. Every
-            quantity needs at least one speed. Pick speeds on the <Link to="/product-options">Options</Link> page.
+            quantity needs at least one speed.
           </p>
         </div>
       </header>

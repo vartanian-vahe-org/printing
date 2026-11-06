@@ -1,24 +1,18 @@
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router';
 import { AuthProvider, useAuth } from './auth';
-import type { AdminProduct } from './api';
 import { CatalogProvider, STOREFRONT_ORIGIN, useCatalog } from './catalog';
 import { AccountPage } from './pages/AccountPage';
 import { ActivityPage } from './pages/ActivityPage';
 import { LoginPage } from './pages/LoginPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { OptionsPage } from './pages/OptionsPage';
-import { ProductOptionsPage } from './pages/ProductOptionsPage';
 import { OrderDetailPage } from './pages/OrderDetailPage';
 import { OrdersPage } from './pages/OrdersPage';
-import { PricingPage } from './pages/PricingPage';
-import { TurnaroundPage } from './pages/TurnaroundPage';
-import { RulesPage } from './pages/RulesPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { ProductPage } from './pages/ProductPage';
 import { NewProductPage, ProductSetupPage } from './pages/ProductSetupPage';
 import { ProductsPage } from './pages/ProductsPage';
 import { StaffPage } from './pages/StaffPage';
-import { TemplatesPage } from './pages/TemplatesPage';
-import { DesignServicesPage } from './pages/DesignServicesPage';
 import { isHiddenPath } from './features';
 
 const ROUTES = [
@@ -27,13 +21,8 @@ const ROUTES = [
   { path: '/products', element: <ProductsPage /> },
   { path: '/products/new', element: <NewProductPage /> },
   { path: '/products/:code/setup/:step?', element: <ProductSetupPage /> },
+  { path: '/products/:code/:tab?', element: <ProductPage /> },
   { path: '/options', element: <OptionsPage /> },
-  { path: '/product-options', element: <ProductOptionsPage /> },
-  { path: '/rules', element: <RulesPage /> },
-  { path: '/pricing', element: <PricingPage /> },
-  { path: '/turnaround', element: <TurnaroundPage /> },
-  { path: '/templates', element: <TemplatesPage /> },
-  { path: '/design-services', element: <DesignServicesPage /> },
   { path: '/settings', element: <SettingsPage /> },
   { path: '/staff', element: <StaffPage /> },
   { path: '/activity', element: <ActivityPage /> },
@@ -78,24 +67,12 @@ function RequireAuth() {
 type Role = 'owner' | 'admin' | 'staff';
 
 /** Sidebar, grouped; `roles` hides links a role cannot use (the API enforces it too), features.ts hides unreleased pages. */
-const NAV: { section?: string; product?: true; items: { to: string; label: string; hint: string; roles?: Role[] }[] }[] = [
+const NAV: { section?: string; items: { to: string; label: string; hint: string; roles?: Role[] }[] }[] = [
   {
     items: [
       { to: '/orders', label: 'Orders', hint: 'Payments, printing, shipping' },
-      { to: '/products', label: 'Products', hint: 'Add products, URLs and SEO' },
-      { to: '/options', label: 'Option library', hint: 'Shared by every product' },
-    ],
-  },
-  {
-    // Configuration of the product picked in the sidebar (Business Cards, Postcards…).
-    product: true,
-    items: [
-      { to: '/product-options', label: 'Options', hint: 'What this product offers' },
-      { to: '/rules', label: 'Rules', hint: 'Which options go together' },
-      { to: '/pricing', label: 'Pricing', hint: 'Core prices and add-ons' },
-      { to: '/turnaround', label: 'Turnaround', hint: 'Days and % per quantity' },
-      { to: '/templates', label: 'Templates', hint: 'Designs and their filters' },
-      { to: '/design-services', label: 'Design services', hint: 'Packages we design for you' },
+      { to: '/products', label: 'Products', hint: 'Options and prices of each' },
+      { to: '/options', label: 'Option library', hint: 'Shared by all products' },
     ],
   },
   {
@@ -110,7 +87,7 @@ const NAV: { section?: string; product?: true; items: { to: string; label: strin
 
 function Layout() {
   const { user, logout } = useAuth();
-  const { error, products, product, selectProduct } = useCatalog();
+  const { error } = useCatalog();
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -123,11 +100,7 @@ function Layout() {
             if (items.length === 0) return null;
             return (
               <div key={group.section ?? i}>
-                {group.product ? (
-                  <ProductPicker products={products} current={product?.code ?? ''} onChange={selectProduct} />
-                ) : (
-                  group.section && <div className="sidebar-product">{group.section}</div>
-                )}
+                {group.section && <div className="sidebar-product">{group.section}</div>}
                 {items.map((item) => (
                   <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-item ${isActive ? 'nav-active' : ''}`}>
                     <span>{item.label}</span>
@@ -139,7 +112,7 @@ function Layout() {
           })}
         </nav>
         <div className="sidebar-footer">
-          <a href={`${STOREFRONT_ORIGIN}/${product?.isActive ? product.code : ''}`} target="_blank" rel="noreferrer" className="sidebar-link">
+          <a href={STOREFRONT_ORIGIN} target="_blank" rel="noreferrer" className="sidebar-link">
             View storefront ↗
           </a>
           <NavLink to="/account" className="sidebar-user">
@@ -155,27 +128,8 @@ function Layout() {
       </aside>
       <main className="content">
         {error && <div className="banner banner-error">Could not load settings: {error}</div>}
-        <Outlet key={product?.code} />
+        <Outlet />
       </main>
     </div>
-  );
-}
-
-/** Section title of the product pages; a picker once there is more than one product. */
-function ProductPicker({ products, current, onChange }: { products: AdminProduct[]; current: string; onChange: (code: string) => void }) {
-  const name = products.find((p) => p.code === current)?.name ?? 'Product';
-  if (products.length <= 1) return <div className="sidebar-product">{name}</div>;
-  return (
-    <label className="sidebar-product sidebar-product-picker">
-      <span className="visually-hidden">Product</span>
-      <select value={current} onChange={(e) => onChange(e.target.value)}>
-        {products.map((p) => (
-          <option key={p.code} value={p.code}>
-            {p.name}
-            {p.isActive ? '' : ' (hidden)'}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }

@@ -31,14 +31,15 @@ function validPercent(text: string) {
 }
 
 export function PricingPage() {
+  const { product } = useCatalog();
   return (
     <div className="page">
       <header className="page-header">
         <div>
-          <h1>Pricing</h1>
+          <h1>Prices</h1>
           <p className="muted">
             Each combination of size, paper and printed sides has its own price per quantity, in US dollars. Add-ons then add a percent of that
-            price, and the speed its percent from the <Link to="/turnaround">Turnaround</Link> page.
+            price, and the speed its percent from the <Link to={`/products/${product?.code}/turnaround`}>Turnaround</Link> tab.
           </p>
         </div>
       </header>

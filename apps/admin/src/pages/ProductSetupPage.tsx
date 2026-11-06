@@ -357,7 +357,8 @@ function Review({ saver }: { saver: ReturnType<typeof useSaver> }) {
         </div>
       )}
       <p className="muted">
-        Optional: limit which options go together on <Link to="/rules">Rules</Link>, or add packages on <Link to="/design-services">Design services</Link>.
+        Optional: limit which options go together on <Link to={`/products/${product.code}/rules`}>Rules</Link>, or add packages on{' '}
+        <Link to={`/products/${product.code}/design-services`}>Design services</Link>.
       </p>
     </>
   );

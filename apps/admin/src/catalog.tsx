@@ -7,10 +7,10 @@ export const STOREFRONT_ORIGIN = new URL(import.meta.env.VITE_STOREFRONT_URL ?? 
 interface CatalogState {
   /** Every product the admin can configure (Business Cards, Postcards…). */
   products: AdminProduct[];
-  /** The product the configuration pages show, picked in the sidebar. */
+  /** The product whose page is open (the last one, on other pages). */
   product: AdminProduct | null;
   selectProduct: (code: string) => void;
-  /** API path of the picked product, e.g. /admin/products/business-cards. */
+  /** API path of that product, e.g. /admin/products/business-cards. */
   path: string;
   catalog: AdminCatalog | null;
   /** The option library, shared by every product. */
@@ -33,8 +33,8 @@ function rememberedProduct(): string | null {
 }
 
 /**
- * Loads the product list and the picked product's configuration once for all admin pages; pages call
- * reload() after saving. The picked product is remembered in this browser only.
+ * Loads the product list, the option library and the open product's configuration once for all admin
+ * pages; pages call reload() after saving.
  */
 export function CatalogProvider({ children }: { children: ReactNode }) {
   const [products, setProducts] = useState<AdminProduct[]>([]);
@@ -63,11 +63,10 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   // Reads the path at call time: a save may have just deleted the product that was picked.
   const reload = useCallback(async () => {
     const current = pathRef.current;
-    if (!current) return;
     try {
-      const [data, options] = await Promise.all([api<AdminCatalog>(`${current}/catalog`), api<{ groups: LibraryGroup[] }>('/admin/options')]);
+      const [data, options] = await Promise.all([current ? api<AdminCatalog>(`${current}/catalog`) : null, api<{ groups: LibraryGroup[] }>('/admin/options')]);
       setLibrary(options.groups);
-      if (current !== pathRef.current) return;
+      if (!data || current !== pathRef.current) return;
       setCatalog(data);
       setError(null);
     } catch (err) {

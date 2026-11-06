@@ -31,7 +31,7 @@ export function QuantityList({ saver }: { saver: Saver }) {
 }
 
 function QuantityRow({ tier, priced, combinations, saver }: { tier: AdminTier; priced: number; combinations: number; saver: Saver }) {
-  const { path: productPath } = useCatalog();
+  const { path: productPath, product } = useCatalog();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState(String(tier.quantity));
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -51,8 +51,8 @@ function QuantityRow({ tier, priced, combinations, saver }: { tier: AdminTier; p
             {priced === 0 && <span className="badge badge-rule">Not sold yet</span>}
           </div>
           {priced === 0 ? (
-            <Link className="value-code" to="/pricing">
-              Enter its prices on the Pricing page
+            <Link className="value-code" to={`/products/${product?.code}/prices`}>
+              Enter its prices on the Prices tab
             </Link>
           ) : (
             <span className="value-code">
@@ -182,7 +182,7 @@ function AddQuantity({ saver }: { saver: Saver }) {
           e.preventDefault();
           const quantity = Number(text);
           void saver
-            .save(() => api(`${productPath}/quantities`, { method: 'POST', body: { quantity } }), `${shown(quantity)} added. Enter its prices on the Pricing page.`)
+            .save(() => api(`${productPath}/quantities`, { method: 'POST', body: { quantity } }), `${shown(quantity)} added. Enter its prices on the Prices tab.`)
             .then((ok) => ok && setOpen(false));
         }}
       >

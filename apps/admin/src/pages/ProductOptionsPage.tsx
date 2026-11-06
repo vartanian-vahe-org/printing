@@ -11,9 +11,9 @@ type Saver = ReturnType<typeof useSaver>;
 /** Quantities are not an option group, so their tab sits after the groups. */
 const QUANTITY_TAB = 'quantity';
 
-/** What the product picked in the sidebar offers, out of the option library. */
+/** What a product offers, out of the option library. */
 export function ProductOptionsPage() {
-  const { catalog, library, product } = useCatalog();
+  const { catalog, library } = useCatalog();
   const [groupCode, setGroupCode] = useState('size');
   const saver = useSaver();
 
@@ -26,7 +26,7 @@ export function ProductOptionsPage() {
     <div className="page">
       <header className="page-header">
         <div>
-          <h1>Options · {product?.name ?? catalog.product.name}</h1>
+          <h1>Options</h1>
           <p className="muted">
             Tick what this product offers. Names and details are shared and edited in the <Link to="/options">Option library</Link>.
           </p>

@@ -74,23 +74,6 @@ select {
   padding: 4px 8px 18px;
 }
 
-.sidebar-product-picker {
-  display: block;
-}
-
-.sidebar-product-picker select {
-  width: 100%;
-  font: inherit;
-  text-transform: none;
-  letter-spacing: normal;
-  font-size: 14px;
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  padding: 6px 8px;
-}
-
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -474,6 +457,10 @@ a.btn-primary {
   margin-left: 0;
 }
 
+.card > .value-form {
+  margin: 16px;
+}
+
 .group-form {
   flex-basis: 100%;
   margin: 8px 0 0;
@@ -487,6 +474,67 @@ a.btn-primary {
   width: 18px;
   height: 18px;
   flex: none;
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.product-header {
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.product-header h1 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.badge-live {
+  background: #e6f4ec;
+  color: var(--ok);
+}
+
+.product-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.product-link:hover {
+  text-decoration: underline;
+}
+
+.product-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.product-tab {
+  padding: 8px 12px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.product-tab-active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.product-tab-body .page-header h1 {
+  font-size: 18px;
 }
 
 .editor-actions {
